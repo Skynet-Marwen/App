@@ -1,0 +1,100 @@
+{
+  "_comment": "Canonical event type definitions for the tracker and event pipeline.",
+  "_version": "1.0.0",
+
+  "system": {
+    "pageview": {
+      "description": "A page was loaded or navigated to (SPA route change included)",
+      "required_fields": ["page_url"],
+      "optional_fields": ["referrer", "fingerprint", "canvas_hash", "webgl_hash", "screen", "language", "timezone"]
+    },
+    "session_start": {
+      "description": "A new browser session began",
+      "required_fields": [],
+      "optional_fields": ["referrer"]
+    },
+    "session_end": {
+      "description": "Browser session ended (tab close / inactivity timeout)",
+      "required_fields": [],
+      "optional_fields": ["duration_seconds"]
+    },
+    "identify": {
+      "description": "A visitor was linked to an authenticated user account",
+      "required_fields": ["user_id"],
+      "optional_fields": ["fingerprint", "traits"]
+    }
+  },
+
+  "security": {
+    "block": {
+      "description": "A visitor, IP, or device was blocked",
+      "required_fields": ["target_type", "target_id"],
+      "optional_fields": ["reason", "actor_id"]
+    },
+    "unblock": {
+      "description": "A block was lifted",
+      "required_fields": ["target_type", "target_id"],
+      "optional_fields": ["actor_id"]
+    },
+    "vpn_detected": {
+      "description": "Visitor IP matched a known VPN range",
+      "required_fields": ["ip"],
+      "optional_fields": ["provider"]
+    },
+    "tor_detected": {
+      "description": "Visitor IP is a Tor exit node",
+      "required_fields": ["ip"],
+      "optional_fields": []
+    },
+    "proxy_detected": {
+      "description": "Visitor IP is a known proxy",
+      "required_fields": ["ip"],
+      "optional_fields": []
+    },
+    "headless_detected": {
+      "description": "Browser signals indicate a headless/automated browser",
+      "required_fields": ["fingerprint"],
+      "optional_fields": ["signals"]
+    },
+    "bot_detected": {
+      "description": "Behavioral analysis identified bot-like activity",
+      "required_fields": ["fingerprint"],
+      "optional_fields": ["signals"]
+    },
+    "ip_rotation": {
+      "description": "Same device fingerprint used from multiple IPs rapidly",
+      "required_fields": ["fingerprint"],
+      "optional_fields": ["ip_count", "window_seconds"]
+    },
+    "multi_account": {
+      "description": "Single device or IP linked to too many user accounts",
+      "required_fields": ["fingerprint"],
+      "optional_fields": ["account_count", "user_ids"]
+    },
+    "timezone_mismatch": {
+      "description": "Browser timezone does not match IP geolocation timezone",
+      "required_fields": ["ip", "ip_timezone", "browser_timezone"],
+      "optional_fields": ["delta_minutes"]
+    },
+    "spam_detected": {
+      "description": "Repeated actions exceeded the spam rate threshold",
+      "required_fields": ["fingerprint"],
+      "optional_fields": ["action_count", "window_seconds"]
+    }
+  },
+
+  "custom": {
+    "_note": "Any string value is valid for custom event types. Recommended conventions:",
+    "examples": [
+      "button_click",
+      "form_submit",
+      "purchase",
+      "signup",
+      "login",
+      "logout",
+      "video_play",
+      "download",
+      "search"
+    ]
+  }
+}

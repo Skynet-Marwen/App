@@ -1,0 +1,81 @@
+{
+  "_comment": "Single source of truth for error codes. Used by backend (Pydantic) and frontend (display messages).",
+  "_version": "1.0.0",
+
+  "AUTH": {
+    "AUTH_001": "Invalid credentials",
+    "AUTH_002": "Account is blocked",
+    "AUTH_003": "Account is pending verification",
+    "AUTH_004": "Token expired",
+    "AUTH_005": "Token invalid or malformed",
+    "AUTH_006": "Insufficient permissions",
+    "AUTH_007": "Not authenticated"
+  },
+
+  "VISITOR": {
+    "VIS_001": "Visitor not found",
+    "VIS_002": "Visitor is already blocked",
+    "VIS_003": "Visitor is not blocked"
+  },
+
+  "USER": {
+    "USR_001": "User not found",
+    "USR_002": "Email already exists",
+    "USR_003": "Username already exists",
+    "USR_004": "Cannot delete your own account",
+    "USR_005": "Cannot block your own account",
+    "USR_006": "User is already blocked",
+    "USR_007": "Invalid role",
+    "USR_008": "Password does not meet requirements"
+  },
+
+  "DEVICE": {
+    "DEV_001": "Device not found",
+    "DEV_002": "Device is already blocked",
+    "DEV_003": "Device is already linked to a user",
+    "DEV_004": "Device has no linked user to remove"
+  },
+
+  "BLOCKING": {
+    "BLK_001": "Blocking rule not found",
+    "BLK_002": "Invalid rule type",
+    "BLK_003": "Invalid rule action",
+    "BLK_004": "IP address already blocked",
+    "BLK_005": "IP address not blocked",
+    "BLK_006": "Invalid IP address or CIDR notation"
+  },
+
+  "SITE": {
+    "SITE_001": "Site not found",
+    "SITE_002": "Invalid site URL",
+    "SITE_003": "Site is inactive"
+  },
+
+  "TRACKER": {
+    "TRK_001": "Invalid or missing API key",
+    "TRK_002": "Site is inactive",
+    "TRK_003": "IP is blocked",
+    "TRK_004": "Device is blocked",
+    "TRK_005": "Rate limit exceeded"
+  },
+
+  "INCIDENT": {
+    "INC_001": "Incident not found",
+    "INC_002": "Incident is already resolved"
+  },
+
+  "VALIDATION": {
+    "VAL_001": "Request body is invalid",
+    "VAL_002": "Required field missing",
+    "VAL_003": "Field exceeds maximum length",
+    "VAL_004": "Invalid email format",
+    "VAL_005": "Invalid URL format"
+  },
+
+  "SYSTEM": {
+    "SYS_001": "Internal server error",
+    "SYS_002": "Service temporarily unavailable",
+    "SYS_003": "Database connection error",
+    "SYS_004": "Rate limit exceeded"
+  }
+}

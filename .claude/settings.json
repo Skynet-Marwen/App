@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//home/marwen/**)",
+      "Bash(find /home/marwen -maxdepth 5 -name *.py)",
+      "Bash(npm create:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "Bash(docker compose:*)"
+    ]
+  }
+}

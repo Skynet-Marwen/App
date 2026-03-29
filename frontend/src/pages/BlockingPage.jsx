@@ -1,0 +1,205 @@
+import { useState, useEffect, useCallback } from 'react'
+import { Shield, Plus, Trash2, Search, Globe, Monitor, User } from 'lucide-react'
+import DashboardLayout from '../components/layout/DashboardLayout'
+import { Card, CardHeader, Table, Badge, Button, Input, Modal, Select, Alert, Pagination } from '../components/ui/index'
+import { blockingApi } from '../services/api'
+
+const RULE_TYPES = [
+  { value: 'ip', label: 'IP Address / CIDR' },
+  { value: 'country', label: 'Country' },
+  { value: 'device', label: 'Device Fingerprint' },
+  { value: 'user_agent', label: 'User Agent Pattern' },
+  { value: 'asn', label: 'ASN / ISP' },
+]
+
+const EMPTY_RULE = { type: 'ip', value: '', reason: '', action: 'block' }
+
+export default function BlockingPage() {
+  const [tab, setTab] = useState('rules')
+  const [rules, setRules] = useState([])
+  const [ips, setIps] = useState([])
+  const [ipTotal, setIpTotal] = useState(0)
+  const [ipPage, setIpPage] = useState(1)
+  const [loading, setLoading] = useState(true)
+  const [ruleModal, setRuleModal] = useState(false)
+  const [ipModal, setIpModal] = useState(false)
+  const [form, setForm] = useState(EMPTY_RULE)
+  const [ipForm, setIpForm] = useState({ ip: '', reason: '' })
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+  const [search, setSearch] = useState('')
+
+  const fetchData = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [rulesRes, ipsRes] = await Promise.all([
+        blockingApi.rules(),
+        blockingApi.ipList({ page: ipPage, search, page_size: 20 }),
+      ])
+      setRules(rulesRes.data)
+      setIps(ipsRes.data.items)
+      setIpTotal(ipsRes.data.total)
+    } catch (_) {}
+    finally { setLoading(false) }
+  }, [ipPage, search])
+
+  useEffect(() => { fetchData() }, [fetchData])
+
+  const handleCreateRule = async () => {
+    setError('')
+    setSubmitting(true)
+    try {
+      await blockingApi.createRule(form)
+      setRuleModal(false)
+      setForm(EMPTY_RULE)
+      fetchData()
+    } catch (e) {
+      setError(e.response?.data?.detail || 'Failed to create rule')
+    } finally { setSubmitting(false) }
+  }
+
+  const handleDeleteRule = async (id) => {
+    await blockingApi.deleteRule(id)
+    fetchData()
+  }
+
+  const handleBlockIp = async () => {
+    setError('')
+    setSubmitting(true)
+    try {
+      await blockingApi.blockIp(ipForm.ip, ipForm.reason)
+      setIpModal(false)
+      setIpForm({ ip: '', reason: '' })
+      fetchData()
+    } catch (e) {
+      setError(e.response?.data?.detail || 'Invalid IP')
+    } finally { setSubmitting(false) }
+  }
+
+  const handleUnblockIp = async (ip) => {
+    await blockingApi.unblockIp(ip)
+    fetchData()
+  }
+
+  const typeIcon = (type) => {
+    if (type === 'ip') return <Globe size={13} className="text-cyan-400" />
+    if (type === 'device') return <Monitor size={13} className="text-purple-400" />
+    if (type === 'user') return <User size={13} className="text-blue-400" />
+    return <Shield size={13} className="text-yellow-400" />
+  }
+
+  const ruleColumns = [
+    { key: 'type', label: 'Type', render: (v) => (
+      <span className="flex items-center gap-1.5 text-xs text-gray-300">{typeIcon(v)} {v.toUpperCase()}</span>
+    )},
+    { key: 'value', label: 'Value', render: (v) => <code className="text-xs text-cyan-400">{v}</code> },
+    { key: 'reason', label: 'Reason', render: (v) => <span className="text-xs text-gray-400">{v || '—'}</span> },
+    { key: 'action', label: 'Action', render: (v) => (
+      v === 'challenge' ? <Badge variant="warning">Challenge</Badge> :
+      v === 'rate_limit' ? <Badge variant="info">Rate Limit</Badge> :
+      <Badge variant="danger">Block</Badge>
+    )},
+    { key: 'hits', label: 'Hits', render: (v) => <span className="text-xs text-white font-medium">{v ?? 0}</span> },
+    { key: 'created_at', label: 'Created', render: (v) => <span className="text-xs text-gray-400">{v}</span> },
+    { key: 'actions', label: '', width: '60px', render: (_, row) => (
+      <Button variant="danger" size="sm" icon={Trash2} onClick={() => handleDeleteRule(row.id)} />
+    )},
+  ]
+
+  const ipColumns = [
+    { key: 'ip', label: 'IP / CIDR', render: (v) => <code className="text-xs text-cyan-400">{v}</code> },
+    { key: 'country', label: 'Country', render: (v, r) => <span className="text-xs text-gray-300">{r.country_flag} {v}</span> },
+    { key: 'reason', label: 'Reason', render: (v) => <span className="text-xs text-gray-400">{v || '—'}</span> },
+    { key: 'blocked_at', label: 'Blocked At', render: (v) => <span className="text-xs text-gray-400">{v}</span> },
+    { key: 'hits', label: 'Hits', render: (v) => <span className="text-xs text-white">{v ?? 0}</span> },
+    { key: 'actions', label: '', width: '90px', render: (_, row) => (
+      <Button variant="secondary" size="sm" onClick={() => handleUnblockIp(row.ip)}>Unblock</Button>
+    )},
+  ]
+
+  return (
+    <DashboardLayout title="Blocking" onRefresh={fetchData}>
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        {[
+          { label: 'Active Rules', value: rules.length, color: 'text-cyan-400' },
+          { label: 'Blocked IPs', value: ipTotal, color: 'text-red-400' },
+          { label: 'Total Hits Today', value: rules.reduce((a, r) => a + (r.hits ?? 0), 0), color: 'text-yellow-400' },
+        ].map((s) => (
+          <Card key={s.label}>
+            <p className="text-xs text-gray-500 mb-1">{s.label}</p>
+            <p className={`text-2xl font-bold ${s.color}`}>{s.value.toLocaleString()}</p>
+          </Card>
+        ))}
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 bg-gray-900 border border-gray-800 rounded-xl p-1 mb-4 w-fit">
+        {['rules', 'ips'].map((t) => (
+          <button key={t} onClick={() => setTab(t)} className={`px-4 py-1.5 rounded-lg text-sm font-medium transition ${tab === t ? 'bg-cyan-500 text-white' : 'text-gray-400 hover:text-white'}`}>
+            {t === 'rules' ? 'Rules' : 'Blocked IPs'}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'rules' && (
+        <Card>
+          <CardHeader action={<Button icon={Plus} onClick={() => setRuleModal(true)}>New Rule</Button>}>
+            <p className="text-sm font-medium text-white">Blocking Rules</p>
+            <p className="text-xs text-gray-500">Block by IP, country, device, user agent, ASN</p>
+          </CardHeader>
+          <Table columns={ruleColumns} data={rules} loading={loading} emptyMessage="No blocking rules configured" />
+        </Card>
+      )}
+
+      {tab === 'ips' && (
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="flex-1 relative">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+              <input
+                placeholder="Search IP..."
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setIpPage(1) }}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500"
+              />
+            </div>
+            <Button icon={Plus} onClick={() => setIpModal(true)}>Block IP</Button>
+          </div>
+          <Table columns={ipColumns} data={ips} loading={loading} emptyMessage="No blocked IPs" />
+          <Pagination page={ipPage} total={ipTotal} pageSize={20} onChange={setIpPage} />
+        </Card>
+      )}
+
+      {/* Rule Modal */}
+      <Modal open={ruleModal} onClose={() => { setRuleModal(false); setError('') }} title="Create Blocking Rule">
+        <div className="space-y-4">
+          {error && <Alert type="danger">{error}</Alert>}
+          <Select label="Rule Type" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} options={RULE_TYPES} />
+          <Input label="Value" placeholder={form.type === 'ip' ? '192.168.1.0/24' : 'Enter value...'} value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} />
+          <Input label="Reason" placeholder="Spam, abuse..." value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />
+          <Select label="Action" value={form.action} onChange={(e) => setForm({ ...form, action: e.target.value })}
+            options={[{ value: 'block', label: 'Block' }, { value: 'challenge', label: 'Challenge (CAPTCHA)' }, { value: 'rate_limit', label: 'Rate Limit' }]}
+          />
+          <div className="flex gap-2 justify-end">
+            <Button variant="secondary" onClick={() => setRuleModal(false)}>Cancel</Button>
+            <Button loading={submitting} onClick={handleCreateRule} icon={Shield}>Create Rule</Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Block IP Modal */}
+      <Modal open={ipModal} onClose={() => { setIpModal(false); setError('') }} title="Block IP / CIDR">
+        <div className="space-y-4">
+          {error && <Alert type="danger">{error}</Alert>}
+          <Input label="IP Address or CIDR" placeholder="1.2.3.4 or 10.0.0.0/8" value={ipForm.ip} onChange={(e) => setIpForm({ ...ipForm, ip: e.target.value })} />
+          <Input label="Reason" placeholder="Manual block..." value={ipForm.reason} onChange={(e) => setIpForm({ ...ipForm, reason: e.target.value })} />
+          <div className="flex gap-2 justify-end">
+            <Button variant="secondary" onClick={() => setIpModal(false)}>Cancel</Button>
+            <Button variant="danger" loading={submitting} onClick={handleBlockIp} icon={Shield}>Block</Button>
+          </div>
+        </div>
+      </Modal>
+    </DashboardLayout>
+  )
+}

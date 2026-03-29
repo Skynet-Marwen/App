@@ -1,0 +1,145 @@
+"""
+Public tracking endpoints — called by the embedded JS tracker.
+No auth required; validated via X-SkyNet-Key header.
+"""
+from fastapi import APIRouter, Request, Header, HTTPException
+from sqlalchemy import select
+from ...core.database import AsyncSessionLocal
+from ...models.site import Site
+from ...models.visitor import Visitor
+from ...models.device import Device
+from ...models.event import Event
+from ...models.blocking import BlockedIP
+from ...schemas.track import PageviewPayload, EventPayload, IdentifyPayload
+import uuid
+from datetime import datetime, timezone
+
+router = APIRouter(prefix="/track", tags=["tracker"])
+
+
+async def validate_site_key(api_key: str) -> Site:
+    async with AsyncSessionLocal() as db:
+        s = await db.scalar(select(Site).where(Site.api_key == api_key, Site.active == True))
+        if not s:
+            raise HTTPException(403, "Invalid API key")
+        return s
+
+
+@router.post("/pageview")
+async def track_pageview(payload: PageviewPayload, request: Request, x_skynet_key: str = Header(...)):
+    site = await validate_site_key(x_skynet_key)
+    ip = request.client.host
+
+    async with AsyncSessionLocal() as db:
+        # Check if IP is blocked
+        blocked = await db.get(BlockedIP, ip)
+        if blocked:
+            blocked.hits += 1
+            await db.commit()
+            return {"blocked": True}
+
+        # Upsert visitor
+        visitor = await db.scalar(select(Visitor).where(Visitor.ip == ip, Visitor.site_id == site.id))
+        if not visitor:
+            visitor = Visitor(id=str(uuid.uuid4()), ip=ip, site_id=site.id)
+            db.add(visitor)
+
+        # Parse UA
+        ua_string = request.headers.get("user-agent", "")
+        try:
+            import user_agents
+            ua = user_agents.parse(ua_string)
+            visitor.browser = f"{ua.browser.family} {ua.browser.version_string}"
+            visitor.os = f"{ua.os.family} {ua.os.version_string}"
+            visitor.device_type = "mobile" if ua.is_mobile else "tablet" if ua.is_tablet else "desktop"
+        except Exception:
+            pass
+        visitor.user_agent = ua_string
+        visitor.page_views = (visitor.page_views or 0) + 1
+        visitor.last_seen = datetime.now(timezone.utc)
+
+        # Upsert device fingerprint
+        if payload.fingerprint:
+            device = await db.scalar(select(Device).where(Device.fingerprint == payload.fingerprint))
+            if not device:
+                device = Device(
+                    id=str(uuid.uuid4()),
+                    fingerprint=payload.fingerprint,
+                    canvas_hash=payload.canvas_hash,
+                    webgl_hash=payload.webgl_hash,
+                    screen_resolution=payload.screen,
+                    language=payload.language,
+                    timezone=payload.timezone,
+                )
+                db.add(device)
+            else:
+                device.last_seen = datetime.now(timezone.utc)
+            visitor.device_id = device.id
+
+        # Record event
+        event = Event(
+            id=str(uuid.uuid4()),
+            site_id=site.id,
+            visitor_id=visitor.id,
+            event_type="pageview",
+            page_url=payload.page_url,
+            referrer=payload.referrer,
+            ip=ip,
+        )
+        db.add(event)
+        await db.commit()
+
+    return {"ok": True}
+
+
+@router.post("/event")
+async def track_event(payload: EventPayload, request: Request, x_skynet_key: str = Header(...)):
+    site = await validate_site_key(x_skynet_key)
+    async with AsyncSessionLocal() as db:
+        event = Event(
+            id=str(uuid.uuid4()),
+            site_id=site.id,
+            event_type=payload.event_type,
+            page_url=payload.page_url,
+            properties=str(payload.properties) if payload.properties else None,
+            ip=request.client.host,
+        )
+        db.add(event)
+        await db.commit()
+    return {"ok": True}
+
+
+@router.post("/identify")
+async def identify_user(payload: IdentifyPayload, request: Request, x_skynet_key: str = Header(...)):
+    await validate_site_key(x_skynet_key)
+    async with AsyncSessionLocal() as db:
+        if payload.fingerprint:
+            device = await db.scalar(select(Device).where(Device.fingerprint == payload.fingerprint))
+            if device:
+                device.linked_user = payload.user_id
+                await db.commit()
+    return {"ok": True}
+
+
+@router.get("/check/ip")
+async def check_ip(ip: str, x_skynet_key: str = Header(...)):
+    await validate_site_key(x_skynet_key)
+    async with AsyncSessionLocal() as db:
+        blocked = await db.get(BlockedIP, ip)
+        return {"ip": ip, "blocked": blocked is not None}
+
+
+@router.get("/check/device")
+async def check_device(fingerprint: str, x_skynet_key: str = Header(...)):
+    await validate_site_key(x_skynet_key)
+    async with AsyncSessionLocal() as db:
+        device = await db.scalar(select(Device).where(Device.fingerprint == fingerprint))
+        if not device:
+            return {"fingerprint": fingerprint, "found": False, "blocked": False}
+        return {
+            "fingerprint": fingerprint,
+            "found": True,
+            "blocked": device.status == "blocked",
+            "risk_score": device.risk_score,
+            "linked_user": device.linked_user,
+        }
