@@ -1,0 +1,29 @@
+# CoAgentLOG.md — AI Agent Action Log
+
+> **Purpose:** Centralized log of all AI agent actions on SkyNet project.
+> **Format:** `[YYYY-MM-DD HH:MM] Action summary by agent`
+> **Location:** Repository root
+> **Scope:** All significant actions (code changes, deployments, fixes, documentation updates)
+
+---
+
+## Action Log
+
+[2026-03-30 00:00] Initial setup: Initialized Git repository, added remote origin, committed initial codebase
+[2026-03-30 00:05] Added CLAUDE.md to .gitignore to exclude behavioral contract from version control
+[2026-03-30 00:10] Pushed initial commit to GitHub (https://github.com/Skynet-Marwen/App.git)
+[2026-03-30 01:00] Started development server (Vite on port 5174) for frontend testing
+[2026-03-30 01:05] Started production containers (frontend on port 3000, backend on port 8000)
+[2026-03-30 01:10] Fixed stats synchronization: Updated backend/app/api/routes/stats.py to properly aggregate visitor/blocked/event metrics
+[2026-03-30 01:15] Updated frontend/src/pages/OverviewPage.jsx: Reduced refresh intervals (10s realtime, 60s overview)
+[2026-03-30 01:20] Committed and pushed stats fixes to GitHub
+[2026-03-30 01:25] Rebuilt and redeployed production containers with updated code
+[2026-03-30 01:30] Updated CHANGELOG.md and docs/DEV_PLAN.md with stats synchronization documentation
+[2026-03-30 01:35] Pushed documentation updates to GitHub
+[2026-03-30 02:00] Rebuilt frontend container to ensure latest code deployment
+[2026-03-30 02:05] Verified production containers running (frontend:3000, backend:8000, db, redis)
+[2026-03-30 02:10] Created CoAgentLOG.md and updated CLAUDE.md with logging requirement
+
+---
+
+*Last updated: 2026-03-30 — Agent: GitHub Copilot*
