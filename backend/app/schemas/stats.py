@@ -2,16 +2,15 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 
-class TrafficPoint(BaseModel):
-    time: str
-    visitors: int
-    blocked: int
+class HeatmapBucket(BaseModel):
+    timestamp: str
+    count: int
 
 
 class CountryStats(BaseModel):
     country: str
-    country_code: str
     flag: str
+    count: int
     percent: float
 
 
@@ -37,7 +36,7 @@ class OverviewResponse(BaseModel):
     visitors_change: Optional[float] = None
     users_change: Optional[float] = None
     blocked_change: Optional[float] = None
-    traffic_chart: List[TrafficPoint]
+    traffic_heatmap: List[HeatmapBucket]
     top_countries: List[CountryStats]
     blocking_chart: List[BlockingChartItem]
     recent_incidents: List[RecentIncident]

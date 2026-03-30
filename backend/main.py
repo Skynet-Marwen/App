@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.core.database import init_db
 from app.api import api_router
 from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
+from app.middleware.security_headers import SecurityHeadersMiddleware
 from slowapi.errors import RateLimitExceeded
 
 
@@ -51,6 +52,8 @@ app = FastAPI(
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

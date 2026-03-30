@@ -10,6 +10,8 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 ## [Unreleased]
 
 ### Added
+- `backend/app/core/geoip.py`: GeoIP lookup service — lazy-loads MaxMind GeoLite2-City reader, fails silently if DB file absent; `lookup(ip)` returns `country`, `country_code`, `country_flag` (Unicode flag emoji), `city`
+- `backend/app/middleware/security_headers.py`: HTTP security headers middleware — sets `X-Content-Type-Options`, `X-Frame-Options: DENY`, `X-XSS-Protection`, `Referrer-Policy`, `Permissions-Policy`, `Content-Security-Policy`, `Strict-Transport-Security` on every response
 - `docs/ROADMAP.md`: v1.5.0 Keycloak Security Enforcement Layer — Keycloak as security enforcement for tracked websites (event monitoring, user sync, threat correlation, session revocation)
 - `docs/ROADMAP.md`: v1.6.0 Active Anti-Bot / Anti-Spam Gateway — reverse proxy mode, bot detection pipeline, spam prevention, gateway dashboard
 - `backend/main.py`: integrated `slowapi` rate limiter — `app.state.limiter` bound; `RateLimitExceeded` returns typed 429 response; all route groups can now apply `@limiter.limit()` decorators
@@ -28,6 +30,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - `backend/main.py`: `version` field now reads from `settings.APP_VERSION` instead of hardcoded string
 - `frontend/src/pages/OverviewPage.jsx`: Traffic Over Time area chart replaced with time-based heatmap visualization using CSS Grid; supports 1h/24h/7d/30d modes with normalized color intensity scaling
 - `backend/app/api/routes/stats.py`: `GET /api/v1/stats/overview` extended with `traffic_heatmap` field containing pre-aggregated bucket data for heatmap rendering
+- `backend/app/api/routes/track.py`: GeoIP enrichment on new visitor creation — `country`, `country_code`, `country_flag`, `city` populated via `geoip_lookup(ip)`
+- `backend/app/api/routes/stats.py`: `top_countries` field now populated from real visitor data — grouped by country/flag, sorted by count DESC, limited to 10, with percent share; feeds WorldGlobe visualization
+- `backend/app/schemas/stats.py`: `CountryStats` updated — added `count: int`, removed unused `country_code`; matches actual API response and WorldGlobe contract
 - `frontend/src/components/ui/TrafficHeatmap.jsx`: new component implementing 3-layer architecture (Container/Grid/Cell) for responsive heatmap display
 
 ### Removed
@@ -37,6 +42,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - `settingsApi.keycloak()` and `settingsApi.updateKeycloak()` from `frontend/src/services/api.js`
 
 ### Fixed
+- `backend/app/api/routes/stats.py`: `traffic_heatmap` was absent from overview response (key was incorrectly named `traffic_chart`); invalid 24h `DATE_TRUNC('minute'::interval * 15, ...)` expression replaced with correct floor-division formula; scoped `sql_text` import replaced with module-level `text`; bucket fill-loop now starts from `since_aligned` (boundary-truncated) to prevent key mismatches against SQL results
+- `frontend/src/components/ui/TrafficHeatmap.jsx`: enhanced to production-grade — 30d calendar layout with correct day-of-week offset and trailing padding; custom floating tooltip (replaces browser `title`); meta row (total hits / peak); color legend bar; 7d Y-axis day labels derived from bucket timestamps; improved `cellColor()` interpolation and proportional `cellGlow()` at intensity ≥ 0.4
+- `backend/app/api/routes/track.py`: removed `site_id=site.id` from `Incident(...)` constructor — `Incident` model has no such field; would raise `TypeError` on every bot detection event
+- `backend/app/schemas/stats.py`: replaced stale `TrafficPoint` / `traffic_chart: List[TrafficPoint]` with `HeatmapBucket` / `traffic_heatmap: List[HeatmapBucket]` in `OverviewResponse` to match actual API contract
 - `backend/app/api/routes/devices.py`: `last_seen` / `first_seen` now serialised as ISO 8601 (`isoformat()`) — `strftime` was stripping timezone context and would crash on `None` values
 - `frontend/src/pages/DevicesPage.jsx`: timestamps rendered via `fmtDate(iso)` → `toLocaleString()`, displaying in the operator's local timezone
 - `backend/app/api/routes/devices.py`: `list_devices` now includes `visitor_count` per device via correlated subquery

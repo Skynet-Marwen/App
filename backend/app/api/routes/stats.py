@@ -88,49 +88,56 @@ async def overview(
     visitors_change = round(((total_visitors - prev_visitors) / prev_visitors * 100)) if prev_visitors else 0
     blocked_change = round(((total_detected - prev_detected) / prev_detected * 100)) if prev_detected else 0
     
-    # Traffic heatmap - dynamic bucketing based on range
-    bucket_map = {
-        '1h': ("'minute'", 60, timedelta(minutes=1)),
-        '24h': ("'minute'::interval * 15", 96, timedelta(minutes=15)),
-        '7d': ("'hour'", 168, timedelta(hours=1)),
-        '30d': ("'day'", 30, timedelta(days=1)),
+    # Traffic heatmap — dynamic bucketing by range
+    _bucket_cfg = {
+        '1h':  ("DATE_TRUNC('minute', created_at)",  60,  timedelta(minutes=1)),
+        '24h': (
+            "DATE_TRUNC('hour', created_at) + "
+            "FLOOR(EXTRACT(MINUTE FROM created_at) / 15)::int * INTERVAL '15 minutes'",
+            96, timedelta(minutes=15),
+        ),
+        '7d':  ("DATE_TRUNC('hour', created_at)", 168, timedelta(hours=1)),
+        '30d': ("DATE_TRUNC('day',  created_at)",  30,  timedelta(days=1)),
     }
-    bucket_expr, expected_count, bucket_delta = bucket_map.get(range, ("'hour'", 24 * days, timedelta(hours=1)))
-    
-    traffic_query = f"""
-    SELECT 
-        DATE_TRUNC({bucket_expr}, created_at) as bucket,
-        COUNT(*) as count
-    FROM events
-    WHERE created_at >= '{since}' AND event_type = 'pageview'
-    GROUP BY DATE_TRUNC({bucket_expr}, created_at)
-    ORDER BY bucket
-    """
+    bucket_expr, expected_count, bucket_delta = _bucket_cfg.get(
+        range, ("DATE_TRUNC('hour', created_at)", 24, timedelta(hours=1))
+    )
+
+    # Align since to bucket boundary so fill-loop keys match SQL results
+    if range == '1h':
+        since_aligned = since.replace(second=0, microsecond=0)
+    elif range == '24h':
+        m = (since.minute // 15) * 15
+        since_aligned = since.replace(minute=m, second=0, microsecond=0)
+    elif range == '7d':
+        since_aligned = since.replace(minute=0, second=0, microsecond=0)
+    else:
+        since_aligned = since.replace(hour=0, minute=0, second=0, microsecond=0)
+
     try:
-        result = await db.execute(sql_text(traffic_query))
+        heatmap_sql = f"""
+        SELECT {bucket_expr} AS bucket, COUNT(*) AS count
+        FROM events
+        WHERE created_at >= :since AND event_type = 'pageview'
+        GROUP BY 1 ORDER BY 1
+        """
+        result = await db.execute(text(heatmap_sql), {"since": since_aligned})
         rows = result.fetchall()
-        
-        # Fill missing buckets with 0
-        buckets = {}
-        for row in rows:
-            buckets[row[0]] = row[1]
-        
-        traffic_heatmap = []
-        current = since
-        for i in range(expected_count):
-            count = buckets.get(current, 0)
+
+        def _utc(dt):
+            return dt.replace(tzinfo=timezone.utc) if dt and dt.tzinfo is None else dt
+
+        buckets = {_utc(row[0]): row[1] for row in rows}
+        traffic_heatmap, current = [], since_aligned
+        for _ in range(expected_count):
             traffic_heatmap.append({
                 'timestamp': current.strftime('%Y-%m-%d %H:%M:%S'),
-                'count': count,
+                'count': buckets.get(current, 0),
             })
             current += bucket_delta
-        
-    except Exception as e:
+    except Exception:
         traffic_heatmap = []
-    
-    # Keep old traffic_chart for backward compatibility
-    traffic_chart = []
-    
+
     # Blocking chart - by incident type
     blocking_query = """
     SELECT type, COUNT(*) as count
@@ -140,15 +147,39 @@ async def overview(
     LIMIT 10
     """
     try:
-        result = await db.execute(sql_text(blocking_query))
+        result = await db.execute(text(blocking_query))
         rows = result.fetchall()
         blocking_chart = [
             {"reason": row[0], "count": row[1]}
             for row in rows
         ]
-    except:
+    except Exception:
         blocking_chart = []
     
+    # Top countries by visitor count
+    countries_result = await db.execute(
+        select(
+            Visitor.country,
+            Visitor.country_flag,
+            func.count(Visitor.id).label("cnt"),
+        )
+        .where(Visitor.first_seen >= since, Visitor.country.isnot(None))
+        .group_by(Visitor.country, Visitor.country_flag)
+        .order_by(func.count(Visitor.id).desc())
+        .limit(10)
+    )
+    country_rows = countries_result.fetchall()
+    country_total = sum(r[2] for r in country_rows) or 1
+    top_countries = [
+        {
+            "country": r[0],
+            "flag": r[1] or "",
+            "count": r[2],
+            "percent": round(r[2] / country_total * 100, 1),
+        }
+        for r in country_rows
+    ]
+
     # Recent incidents
     incidents_result = await db.execute(
         select(Incident).order_by(Incident.detected_at.desc()).limit(5)
@@ -174,7 +205,8 @@ async def overview(
         "visitors_change": visitors_change,
         "users_change": 0,
         "blocked_change": blocked_change,
-        "traffic_chart": traffic_chart,        "traffic_heatmap": traffic_heatmap,        "top_countries": [],
+        "traffic_heatmap": traffic_heatmap,
+        "top_countries": top_countries,
         "blocking_chart": blocking_chart,
         "recent_incidents": recent_incidents,
     }

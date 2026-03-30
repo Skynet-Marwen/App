@@ -24,18 +24,40 @@
 
 ---
 
-## Done (Traffic Heatmap Refactor — 2026-03-30)
+## Done (Metric Synchronization — 2026-03-30)
 
-- [x] 2026-03-30 — refactor(dashboard): Traffic Over Time chart → time-based heatmap visualization
-  - Created `TrafficHeatmap` component with CSS Grid layout supporting 1h/24h/7d/30d modes
-  - Backend: Extended `stats/overview` API with `traffic_heatmap` field using dynamic DATE_TRUNC queries
-  - Frontend: Replaced area chart with heatmap component in OverviewPage, normalized color scaling (dark navy → neon cyan)
-  - Component layers: Container (data normalization), Grid (CSS Grid layout), Cell (intensity visualization + tooltips)
-
----
+- [x] 2026-03-30 — fix(stats): synchronized visitor/blocked/event metrics in dashboard
+  - Backend: `overview()` endpoint now properly aggregates distinct visitors, summed blocked attempts, device count, traffic hourly chart, blocking by incident type
   - Backend: `realtime()` endpoint now calculates active visitors (5-min window), blocked attempts (1-min window), suspicious sessions (1-hour incidents)
   - Frontend: real-time refresh reduced from 30s → 10s, overview auto-refresh every 60s
   - `backend/app/api/routes/stats.py` — 156 lines (split if crosses 300)
+
+---
+
+## Done (HTTP Security Headers — 2026-03-30)
+
+- [x] 2026-03-30 — security(middleware): HTTP security headers on all responses
+  - `backend/app/middleware/security_headers.py`: `SecurityHeadersMiddleware` — sets CSP, HSTS, X-Frame-Options DENY, X-Content-Type-Options nosniff, X-XSS-Protection, Referrer-Policy, Permissions-Policy
+  - Registered in `main.py` before CORS middleware
+
+---
+
+## Done (GeoIP Enrichment — 2026-03-30)
+
+- [x] 2026-03-30 — feat(geoip): P0 GeoIP enrichment on visitor upsert
+  - `backend/app/core/geoip.py`: lazy-load GeoLite2-City reader, silent fallback if DB absent, flag emoji via Unicode regional indicators
+  - `backend/app/api/routes/track.py`: `geoip_lookup(ip)` called on new visitor creation only; populates `country`, `country_code`, `country_flag`, `city`
+  - `backend/app/api/routes/stats.py`: `top_countries` now real data — grouped visitor counts by country/flag, percent share, limit 10; WorldGlobe visualization now functional
+  - `backend/app/schemas/stats.py`: `CountryStats` aligned to actual response contract (`count` added, `country_code` removed)
+
+---
+
+## Done (Audit Pass — 2026-03-30)
+
+- [x] 2026-03-30 — audit(project): full codebase audit against DEV_PLAN
+  - fix(track): removed `site_id=site.id` from `Incident(...)` constructor — field absent on model → `TypeError` at runtime on every bot detection event
+  - fix(schemas): replaced stale `TrafficPoint` / `traffic_chart` with `HeatmapBucket` / `traffic_heatmap` in `OverviewResponse`; exported `HeatmapBucket` from `schemas/__init__.py`
+  - confirmed done: Pydantic schemas layer (9 schema files, imported and used in routes) — removed from P1 backlog
 
 ---
 
@@ -56,7 +78,8 @@
 ### P0 — Critical (blocks production use)
 - [x] ~~Alembic migration setup~~ — ✅ resolved v1.1.0-dev
 - [x] ~~Rate limiting middleware~~ — ✅ resolved (slowapi, 2026-03-29)
-- [ ] GeoIP enrichment — integrate MaxMind GeoLite2 on visitor upsert
+- [x] GeoIP enrichment — ✅ resolved 2026-03-30
+- [x] HTTP security headers — ✅ resolved 2026-03-30
 - [ ] Redis session store — implement real session tracking (currently returns `[]`)
 - [ ] Anti-evasion background tasks — wire up async checks after pageview
 
@@ -64,7 +87,6 @@
 - [ ] Real-time WebSocket feed — live visitor stream on Overview page
 - [ ] Keycloak user sync background task — 15-min cron using APScheduler
 - [ ] Audit log table + endpoints — write-only, tracked per the LOGIC.md spec
-- [ ] Pydantic schemas layer — extract inline models from routes to `schemas/`
 - [ ] Frontend `hooks/` layer — extract `useVisitors`, `useUsers`, etc. from pages
 - [ ] Chart data — real aggregation queries (currently mocked in stats routes)
 - [ ] GeoIP country → flag emoji mapping utility

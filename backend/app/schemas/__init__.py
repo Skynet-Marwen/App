@@ -5,5 +5,5 @@ from .device import DeviceOut, DeviceListResponse, LinkRequest
 from .blocking import BlockingRuleOut, CreateRuleRequest, BlockIPRequest, BlockedIPOut, BlockedIPListResponse
 from .incident import IncidentOut, IncidentListResponse
 from .site import SiteOut, CreateSiteRequest
-from .stats import OverviewResponse, RealtimeResponse
+from .stats import OverviewResponse, RealtimeResponse, HeatmapBucket
 from .track import PageviewPayload, EventPayload, IdentifyPayload

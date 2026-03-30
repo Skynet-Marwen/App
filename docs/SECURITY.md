@@ -8,14 +8,17 @@
 
 | Threat | Vector | Mitigation | Status |
 |--------|--------|-----------|--------|
-| Credential brute force | `POST /auth/login` | Rate limit: 10 req/min per IP | Planned v1.1 |
+| Credential brute force | `POST /auth/login` | Rate limit: 10 req/min per IP (slowapi) | ✅ v1.1 |
 | JWT theft | XSS / network intercept | Short expiry (24h), HTTPS enforced | ✅ JWT, HTTPS infra |
 | API key leak | Exposed in client source | Per-site keys, revocable instantly, per-request logging | ✅ |
 | IP spoofing | X-Forwarded-For manipulation | Trusted proxy list in config; validate header chain | Planned v1.1 |
 | Fingerprint evasion | Private mode, canvas block | Multi-signal composite score; flag absent signals | ✅ Risk scoring |
 | CSRF | Cross-site form submission | Bearer token auth (not cookie-based) | ✅ |
 | SQL injection | User-supplied query params | SQLAlchemy ORM + Pydantic validation | ✅ |
-| XSS via stored data | User-agent / URL fields | Strip HTML on ingest; CSP headers via Nginx | Planned v1.1 |
+| XSS via stored data | User-agent / URL fields | Strip HTML on ingest; CSP headers via middleware | Planned v1.1 |
+| Clickjacking | iframe embedding | `X-Frame-Options: DENY` + CSP `frame-ancestors 'none'` | ✅ v1.1 |
+| MIME sniffing | Content-type confusion | `X-Content-Type-Options: nosniff` | ✅ v1.1 |
+| Information leakage via Referer | Cross-origin requests | `Referrer-Policy: strict-origin-when-cross-origin` | ✅ v1.1 |
 | Secret exposure | `.env` committed to git | `.gitignore` enforced; `.env.example` as template | ✅ |
 | Mass account creation | Tracker identify abuse | Max accounts per device/IP thresholds | ✅ Logic |
 | Insider threat | Admin account abuse | Audit log (write-only) for all state changes | Planned v1.1 |
@@ -49,7 +52,7 @@ openssl rand -hex 32    # → JWT_SECRET
 | `APP_SECRET_KEY` | 32 bytes random hex | 90 days |
 | `JWT_SECRET` | 32 bytes random hex | 90 days |
 | `DATABASE_URL` | Strong DB password | On personnel change |
-| `KEYCLOAK_CLIENT_SECRET` | Keycloak-generated | 90 days |
+| `GEOIP_DB_PATH` | N/A — file path | On MaxMind DB refresh |
 
 ### Secret Rotation Procedure
 1. Generate new secret.
@@ -116,19 +119,25 @@ Rate limit exceeded response: `HTTP 429` with `Retry-After` header.
 
 ---
 
-## HTTP Security Headers (Nginx)
+## HTTP Security Headers
 
-Add to `nginx.conf`:
-```nginx
-add_header X-Content-Type-Options    "nosniff"          always;
-add_header X-Frame-Options           "DENY"             always;
-add_header X-XSS-Protection          "1; mode=block"    always;
-add_header Referrer-Policy           "strict-origin"    always;
-add_header Content-Security-Policy   "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'" always;
-add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-```
+Applied by `backend/app/middleware/security_headers.py` (`SecurityHeadersMiddleware`) on **every response** — backend and tracker endpoints included.
 
-Status: **Planned v1.1** — add to nginx.conf.
+| Header | Value |
+|--------|-------|
+| `X-Content-Type-Options` | `nosniff` |
+| `X-Frame-Options` | `DENY` |
+| `X-XSS-Protection` | `1; mode=block` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Permissions-Policy` | `geolocation=(), microphone=(), camera=()` |
+| `Content-Security-Policy` | `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'` |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` |
+
+**CSP note:** `'unsafe-inline'` is required for the Vite/React production bundle and Tailwind inline styles. To tighten this, switch to nonce-based CSP when the nginx reverse proxy is updated to inject nonces.
+
+**HSTS note:** Browsers ignore HSTS over HTTP — safe to ship in all environments. Takes effect once served over HTTPS in production.
+
+Status: ✅ **v1.1**
 
 ---
 

@@ -1,7 +1,7 @@
 # SkyNet — Architecture
 
 > Living document. Update on every structural change.
-> Last updated: 2026-03-29 — post v1.0.1 — rate limiter, block-page config, system/info endpoint, Keycloak admin auth removed
+> Last updated: 2026-03-30 — v1.1.0-dev — GeoIP enrichment, HTTP security headers middleware, traffic heatmap, top_countries live data
 
 ---
 
@@ -87,10 +87,11 @@ FastAPI /track/pageview
   ├─ 5. Extract client IP (X-Forwarded-For / client.host)
   ├─ 6. Check BlockedIP table → if blocked: increment hits, return 403
   ├─ 7. Parse User-Agent (ua-parser)
-  ├─ 8. Upsert Visitor (by IP + site_id)
-  ├─ 9. Upsert Device (by fingerprint) → calculate risk score
-  ├─ 10. Insert Event record
-  └─ 11. Dispatch async anti-evasion checks (background task)
+  ├─ 8. GeoIP lookup (MaxMind GeoLite2-City) → country, city, flag emoji (new visitors only)
+  ├─ 9. Upsert Visitor (by IP + site_id) — geo fields set on creation
+  ├─ 10. Upsert Device (by fingerprint) → calculate risk score
+  ├─ 11. Insert Event record
+  └─ 12. Dispatch async anti-evasion checks (background task)
 
 Anti-Evasion Service (async)
   │
@@ -113,7 +114,18 @@ FastAPI  → Decode JWT → fetch User from DB → inject as dependency
 > Note: Keycloak is **not used** for SkyNet admin authentication. Keycloak is
 > targeted as a security enforcement layer for *tracked websites* (v1.5.0 roadmap).
 
-### 3. Rate Limiting Flow
+### 3. Security Headers Flow
+```
+Request → SecurityHeadersMiddleware (outermost)
+  → CORSMiddleware
+  → slowapi limiter
+  → route handler
+  ← response ← SecurityHeadersMiddleware injects security headers
+```
+Headers set: `X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`,
+`Referrer-Policy`, `Permissions-Policy`, `Content-Security-Policy`, `Strict-Transport-Security`.
+
+### 4. Rate Limiting Flow
 ```
 Request → slowapi limiter (app.state.limiter)
   ├─ Limit not exceeded → pass through to route handler
@@ -126,7 +138,7 @@ Limits applied (see `docs/SECURITY.md` for the full table):
 - `/api/v1/auth/login` — 10 req/min per IP
 - All other `/api/v1/*` — 300 req/min per authenticated user
 
-### 4. Device Linking Flow
+### 5. Device Linking Flow
 ```
 Dashboard Admin → POST /api/v1/devices/{id}/link { user_id }
   OR

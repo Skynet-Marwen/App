@@ -76,8 +76,8 @@ Auth required.
   "visitors_change": 8.2,
   "users_change": -1.4,
   "blocked_change": 15.0,
-  "traffic_chart": [{ "time": "00:00", "visitors": 12, "blocked": 1 }],
-  "top_countries": [{ "country": "Tunisia", "country_code": "TN", "flag": "🇹🇳", "percent": 42 }],
+  "traffic_heatmap": [{ "timestamp": "2026-03-30 12:00:00", "count": 42 }],
+  "top_countries": [{ "country": "Tunisia", "flag": "🇹🇳", "count": 58, "percent": 42.3 }],
   "blocking_chart": [{ "reason": "VPN", "count": 18 }],
   "recent_incidents": [{ "id": "uuid", "title": "VPN_DETECTED", "severity": "high", "time": "2026-03-29 14:22" }]
 }

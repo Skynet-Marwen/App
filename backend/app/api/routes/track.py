@@ -15,6 +15,7 @@ from ...models.incident import Incident
 from ...models.blocking import BlockedIP
 from ...models.block_page_config import BlockPageConfig
 from ...schemas.track import PageviewPayload, EventPayload, IdentifyPayload
+from ...core.geoip import lookup as geoip_lookup
 import uuid
 from datetime import datetime, timezone
 
@@ -132,7 +133,16 @@ async def track_pageview(
         # Upsert visitor
         visitor = await db.scalar(select(Visitor).where(Visitor.ip == ip, Visitor.site_id == site.id))
         if not visitor:
-            visitor = Visitor(id=str(uuid.uuid4()), ip=ip, site_id=site.id)
+            geo = geoip_lookup(ip)
+            visitor = Visitor(
+                id=str(uuid.uuid4()),
+                ip=ip,
+                site_id=site.id,
+                country=geo.get("country") or None,
+                country_code=geo.get("country_code") or None,
+                country_flag=geo.get("country_flag") or None,
+                city=geo.get("city") or None,
+            )
             db.add(visitor)
 
         # Parse UA
@@ -183,7 +193,6 @@ async def track_pageview(
         if "bot" in ua_string.lower() or "crawler" in ua_string.lower() or "spider" in ua_string.lower():
             incident = Incident(
                 id=str(uuid.uuid4()),
-                site_id=site.id,
                 type="bot_detection",
                 description=f"Bot detected: {ua_string}",
                 ip=ip,
