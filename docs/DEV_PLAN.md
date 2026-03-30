@@ -16,6 +16,14 @@
 
 ---
 
+## Done (Post-Scaffold Fixes — 2026-03-29, continued)
+
+- [x] 2026-03-29 — refactor(auth): removed Keycloak SSO from SkyNet admin — native JWT only; Keycloak repurposed as security enforcement layer for tracked websites (v1.5.0)
+- [x] 2026-03-29 — feat(roadmap): added v1.5.0 Keycloak Security Enforcement Layer to ROADMAP.md
+- [x] 2026-03-29 — feat(roadmap): added v1.6.0 Active Anti-Bot / Anti-Spam Gateway to ROADMAP.md
+
+---
+
 ## Done (Post-Scaffold Fixes — 2026-03-29)
 
 ---

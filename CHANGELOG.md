@@ -10,9 +10,19 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 ## [Unreleased]
 
 ### Added
+- `docs/ROADMAP.md`: v1.5.0 Keycloak Security Enforcement Layer — Keycloak as security enforcement for tracked websites (event monitoring, user sync, threat correlation, session revocation)
+- `docs/ROADMAP.md`: v1.6.0 Active Anti-Bot / Anti-Spam Gateway — reverse proxy mode, bot detection pipeline, spam prevention, gateway dashboard
+
 ### Changed
-### Fixed
+- SkyNet admin authentication is **native JWT only** — Keycloak is no longer used or intended for SkyNet dashboard login
+
 ### Removed
+- Keycloak SSO settings tab from `frontend/src/pages/SettingsPage.jsx`
+- `GET /api/v1/settings/keycloak` and `PUT /api/v1/settings/keycloak` endpoints
+- `KEYCLOAK_*` fields from `backend/app/core/config.py` and `backend/.env.example`
+- `settingsApi.keycloak()` and `settingsApi.updateKeycloak()` from `frontend/src/services/api.js`
+
+### Fixed
 ### Security
 
 ---

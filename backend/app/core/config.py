@@ -15,13 +15,6 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 1440
 
-    KEYCLOAK_URL: str = ""
-    KEYCLOAK_REALM: str = "master"
-    KEYCLOAK_CLIENT_ID: str = "skynet"
-    KEYCLOAK_CLIENT_SECRET: str = ""
-    KEYCLOAK_ADMIN_USERNAME: str = "admin"
-    KEYCLOAK_ADMIN_PASSWORD: str = ""
-
     GEOIP_DB_PATH: str = "./data/GeoLite2-City.mmdb"
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
 

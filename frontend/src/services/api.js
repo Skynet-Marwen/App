@@ -110,8 +110,6 @@ export const systemApi = {
 export const settingsApi = {
   get: () => api.get('/settings'),
   update: (data) => api.put('/settings', data),
-  keycloak: () => api.get('/settings/keycloak'),
-  updateKeycloak: (data) => api.put('/settings/keycloak', data),
 }
 
 export default api

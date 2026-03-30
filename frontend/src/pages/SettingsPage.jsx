@@ -1,13 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Settings, Save, ShieldCheck, CheckCircle } from 'lucide-react'
+import { Settings, Save, CheckCircle } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
-import { Card, CardHeader, Button, Input, Toggle, Select, Alert } from '../components/ui/index'
+import { Card, CardHeader, Button, Input, Toggle, Select } from '../components/ui/index'
 import { settingsApi } from '../services/api'
 
 export default function SettingsPage() {
   const [tab, setTab] = useState('general')
   const [settings, setSettings] = useState({})
-  const [keycloak, setKeycloak] = useState({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState('')
@@ -15,9 +14,8 @@ export default function SettingsPage() {
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const [sRes, kRes] = await Promise.all([settingsApi.get(), settingsApi.keycloak()])
-      setSettings(sRes.data)
-      setKeycloak(kRes.data)
+      const res = await settingsApi.get()
+      setSettings(res.data)
     } catch (_) {}
     finally { setLoading(false) }
   }, [])
@@ -34,23 +32,12 @@ export default function SettingsPage() {
     finally { setSaving(false) }
   }
 
-  const saveKeycloak = async () => {
-    setSaving(true)
-    try {
-      await settingsApi.updateKeycloak(keycloak)
-      setSaved('keycloak')
-      setTimeout(() => setSaved(''), 2000)
-    } catch (_) {}
-    finally { setSaving(false) }
-  }
-
   return (
     <DashboardLayout title="Settings">
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-900 border border-gray-800 rounded-xl p-1 mb-6 w-fit">
         {[
           { key: 'general', label: 'General' },
-          { key: 'keycloak', label: 'Keycloak / Auth' },
           { key: 'data', label: 'Data & Retention' },
           { key: 'webhooks', label: 'Webhooks' },
         ].map((t) => (
@@ -99,58 +86,6 @@ export default function SettingsPage() {
             <div className="mt-5 flex justify-end">
               <Button loading={saving} onClick={saveGeneral} icon={saved === 'general' ? CheckCircle : Save}>
                 {saved === 'general' ? 'Saved!' : 'Save Settings'}
-              </Button>
-            </div>
-          </Card>
-        </div>
-      )}
-
-      {tab === 'keycloak' && (
-        <div className="space-y-4 max-w-2xl">
-          <Alert type="info">
-            <div>
-              <p className="font-medium">Keycloak Integration</p>
-              <p className="text-xs mt-0.5 opacity-80">Connect SkyNet to your Keycloak instance for SSO and user management.</p>
-            </div>
-          </Alert>
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <ShieldCheck size={16} className="text-cyan-400" />
-                <p className="text-sm font-medium text-white">Keycloak Configuration</p>
-              </div>
-            </CardHeader>
-            <div className="space-y-4">
-              <Input label="Keycloak URL" placeholder="https://auth.example.com" value={keycloak.url ?? ''} onChange={(e) => setKeycloak({ ...keycloak, url: e.target.value })} />
-              <Input label="Realm" placeholder="master" value={keycloak.realm ?? ''} onChange={(e) => setKeycloak({ ...keycloak, realm: e.target.value })} />
-              <Input label="Client ID" placeholder="skynet" value={keycloak.client_id ?? ''} onChange={(e) => setKeycloak({ ...keycloak, client_id: e.target.value })} />
-              <Input label="Client Secret" type="password" placeholder="••••••••••••" value={keycloak.client_secret ?? ''} onChange={(e) => setKeycloak({ ...keycloak, client_secret: e.target.value })} />
-              <Input label="Admin Username" placeholder="admin" value={keycloak.admin_username ?? ''} onChange={(e) => setKeycloak({ ...keycloak, admin_username: e.target.value })} />
-              <Input label="Admin Password" type="password" placeholder="••••••••••••" value={keycloak.admin_password ?? ''} onChange={(e) => setKeycloak({ ...keycloak, admin_password: e.target.value })} />
-              <div className="divide-y divide-gray-800">
-                <Toggle
-                  label="Enable Keycloak Auth"
-                  description="Use Keycloak as the primary authentication provider"
-                  checked={!!keycloak.enabled}
-                  onChange={(v) => setKeycloak({ ...keycloak, enabled: v })}
-                />
-                <Toggle
-                  label="Sync Users from Keycloak"
-                  description="Automatically import users from Keycloak realm"
-                  checked={!!keycloak.sync_users}
-                  onChange={(v) => setKeycloak({ ...keycloak, sync_users: v })}
-                />
-                <Toggle
-                  label="Enforce Keycloak Roles"
-                  description="Map Keycloak roles to SkyNet permissions"
-                  checked={!!keycloak.enforce_roles}
-                  onChange={(v) => setKeycloak({ ...keycloak, enforce_roles: v })}
-                />
-              </div>
-            </div>
-            <div className="mt-5 flex justify-end">
-              <Button loading={saving} onClick={saveKeycloak} icon={saved === 'keycloak' ? CheckCircle : Save}>
-                {saved === 'keycloak' ? 'Saved!' : 'Save Keycloak Config'}
               </Button>
             </div>
           </Card>

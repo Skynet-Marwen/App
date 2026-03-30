@@ -13,8 +13,7 @@ Core scaffold. Functional dashboard. Embeddable tracker. Docker deployment.
 - Blocking engine (IP, country, device, user-agent, ASN)
 - Anti-evasion detection UI
 - Embeddable tracker script (skynet.js)
-- JWT auth with default admin
-- Keycloak settings UI
+- JWT auth with default admin (native login only — no external SSO)
 - Docker Compose full-stack
 
 ---
@@ -44,10 +43,72 @@ Make the detection smarter and more automated.
 - [ ] Tor/VPN IP list auto-update (daily background task)
 - [ ] Device risk score live recalculation on each pageview
 - [ ] Anti-spam sliding window (Redis-backed per device)
-- [ ] Keycloak user sync background task (15-min APScheduler)
-- [ ] Keycloak OAuth2 callback flow
 - [ ] IP rotation detection (Redis sliding window)
 - [ ] Multi-account detection alerts
+
+---
+
+## v1.5.0 — Keycloak Security Enforcement Layer `Target: Q2 2027`
+Use Keycloak as a **security enforcement layer for tracked websites** — not for SkyNet admin login.
+SkyNet monitors Keycloak events and acts on them: auto-block threats, sync users, enforce policies.
+
+> SkyNet admin authentication is **always native JWT only**. Keycloak is never used to log into SkyNet.
+
+### Keycloak Event Monitoring
+- [ ] Subscribe to Keycloak admin events via webhook (login failures, account lockouts, realm changes)
+- [ ] Map Keycloak events to SkyNet incident types (brute-force → severity=high, account takeover → severity=critical)
+- [ ] Auto-block IP in SkyNet when Keycloak reports N failed logins from that IP
+- [ ] Dashboard: Keycloak event stream panel on Anti-Evasion page
+
+### User Sync (Tracked Website Users)
+- [ ] Background task (APScheduler, 15-min interval): pull users from Keycloak realm into SkyNet `users` table
+- [ ] Map Keycloak roles → SkyNet `user.role` (configurable mapping per realm)
+- [ ] Detect and flag Keycloak users that appear on SkyNet's blocked device/IP list
+- [ ] API: `POST /api/v1/integration/keycloak/sync` — manual trigger for on-demand sync
+
+### Threat Correlation
+- [ ] Cross-reference Keycloak session tokens with SkyNet visitor fingerprints
+- [ ] Detect Keycloak authenticated users browsing with blocked/high-risk devices
+- [ ] Alert when a Keycloak user's session originates from a Tor/VPN IP
+- [ ] Auto-revoke Keycloak session via admin API when SkyNet auto-blocks a device
+
+### Configuration (Settings page — future tab)
+- [ ] Keycloak URL, realm, client credentials (stored encrypted in DB, not in-memory)
+- [ ] Per-rule toggles: auto-block on brute-force, auto-sync users, enforce roles, revoke sessions
+- [ ] Test connection button: validate Keycloak admin API credentials
+
+---
+
+## v1.6.0 — Active Anti-Bot / Anti-Spam Gateway `Target: Q3 2027`
+SkyNet evolves from **passive observer** to **active enforcement gateway** for tracked websites.
+Sites can route requests through SkyNet before they reach the origin server.
+
+### Gateway Mode
+- [ ] Reverse proxy mode: tracked site routes HTTP requests through SkyNet gateway
+- [ ] SkyNet evaluates every request: fingerprint, IP reputation, risk score, bot signals
+- [ ] Decision engine: ALLOW / CHALLENGE / BLOCK per request (sub-10ms target via Redis cache)
+- [ ] Challenge types: CAPTCHA redirect, JS proof-of-work, invisible honeypot, rate-gate
+- [ ] Block response: configurable (HTTP 403, silent redirect, tarpit/slow response)
+
+### Bot Detection Pipeline
+- [ ] Headless browser detection: missing browser APIs, navigator.webdriver, inconsistent timing
+- [ ] Crawler signature matching: known bot user-agent patterns + behavior fingerprints
+- [ ] Click farm detection: abnormally uniform mouse paths, zero entropy interactions
+- [ ] Form spam detection: honeypot fields, submission velocity, field fill timing analysis
+- [ ] API abuse detection: pattern matching on request sequences (scraping, credential stuffing)
+
+### Spam Prevention
+- [ ] Per-endpoint rate enforcement: configurable rules per URL pattern (e.g. `/contact` max 3/hour/IP)
+- [ ] Submission fingerprinting: hash form content → detect duplicate submissions across IPs
+- [ ] Email address reputation check: integrate disposable email provider blocklist
+- [ ] Phone number validation: international format + carrier lookup (pluggable provider)
+- [ ] DNSBL integration: check submitter IP against public spam/abuse databases
+
+### Dashboard & Reporting
+- [ ] Gateway traffic overview: total requests, allowed/challenged/blocked counts, bot %, latency
+- [ ] Real-time bot stream: live feed of bot detections with signals that triggered the block
+- [ ] Challenge analytics: CAPTCHA solve rate, proof-of-work pass rate, drop-off by challenge type
+- [ ] Spam campaign detection: cluster analysis of coordinated attacks (same subnet, same payload)
 
 ---
 
