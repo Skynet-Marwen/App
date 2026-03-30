@@ -46,6 +46,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Basic anti-evasion checks added to track endpoint for bot detection
 - Traffic chart now shows hourly visitor/blocked aggregation via SQL DATE_TRUNC
 - Blocking activity chart now breaks down by incident type
+- `backend/app/api/routes/stats.py`: restored migration support for Alembic revision `0002` (missing file caused backend restart and API 502)
+- `backend/alembic/versions/0002_block_page_config.py`: created no-op migration to match `alembic_version` table and avoid startup failure
+- `frontend/nginx` proxy 502 resolved after backend restart and migration alignment; API routes now reachable (`/api/v1/system/info`, `/api/v1/stats/overview`, `/api/v1/stats/realtime`)
 
 ### Security
 

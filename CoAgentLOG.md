@@ -47,6 +47,7 @@
 [2026-03-30 05:10] Committed and pushed comprehensive blocked count fix
 
 [2026-03-30 05:10] fix(devices): added Unblock button in DevicesPage.jsx for blocked devices — backend DELETE /devices/{id}/block existed but UI had no trigger; added handleUnblock() and conditional Unblock/Block render in actions column — Agent: Claude Sonnet 4.6
+[2026-03-30 07:35] hotfix(alegbic): backfilled backend/alembic/versions/0002_block_page_config.py to resolve "Can't locate revision identified by '0002'", service restart loop and 502 proxy errors; rebuilt backend and confirmed `/api/v1/system/info` and `/api/v1/stats/*` are successful — Agent: Claude Sonnet 4.6
 
 [2026-03-30 05:15] chore(deploy): rebuilt and restarted skynet-frontend-1 container to deploy Unblock button fix — Agent: Claude Sonnet 4.6
 

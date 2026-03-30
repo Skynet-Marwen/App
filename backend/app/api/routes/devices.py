@@ -12,6 +12,7 @@ router = APIRouter(prefix="/devices", tags=["devices"])
 
 
 def _iso(dt):
+    """Return ISO 8601 string with timezone offset, or None."""
     return dt.isoformat() if dt else None
 
 
@@ -23,7 +24,7 @@ async def list_devices(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    # Correlated subquery: count visitors per device
+    # Correlated subquery: count distinct visitors per device fingerprint
     vc_sq = (
         select(func.count(Visitor.id))
         .where(Visitor.device_id == Device.id)
@@ -40,7 +41,9 @@ async def list_devices(
         cq = cq.where(flt)
 
     total = await db.scalar(cq) or 0
-    result = await db.execute(q.order_by(Device.last_seen.desc()).offset((page - 1) * page_size).limit(page_size))
+    result = await db.execute(
+        q.order_by(Device.last_seen.desc()).offset((page - 1) * page_size).limit(page_size)
+    )
     rows = result.all()
 
     return {
@@ -75,13 +78,22 @@ async def device_visitors(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
+    """All visitors that share this device fingerprint.
+
+    Same physical machine → multiple browsers / OSes / IPs all resolve
+    to one fingerprint. This endpoint exposes every visitor row tied to it.
+    """
     d = await db.get(Device, device_id)
     if not d:
         raise HTTPException(404, "Device not found")
+
     result = await db.execute(
-        select(Visitor).where(Visitor.device_id == device_id).order_by(Visitor.last_seen.desc())
+        select(Visitor)
+        .where(Visitor.device_id == device_id)
+        .order_by(Visitor.last_seen.desc())
     )
     visitors = result.scalars().all()
+
     return {
         "items": [
             {
@@ -102,7 +114,12 @@ async def device_visitors(
 
 
 @router.post("/{device_id}/link")
-async def link_device(device_id: str, body: LinkRequest, db: AsyncSession = Depends(get_db), _: User = Depends(get_current_user)):
+async def link_device(
+    device_id: str,
+    body: LinkRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
     d = await db.get(Device, device_id)
     if not d:
         raise HTTPException(404, "Device not found")
@@ -112,7 +129,11 @@ async def link_device(device_id: str, body: LinkRequest, db: AsyncSession = Depe
 
 
 @router.delete("/{device_id}/link")
-async def unlink_device(device_id: str, db: AsyncSession = Depends(get_db), _: User = Depends(get_current_user)):
+async def unlink_device(
+    device_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
     d = await db.get(Device, device_id)
     if not d:
         raise HTTPException(404, "Device not found")
@@ -122,7 +143,11 @@ async def unlink_device(device_id: str, db: AsyncSession = Depends(get_db), _: U
 
 
 @router.post("/{device_id}/block")
-async def block_device(device_id: str, db: AsyncSession = Depends(get_db), _: User = Depends(get_current_user)):
+async def block_device(
+    device_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
     d = await db.get(Device, device_id)
     if not d:
         raise HTTPException(404, "Not found")
@@ -136,7 +161,11 @@ async def block_device(device_id: str, db: AsyncSession = Depends(get_db), _: Us
 
 
 @router.delete("/{device_id}/block")
-async def unblock_device(device_id: str, db: AsyncSession = Depends(get_db), _: User = Depends(get_current_user)):
+async def unblock_device(
+    device_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
     d = await db.get(Device, device_id)
     if not d:
         raise HTTPException(404, "Not found")

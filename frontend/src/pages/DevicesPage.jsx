@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Search, Monitor, Link2, Unlink, Ban, Fingerprint, Users } from 'lucide-react'
-
-const fmtDate = (iso) =>
-  iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : '—'
 import DashboardLayout from '../components/layout/DashboardLayout'
 import { Card, Table, Badge, Button, Input, Pagination, Modal, Select } from '../components/ui/index'
 import { devicesApi, usersApi } from '../services/api'
+
+const fmtDate = (iso) =>
+  iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : '—'
 
 export default function DevicesPage() {
   const [devices, setDevices] = useState([])
@@ -14,11 +14,11 @@ export default function DevicesPage() {
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
+  const [deviceVisitors, setDeviceVisitors] = useState([])
   const [linkModal, setLinkModal] = useState(null)
   const [usersList, setUsersList] = useState([])
   const [linkUserId, setLinkUserId] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [deviceVisitors, setDeviceVisitors] = useState([])
 
   const fetchDevices = useCallback(async () => {
     setLoading(true)
@@ -60,20 +60,9 @@ export default function DevicesPage() {
     finally { setSubmitting(false) }
   }
 
-  const handleUnlink = async (device) => {
-    await devicesApi.unlink(device.id)
-    fetchDevices()
-  }
-
-  const handleBlock = async (device) => {
-    await devicesApi.block(device.id, 'Manual block')
-    fetchDevices()
-  }
-
-  const handleUnblock = async (device) => {
-    await devicesApi.unblock(device.id)
-    fetchDevices()
-  }
+  const handleUnlink = async (device) => { await devicesApi.unlink(device.id); fetchDevices() }
+  const handleBlock = async (device) => { await devicesApi.block(device.id, 'Manual block'); fetchDevices() }
+  const handleUnblock = async (device) => { await devicesApi.unblock(device.id); fetchDevices() }
 
   const riskBadge = (score) => {
     if (score >= 80) return <Badge variant="danger">{score} High</Badge>
@@ -94,17 +83,16 @@ export default function DevicesPage() {
       </span>
     )},
     { key: 'browser', label: 'Browser', render: (v, r) => <span className="text-xs text-gray-300">{v} / {r.os}</span> },
-    { key: 'linked_user', label: 'Linked User', render: (v) => v ? (
-      <span className="flex items-center gap-1.5 text-xs">
-        <Link2 size={12} className="text-cyan-400" />
-        <span className="text-cyan-400">{v}</span>
-      </span>
-    ) : <span className="text-xs text-gray-500">—</span>},
     { key: 'visitor_count', label: 'Visitors', render: (v) => (
       <span className="flex items-center gap-1 text-xs text-gray-300">
         <Users size={12} className="text-gray-500" /> {v ?? 0}
       </span>
     )},
+    { key: 'linked_user', label: 'Linked User', render: (v) => v ? (
+      <span className="flex items-center gap-1.5 text-xs">
+        <Link2 size={12} className="text-cyan-400" /><span className="text-cyan-400">{v}</span>
+      </span>
+    ) : <span className="text-xs text-gray-500">—</span>},
     { key: 'risk_score', label: 'Risk Score', render: (v) => riskBadge(v ?? 0) },
     { key: 'last_seen', label: 'Last Seen', render: (v) => <span className="text-xs text-gray-400">{fmtDate(v)}</span> },
     { key: 'status', label: 'Status', render: (v) => (
@@ -114,22 +102,14 @@ export default function DevicesPage() {
       key: 'actions', label: '', width: '140px',
       render: (_, row) => (
         <div className="flex gap-1">
-          {row.linked_user ? (
-            <Button variant="secondary" size="sm" icon={Unlink} onClick={(e) => { e.stopPropagation(); handleUnlink(row) }}>
-              Unlink
-            </Button>
-          ) : (
-            <Button variant="secondary" size="sm" icon={Link2} onClick={(e) => { e.stopPropagation(); openLinkModal(row) }}>
-              Link
-            </Button>
-          )}
-          {row.status === 'blocked' ? (
-            <Button variant="secondary" size="sm" icon={Ban} onClick={(e) => { e.stopPropagation(); handleUnblock(row) }}>
-              Unblock
-            </Button>
-          ) : (
-            <Button variant="danger" size="sm" icon={Ban} onClick={(e) => { e.stopPropagation(); handleBlock(row) }} />
-          )}
+          {row.linked_user
+            ? <Button variant="secondary" size="sm" icon={Unlink} onClick={(e) => { e.stopPropagation(); handleUnlink(row) }}>Unlink</Button>
+            : <Button variant="secondary" size="sm" icon={Link2} onClick={(e) => { e.stopPropagation(); openLinkModal(row) }}>Link</Button>
+          }
+          {row.status === 'blocked'
+            ? <Button variant="secondary" size="sm" icon={Ban} onClick={(e) => { e.stopPropagation(); handleUnblock(row) }}>Unblock</Button>
+            : <Button variant="danger" size="sm" icon={Ban} onClick={(e) => { e.stopPropagation(); handleBlock(row) }} />
+          }
         </div>
       )
     },
@@ -150,7 +130,6 @@ export default function DevicesPage() {
           </div>
           <span className="text-sm text-gray-500">{total.toLocaleString()} devices</span>
         </div>
-
         <Table columns={columns} data={devices} loading={loading} emptyMessage="No devices found" onRowClick={openDetailModal} />
         <Pagination page={page} total={total} pageSize={20} onChange={setPage} />
       </Card>
@@ -161,16 +140,11 @@ export default function DevicesPage() {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               {[
-                ['Fingerprint', selected.fingerprint],
-                ['Type', selected.type],
-                ['Browser', selected.browser],
-                ['OS', selected.os],
-                ['Screen', selected.screen_resolution],
-                ['Language', selected.language],
-                ['Timezone', selected.timezone],
-                ['Risk Score', selected.risk_score],
-                ['First Seen', fmtDate(selected.first_seen)],
-                ['Last Seen', fmtDate(selected.last_seen)],
+                ['Fingerprint', selected.fingerprint], ['Type', selected.type],
+                ['Browser', selected.browser], ['OS', selected.os],
+                ['Screen', selected.screen_resolution], ['Language', selected.language],
+                ['Timezone', selected.timezone], ['Risk Score', selected.risk_score],
+                ['First Seen', fmtDate(selected.first_seen)], ['Last Seen', fmtDate(selected.last_seen)],
               ].map(([label, value]) => (
                 <div key={label} className="bg-gray-800 rounded-lg p-3">
                   <p className="text-xs text-gray-500 mb-0.5">{label}</p>
@@ -191,19 +165,19 @@ export default function DevicesPage() {
               </div>
             )}
 
-            {/* Linked visitors */}
+            {/* Linked visitors — same hardware fingerprint, different browsers / IPs */}
             <div>
               <p className="text-xs text-gray-500 mb-2 flex items-center gap-1.5">
                 <Users size={12} /> Visitors on this device ({deviceVisitors.length})
               </p>
               {deviceVisitors.length === 0 ? (
-                <p className="text-xs text-gray-600 italic">No visitors recorded yet.</p>
+                <p className="text-xs text-gray-600 italic">No visitor records yet.</p>
               ) : (
                 <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
                   {deviceVisitors.map((v) => (
                     <div key={v.id} className="bg-gray-800 rounded-lg px-3 py-2 flex items-center justify-between">
                       <div className="flex items-center gap-2 text-xs text-gray-300">
-                        <span className="font-mono text-cyan-400">{v.ip}</span>
+                        <code className="text-cyan-400">{v.ip}</code>
                         {v.country_flag && <span>{v.country_flag}</span>}
                         <span className="text-gray-500">{v.browser ?? '?'} / {v.os ?? '?'}</span>
                       </div>
@@ -235,9 +209,7 @@ export default function DevicesPage() {
           />
           <div className="flex gap-2 justify-end">
             <Button variant="secondary" onClick={() => setLinkModal(null)}>Cancel</Button>
-            <Button loading={submitting} disabled={!linkUserId} onClick={handleLink} icon={Link2}>
-              Link Device
-            </Button>
+            <Button loading={submitting} disabled={!linkUserId} onClick={handleLink} icon={Link2}>Link Device</Button>
           </div>
         </div>
       </Modal>
