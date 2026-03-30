@@ -16,11 +16,15 @@ class Settings(BaseSettings):
     JWT_EXPIRE_MINUTES: int = 1440
 
     GEOIP_DB_PATH: str = "./data/GeoLite2-City.mmdb"
-    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
+    # "*" = allow all origins (self-hosted tool, security via API key + JWT)
+    CORS_ORIGINS: str = "*"
 
     @property
     def cors_origins_list(self) -> List[str]:
-        return [o.strip() for o in self.CORS_ORIGINS.split(",")]
+        v = self.CORS_ORIGINS.strip()
+        if v == "*":
+            return ["*"]
+        return [o.strip() for o in v.split(",")]
 
     class Config:
         env_file = ".env"

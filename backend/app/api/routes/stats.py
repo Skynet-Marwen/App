@@ -88,32 +88,48 @@ async def overview(
     visitors_change = round(((total_visitors - prev_visitors) / prev_visitors * 100)) if prev_visitors else 0
     blocked_change = round(((total_detected - prev_detected) / prev_detected * 100)) if prev_detected else 0
     
-    # Traffic chart - hourly aggregation
-    from sqlalchemy import cast, String
+    # Traffic heatmap - dynamic bucketing based on range
+    bucket_map = {
+        '1h': ("'minute'", 60, timedelta(minutes=1)),
+        '24h': ("'minute'::interval * 15", 96, timedelta(minutes=15)),
+        '7d': ("'hour'", 168, timedelta(hours=1)),
+        '30d': ("'day'", 30, timedelta(days=1)),
+    }
+    bucket_expr, expected_count, bucket_delta = bucket_map.get(range, ("'hour'", 24 * days, timedelta(hours=1)))
+    
     traffic_query = f"""
     SELECT 
-        DATE_TRUNC('hour', created_at) as hour,
-        COUNT(CASE WHEN event_type = 'pageview' THEN 1 END) as visitors,
-        COALESCE(SUM(CASE WHEN ip IN (SELECT ip FROM blocked_ips) THEN 1 ELSE 0 END), 0) as blocked
+        DATE_TRUNC({bucket_expr}, created_at) as bucket,
+        COUNT(*) as count
     FROM events
-    WHERE created_at >= '{since}'
-    GROUP BY DATE_TRUNC('hour', created_at)
-    ORDER BY hour
+    WHERE created_at >= '{since}' AND event_type = 'pageview'
+    GROUP BY DATE_TRUNC({bucket_expr}, created_at)
+    ORDER BY bucket
     """
     try:
-        from sqlalchemy import text as sql_text
         result = await db.execute(sql_text(traffic_query))
         rows = result.fetchall()
-        traffic_chart = [
-            {
-                "time": row[0].strftime("%H:%M") if row[0] else "",
-                "visitors": row[1] or 0,
-                "blocked": row[2] or 0,
-            }
-            for row in rows
-        ]
-    except:
-        traffic_chart = []
+        
+        # Fill missing buckets with 0
+        buckets = {}
+        for row in rows:
+            buckets[row[0]] = row[1]
+        
+        traffic_heatmap = []
+        current = since
+        for i in range(expected_count):
+            count = buckets.get(current, 0)
+            traffic_heatmap.append({
+                'timestamp': current.strftime('%Y-%m-%d %H:%M:%S'),
+                'count': count,
+            })
+            current += bucket_delta
+        
+    except Exception as e:
+        traffic_heatmap = []
+    
+    # Keep old traffic_chart for backward compatibility
+    traffic_chart = []
     
     # Blocking chart - by incident type
     blocking_query = """
@@ -158,8 +174,7 @@ async def overview(
         "visitors_change": visitors_change,
         "users_change": 0,
         "blocked_change": blocked_change,
-        "traffic_chart": traffic_chart,
-        "top_countries": [],
+        "traffic_chart": traffic_chart,        "traffic_heatmap": traffic_heatmap,        "top_countries": [],
         "blocking_chart": blocking_chart,
         "recent_incidents": recent_incidents,
     }

@@ -68,6 +68,7 @@ export const usersApi = {
 export const devicesApi = {
   list: (params) => api.get('/devices', { params }),
   get: (id) => api.get(`/devices/${id}`),
+  visitors: (id) => api.get(`/devices/${id}/visitors`),
   link: (deviceId, userId) => api.post(`/devices/${deviceId}/link`, { user_id: userId }),
   unlink: (deviceId) => api.delete(`/devices/${deviceId}/link`),
   block: (id, reason) => api.post(`/devices/${id}/block`, { reason }),
@@ -110,6 +111,8 @@ export const systemApi = {
 export const settingsApi = {
   get: () => api.get('/settings'),
   update: (data) => api.put('/settings', data),
+  getBlockPage: () => api.get('/settings/block-page'),
+  updateBlockPage: (data) => api.put('/settings/block-page', data),
 }
 
 export default api

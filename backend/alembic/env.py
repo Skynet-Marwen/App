@@ -19,7 +19,7 @@ config.set_main_option("sqlalchemy.url", database_url)
 # Import all models so their tables are registered on Base.metadata
 from app.core.database import Base          # noqa: E402
 from app.models import (                    # noqa: E402, F401
-    user, visitor, device, site, event, blocking, incident,
+    user, visitor, device, site, event, blocking, incident, block_page_config,
 )
 
 target_metadata = Base.metadata

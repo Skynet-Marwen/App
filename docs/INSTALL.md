@@ -63,14 +63,6 @@ JWT_SECRET=<openssl rand -hex 32>
 JWT_ALGORITHM=HS256
 JWT_EXPIRE_MINUTES=1440
 
-# ── Keycloak (optional) ──────────────────────────────────────────
-KEYCLOAK_URL=https://auth.yourdomain.com
-KEYCLOAK_REALM=master
-KEYCLOAK_CLIENT_ID=skynet
-KEYCLOAK_CLIENT_SECRET=
-KEYCLOAK_ADMIN_USERNAME=admin
-KEYCLOAK_ADMIN_PASSWORD=
-
 # ── GeoIP (optional but recommended) ────────────────────────────
 # Download GeoLite2-City.mmdb from MaxMind and place in backend/data/
 GEOIP_DB_PATH=./data/GeoLite2-City.mmdb
@@ -160,27 +152,6 @@ Set `CORS_ORIGINS` to your domain only.
 
 ---
 
-## With Keycloak (SSO)
-
-```bash
-# Start with Keycloak profile
-docker compose --profile keycloak up -d
-
-# Access Keycloak admin: http://localhost:8080
-# Default: admin / admin
-
-# Create a realm and client:
-# 1. Create realm: skynet
-# 2. Create client: skynet
-#    - Client Protocol: openid-connect
-#    - Access Type: confidential
-#    - Valid Redirect URIs: https://skynet.yourdomain.com/*
-# 3. Copy client secret to .env → KEYCLOAK_CLIENT_SECRET
-# 4. Enable Keycloak in SkyNet Settings → Keycloak
-```
-
----
-
 ## GeoIP Setup (MaxMind)
 
 ```bash
@@ -265,7 +236,7 @@ cat backup_20260329.sql | docker exec -i skynet-db-1 psql -U skynet skynet
 | Dashboard shows "Not authenticated" | JWT expired or wrong `APP_BASE_URL` in `.env` |
 | No GeoIP data | `GEOIP_DB_PATH` wrong or file missing |
 | Tracker not sending | `CORS_ORIGINS` missing your site domain |
-| Keycloak not working | Verify client secret and redirect URIs |
+| Login returns 422 | Ensure `Content-Type: application/x-www-form-urlencoded` on `/auth/login` |
 | DB connection refused | Check `DATABASE_URL` and that `db` container is healthy |
 
 ```bash

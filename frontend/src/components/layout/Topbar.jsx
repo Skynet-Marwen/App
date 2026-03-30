@@ -10,19 +10,20 @@ export default function Topbar({ title, showRange = false, onRefresh }) {
   const unread = notifications.filter((n) => !n.read).length
 
   return (
-    <header className="h-16 bg-gray-900/80 backdrop-blur border-b border-gray-800 flex items-center justify-between px-6 sticky top-0 z-20">
+    <header className="h-14 backdrop-blur-md border-b border-cyan-500/10 flex items-center justify-between px-6 sticky top-0 z-20"
+      style={{ background: 'rgba(2,2,2,0.85)' }}>
       <div className="flex items-center gap-4">
-        <h1 className="text-lg font-semibold text-white">{title}</h1>
+        <h1 className="text-sm font-bold font-mono tracking-widest uppercase neon-text-cyan text-cyan-400">{title}</h1>
         {showRange && (
-          <div className="flex gap-1 bg-gray-800 rounded-lg p-1">
+          <div className="flex gap-1 rounded-lg p-1 border border-cyan-500/15" style={{ background: 'rgba(0,0,0,0.5)' }}>
             {RANGES.map((r) => (
               <button
                 key={r}
                 onClick={() => setStatsRange(r)}
-                className={`px-3 py-1 text-xs rounded-md font-medium transition ${
+                className={`px-3 py-1 text-xs rounded-md font-mono font-medium transition ${
                   statsRange === r
-                    ? 'bg-cyan-500 text-white'
-                    : 'text-gray-400 hover:text-white'
+                    ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40'
+                    : 'text-gray-500 hover:text-gray-300'
                 }`}
               >
                 {r}
@@ -36,7 +37,7 @@ export default function Topbar({ title, showRange = false, onRefresh }) {
         {onRefresh && (
           <button
             onClick={onRefresh}
-            className="p-2 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white transition"
+            className="p-2 rounded-lg text-cyan-500/60 hover:text-cyan-400 hover:bg-cyan-500/10 border border-transparent hover:border-cyan-500/20 transition"
           >
             <RefreshCw size={16} />
           </button>
@@ -54,8 +55,9 @@ export default function Topbar({ title, showRange = false, onRefresh }) {
             )}
           </button>
           {showNotifs && (
-            <div className="absolute right-0 mt-2 w-80 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl z-50">
-              <div className="p-3 border-b border-gray-800 flex items-center justify-between">
+            <div className="absolute right-0 mt-2 w-80 rounded-xl shadow-2xl z-50 border border-cyan-500/15"
+              style={{ background: 'rgba(4,4,4,0.95)', backdropFilter: 'blur(12px)' }}>
+              <div className="p-3 border-b border-cyan-500/10 flex items-center justify-between">
                 <span className="text-sm font-medium text-white">Notifications</span>
                 <span className="text-xs text-gray-500">{unread} unread</span>
               </div>

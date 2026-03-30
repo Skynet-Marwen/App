@@ -107,6 +107,90 @@
     }
   }
 
+  // ─── Block Page Enforcement ───────────────────────────────────────────────
+
+  function injectBlockPage(cfg, requestId) {
+    var bg      = cfg.bg_color     || '#050505';
+    var accent  = cfg.accent_color || '#ef4444';
+    var title   = cfg.title        || 'ACCESS RESTRICTED';
+    var sub     = cfg.subtitle     || 'Your access has been blocked.';
+    var msg     = cfg.message      || '';
+
+    document.documentElement.style.overflow = 'hidden';
+
+    var el = document.createElement('div');
+    el.id = '_sn_block_overlay';
+    el.style.cssText = [
+      'position:fixed', 'inset:0', 'z-index:2147483647',
+      'display:flex', 'align-items:center', 'justify-content:center',
+      'font-family:ui-monospace,SFMono-Regular,Menlo,monospace',
+      'background:' + bg,
+    ].join(';');
+
+    var parts = [
+      '<div style="text-align:center;max-width:460px;padding:40px 32px;',
+        'border:1px solid ' + accent + '33;',
+        'background:rgba(255,255,255,0.02);',
+        'box-shadow:0 0 40px ' + accent + '18,inset 0 0 40px rgba(0,0,0,0.3)">',
+      cfg.logo_url
+        ? '<img src="' + cfg.logo_url + '" style="height:44px;margin-bottom:24px;display:block;margin-left:auto;margin-right:auto" />'
+        : '',
+      '<div style="width:52px;height:52px;border:1.5px solid ' + accent + ';border-radius:50%;',
+        'display:flex;align-items:center;justify-content:center;',
+        'margin:0 auto 20px;color:' + accent + ';font-size:22px;',
+        'box-shadow:0 0 16px ' + accent + '55">&#10005;</div>',
+      '<h1 style="color:' + accent + ';font-size:16px;margin:0 0 10px;letter-spacing:0.15em;font-weight:700">',
+        title, '</h1>',
+      '<p style="color:#9ca3af;font-size:13px;margin:0 0 14px;line-height:1.5">', sub, '</p>',
+      msg ? '<p style="color:#6b7280;font-size:11px;margin:0 0 20px;line-height:1.6">' + msg + '</p>' : '',
+      cfg.show_request_id && requestId
+        ? '<code style="color:#374151;font-size:10px;display:block;margin-bottom:16px;letter-spacing:0.08em">REQ#' + requestId + '</code>'
+        : '',
+      cfg.show_contact && cfg.contact_email
+        ? '<a href="mailto:' + cfg.contact_email + '" style="color:' + accent + ';font-size:12px;text-decoration:none">'
+          + cfg.contact_email + '</a>'
+        : '',
+      '</div>',
+    ];
+
+    el.innerHTML = parts.join('');
+    document.documentElement.appendChild(el);
+  }
+
+  function checkAccess(fp, onClear) {
+    var url = API_BASE + '/api/v1/track/check-access?key=' + encodeURIComponent(API_KEY) + '&fp=' + encodeURIComponent(fp);
+
+    // Fail open: if check hangs or errors, always proceed with tracking
+    function handle(data) {
+      if (data && data.blocked) {
+        injectBlockPage(data.config || {}, data.request_id || '');
+      } else {
+        onClear();
+      }
+    }
+
+    if (typeof fetch !== 'undefined' && typeof AbortController !== 'undefined') {
+      var ctrl = new AbortController();
+      var timer = setTimeout(function () { ctrl.abort(); }, 3000);
+      fetch(url, { method: 'GET', signal: ctrl.signal })
+        .then(function (r) { clearTimeout(timer); return r.json(); })
+        .then(handle)
+        .catch(function () { clearTimeout(timer); onClear(); });
+    } else {
+      // Fallback: XHR with timeout
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', url, true);
+      xhr.timeout = 3000;
+      xhr.onload = function () {
+        try { handle(JSON.parse(xhr.responseText)); }
+        catch (e) { onClear(); }
+      };
+      xhr.onerror = function () { onClear(); };
+      xhr.ontimeout = function () { onClear(); };
+      xhr.send();
+    }
+  }
+
   // ─── Public API ───────────────────────────────────────────────────────────
 
   var SkyNet = {
@@ -175,23 +259,29 @@
     },
   };
 
-  // ─── Auto-track ───────────────────────────────────────────────────────────
+  // ─── Auto-track (with block check first) ─────────────────────────────────
 
-  if (sn.auto !== false) {
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', function () { SkyNet.trackPageview(); });
-    } else {
-      SkyNet.trackPageview();
-    }
+  function autoTrack() {
+    var fp = buildFingerprint();
+    checkAccess(fp, function () {
+      // Not blocked — proceed with normal tracking
+      if (sn.auto !== false) { SkyNet.trackPageview(); }
+    });
   }
 
-  // SPA support: re-track on history push
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', autoTrack);
+  } else {
+    autoTrack();
+  }
+
+  // SPA support: re-check and re-track on navigation
   var _pushState = history.pushState;
   history.pushState = function () {
     _pushState.apply(history, arguments);
-    setTimeout(function () { SkyNet.trackPageview(); }, 0);
+    setTimeout(autoTrack, 0);
   };
-  window.addEventListener('popstate', function () { SkyNet.trackPageview(); });
+  window.addEventListener('popstate', autoTrack);
 
   window.SkyNet = SkyNet;
   window._skynet = sn;

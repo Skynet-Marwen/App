@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Search, Monitor, Link2, Unlink, Ban, Fingerprint } from 'lucide-react'
+import { Search, Monitor, Link2, Unlink, Ban, Fingerprint, Users } from 'lucide-react'
+
+const fmtDate = (iso) =>
+  iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : '—'
 import DashboardLayout from '../components/layout/DashboardLayout'
 import { Card, Table, Badge, Button, Input, Pagination, Modal, Select } from '../components/ui/index'
 import { devicesApi, usersApi } from '../services/api'
@@ -15,6 +18,7 @@ export default function DevicesPage() {
   const [usersList, setUsersList] = useState([])
   const [linkUserId, setLinkUserId] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [deviceVisitors, setDeviceVisitors] = useState([])
 
   const fetchDevices = useCallback(async () => {
     setLoading(true)
@@ -27,6 +31,15 @@ export default function DevicesPage() {
   }, [page, search])
 
   useEffect(() => { fetchDevices() }, [fetchDevices])
+
+  const openDetailModal = async (device) => {
+    setSelected(device)
+    setDeviceVisitors([])
+    try {
+      const res = await devicesApi.visitors(device.id)
+      setDeviceVisitors(res.data.items)
+    } catch (_) {}
+  }
 
   const openLinkModal = async (device) => {
     setLinkModal(device)
@@ -87,8 +100,13 @@ export default function DevicesPage() {
         <span className="text-cyan-400">{v}</span>
       </span>
     ) : <span className="text-xs text-gray-500">—</span>},
+    { key: 'visitor_count', label: 'Visitors', render: (v) => (
+      <span className="flex items-center gap-1 text-xs text-gray-300">
+        <Users size={12} className="text-gray-500" /> {v ?? 0}
+      </span>
+    )},
     { key: 'risk_score', label: 'Risk Score', render: (v) => riskBadge(v ?? 0) },
-    { key: 'last_seen', label: 'Last Seen', render: (v) => <span className="text-xs text-gray-400">{v}</span> },
+    { key: 'last_seen', label: 'Last Seen', render: (v) => <span className="text-xs text-gray-400">{fmtDate(v)}</span> },
     { key: 'status', label: 'Status', render: (v) => (
       v === 'blocked' ? <Badge variant="danger">Blocked</Badge> : <Badge variant="success">Active</Badge>
     )},
@@ -133,12 +151,12 @@ export default function DevicesPage() {
           <span className="text-sm text-gray-500">{total.toLocaleString()} devices</span>
         </div>
 
-        <Table columns={columns} data={devices} loading={loading} emptyMessage="No devices found" onRowClick={setSelected} />
+        <Table columns={columns} data={devices} loading={loading} emptyMessage="No devices found" onRowClick={openDetailModal} />
         <Pagination page={page} total={total} pageSize={20} onChange={setPage} />
       </Card>
 
       {/* Device Detail Modal */}
-      <Modal open={!!selected} onClose={() => setSelected(null)} title="Device Details" width="max-w-2xl">
+      <Modal open={!!selected} onClose={() => { setSelected(null); setDeviceVisitors([]) }} title="Device Details" width="max-w-2xl">
         {selected && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
@@ -151,8 +169,8 @@ export default function DevicesPage() {
                 ['Language', selected.language],
                 ['Timezone', selected.timezone],
                 ['Risk Score', selected.risk_score],
-                ['First Seen', selected.first_seen],
-                ['Last Seen', selected.last_seen],
+                ['First Seen', fmtDate(selected.first_seen)],
+                ['Last Seen', fmtDate(selected.last_seen)],
               ].map(([label, value]) => (
                 <div key={label} className="bg-gray-800 rounded-lg p-3">
                   <p className="text-xs text-gray-500 mb-0.5">{label}</p>
@@ -172,6 +190,33 @@ export default function DevicesPage() {
                 <p className="text-xs text-gray-300 font-mono break-all">{selected.webgl_hash}</p>
               </div>
             )}
+
+            {/* Linked visitors */}
+            <div>
+              <p className="text-xs text-gray-500 mb-2 flex items-center gap-1.5">
+                <Users size={12} /> Visitors on this device ({deviceVisitors.length})
+              </p>
+              {deviceVisitors.length === 0 ? (
+                <p className="text-xs text-gray-600 italic">No visitors recorded yet.</p>
+              ) : (
+                <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                  {deviceVisitors.map((v) => (
+                    <div key={v.id} className="bg-gray-800 rounded-lg px-3 py-2 flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-xs text-gray-300">
+                        <span className="font-mono text-cyan-400">{v.ip}</span>
+                        {v.country_flag && <span>{v.country_flag}</span>}
+                        <span className="text-gray-500">{v.browser ?? '?'} / {v.os ?? '?'}</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-gray-500">
+                        <span>{v.page_views ?? 0} pvs</span>
+                        <span>{fmtDate(v.last_seen)}</span>
+                        <span className={v.status === 'blocked' ? 'text-red-400' : 'text-green-400'}>{v.status}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </Modal>

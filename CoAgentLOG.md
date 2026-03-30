@@ -18,6 +18,7 @@
 [2026-03-30 01:15] Updated frontend/src/pages/OverviewPage.jsx: Reduced refresh intervals (10s realtime, 60s overview)
 [2026-03-30 01:20] Committed and pushed stats fixes to GitHub
 [2026-03-30 01:25] Rebuilt and redeployed production containers with updated code
+[2026-03-30 02:00] Implemented Traffic Heatmap refactor: Created TrafficHeatmap component with CSS Grid layout, extended stats API with traffic_heatmap field, replaced area chart in OverviewPage with heatmap visualization supporting 1h/24h/7d/30d time modes
 [2026-03-30 01:30] Updated CHANGELOG.md and docs/DEV_PLAN.md with stats synchronization documentation
 [2026-03-30 01:35] Pushed documentation updates to GitHub
 [2026-03-30 02:00] Rebuilt frontend container to ensure latest code deployment
@@ -43,7 +44,18 @@
 [2026-03-30 05:00] fix(stats): corrected total_blocked in /stats/overview — was returning incident count (total_detected), now returns blocked_ips + blocked_visitors + blocked_devices; Device model import added to stats.py — Agent: Claude Sonnet 4.6
 [2026-03-30 05:01] fix(stats): validated Visitor.status and Device.status columns exist in ORM models before using in query — Agent: Claude Sonnet 4.6
 [2026-03-30 05:05] Backend rebuilt and restarted with corrected blocked count (blocked IPs + visitors + devices)
+[2026-03-30 05:10] Committed and pushed comprehensive blocked count fix
 
 [2026-03-30 05:10] fix(devices): added Unblock button in DevicesPage.jsx for blocked devices — backend DELETE /devices/{id}/block existed but UI had no trigger; added handleUnblock() and conditional Unblock/Block render in actions column — Agent: Claude Sonnet 4.6
+
+[2026-03-30 05:15] chore(deploy): rebuilt and restarted skynet-frontend-1 container to deploy Unblock button fix — Agent: Claude Sonnet 4.6
+
+[2026-03-30 06:00] feat(ui): full HUD redesign — obsidian bg+vignette (DashboardLayout), neon glow+glassmorphism+corner brackets+scan lines (Card, StatCard), monospace font, count-up animation (StatCard), wireframe globe SVG (WorldGlobe.jsx), combat log with Analyse/Quarantine buttons (CombatLog.jsx), traffic heatmap+gradient area, sidebar Cpu icon, topbar HUD styling. All pages updated via shared ui/index.jsx. 9 files modified/created. Frontend rebuilt. — Agent: Claude Sonnet 4.6
+
+[2026-03-30 07:00] feat(blocking): client-side block enforcement via skynet.js — added checkAccess()+injectBlockPage() to tracker; blocked visitors now get full-page uncloseable overlay instead of passing through. Backend: GET /track/check-access endpoint, BlockPageConfig model, migration 0002, GET/PUT /settings/block-page. Frontend: SettingsPage "Block Page" tab with color pickers + live preview. Rebuilt backend+frontend. — Agent: Claude Sonnet 4.6
+
+[2026-03-30 08:00] fix(tracking): Chrome mobile not detected — added 3s AbortController timeout to checkAccess() fetch (hanging fetch blocked onClear()); CORS_ORIGINS changed to "*" (self-hosted, security via JWT/API key); fix(blocking): visitor block now cascades to linked device, device block cascades to all linked visitors (bidirectional sync); fix(check-access): now also checks Visitor.status by IP. Rebuilt backend+frontend. — Agent: Claude Sonnet 4.6
+
+[2026-03-30 08:15] fix(track): CRITICAL — Event model was never imported in routes/track.py; every POST /track/pageview was crashing with NameError 500 since v1.0.0, zero visitors/events were being recorded. Fixed by adding `from ...models.event import Event`. All devices now properly detected. — Agent: Claude Sonnet 4.6
 
 *Last updated: 2026-03-30 — Agent: Claude Sonnet 4.6*

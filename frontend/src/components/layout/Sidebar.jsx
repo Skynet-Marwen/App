@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, Monitor, Shield, AlertTriangle,
   Plug, Settings, LogOut, ChevronLeft, ChevronRight,
-  Eye, Activity, Info
+  Eye, Activity, Info, Cpu
 } from 'lucide-react'
 import { useUIStore, useAuthStore } from '../../store/useAppStore'
 import { systemApi } from '../../services/api'
@@ -37,12 +37,13 @@ export default function Sidebar() {
 
   return (
     <aside
-      className={`flex flex-col bg-gray-900 border-r border-gray-800 transition-all duration-300 ${
+      className={`flex flex-col border-r border-cyan-500/10 transition-all duration-300 ${
         sidebarCollapsed ? 'w-16' : 'w-60'
       } min-h-screen`}
+      style={{ background: 'rgba(3,3,3,0.95)', backdropFilter: 'blur(8px)' }}
     >
       {/* Logo */}
-      <div className="flex items-center justify-between px-4 py-5 border-b border-gray-800">
+      <div className="flex items-center justify-between px-4 py-5 border-b border-cyan-500/10">
         {!sidebarCollapsed && (
           <div className="flex items-center gap-2">
             <Activity className="text-cyan-400" size={22} />
@@ -66,10 +67,10 @@ export default function Sidebar() {
             to={to}
             end={exact}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-mono font-medium tracking-wide transition-all ${
                 isActive
-                  ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
-                  : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                  ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/25 neon-text-cyan'
+                  : 'text-gray-500 hover:bg-cyan-500/5 hover:text-gray-200 border border-transparent'
               }`
             }
           >
@@ -80,7 +81,7 @@ export default function Sidebar() {
       </nav>
 
       {/* Version info + User / Logout */}
-      <div className="p-3 border-t border-gray-800 space-y-1">
+      <div className="p-3 border-t border-cyan-500/10 space-y-1">
 
         {/* Version panel — expanded sidebar only */}
         {!sidebarCollapsed && versionInfo && (
@@ -132,13 +133,21 @@ export default function Sidebar() {
           </div>
         )}
 
+        {/* CPU secure access indicator */}
+        <div className={`flex items-center gap-2 px-3 py-1.5 ${sidebarCollapsed ? 'justify-center' : ''}`}>
+          <Cpu size={13} className="text-cyan-500/50 flex-shrink-0 animate-pulse" />
+          {!sidebarCollapsed && (
+            <span className="text-xs font-mono text-cyan-500/40 tracking-widest">SECURE ACCESS</span>
+          )}
+        </div>
+
         {/* Logout */}
         <button
           onClick={handleLogout}
-          className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:bg-red-500/10 hover:text-red-400 transition"
+          className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-xs font-mono text-gray-500 hover:bg-red-500/10 hover:text-red-400 border border-transparent hover:border-red-500/20 transition"
         >
-          <LogOut size={18} className="flex-shrink-0" />
-          {!sidebarCollapsed && <span>Logout</span>}
+          <LogOut size={15} className="flex-shrink-0" />
+          {!sidebarCollapsed && <span>LOGOUT</span>}
         </button>
       </div>
     </aside>

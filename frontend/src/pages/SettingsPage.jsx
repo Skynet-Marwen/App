@@ -1,12 +1,20 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Settings, Save, CheckCircle } from 'lucide-react'
+import { Save, CheckCircle, ShieldOff } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
 import { Card, CardHeader, Button, Input, Toggle, Select } from '../components/ui/index'
 import { settingsApi } from '../services/api'
 
+const DEFAULT_BLOCK = {
+  title: 'ACCESS RESTRICTED', subtitle: 'Your access to this site has been blocked.',
+  message: 'This action was taken automatically for security reasons.',
+  bg_color: '#050505', accent_color: '#ef4444',
+  logo_url: '', contact_email: '', show_request_id: true, show_contact: true,
+}
+
 export default function SettingsPage() {
   const [tab, setTab] = useState('general')
   const [settings, setSettings] = useState({})
+  const [blockPage, setBlockPage] = useState(DEFAULT_BLOCK)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState('')
@@ -14,8 +22,9 @@ export default function SettingsPage() {
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await settingsApi.get()
-      setSettings(res.data)
+      const [sRes, bRes] = await Promise.all([settingsApi.get(), settingsApi.getBlockPage()])
+      setSettings(sRes.data)
+      setBlockPage({ ...DEFAULT_BLOCK, ...bRes.data })
     } catch (_) {}
     finally { setLoading(false) }
   }, [])
@@ -32,16 +41,29 @@ export default function SettingsPage() {
     finally { setSaving(false) }
   }
 
+  const saveBlockPage = async () => {
+    setSaving(true)
+    try {
+      await settingsApi.updateBlockPage(blockPage)
+      setSaved('block')
+      setTimeout(() => setSaved(''), 2000)
+    } catch (_) {}
+    finally { setSaving(false) }
+  }
+
+  const bp = blockPage
+
   return (
     <DashboardLayout title="Settings">
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-900 border border-gray-800 rounded-xl p-1 mb-6 w-fit">
         {[
-          { key: 'general', label: 'General' },
-          { key: 'data', label: 'Data & Retention' },
-          { key: 'webhooks', label: 'Webhooks' },
+          { key: 'general',    label: 'General' },
+          { key: 'data',       label: 'Data & Retention' },
+          { key: 'webhooks',   label: 'Webhooks' },
+          { key: 'block-page', label: 'Block Page' },
         ].map((t) => (
-          <button key={t.key} onClick={() => setTab(t.key)} className={`px-4 py-1.5 rounded-lg text-sm font-medium transition ${tab === t.key ? 'bg-cyan-500 text-white' : 'text-gray-400 hover:text-white'}`}>
+          <button key={t.key} onClick={() => setTab(t.key)} className={`px-4 py-1.5 rounded-lg text-xs font-mono font-medium tracking-wide transition ${tab === t.key ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40' : 'text-gray-500 hover:text-gray-300'}`}>
             {t.label}
           </button>
         ))}
@@ -127,6 +149,91 @@ export default function SettingsPage() {
             </div>
             <div className="mt-5 flex justify-end">
               <Button loading={saving} onClick={saveGeneral} icon={Save}>Save Retention Settings</Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {tab === 'block-page' && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          {/* Config form */}
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <p className="text-xs font-mono font-medium text-cyan-400 uppercase tracking-widest">Block Page Content</p>
+              </CardHeader>
+              <div className="space-y-4">
+                <Input label="Title" value={bp.title} onChange={(e) => setBlockPage({...bp, title: e.target.value})} />
+                <Input label="Subtitle" value={bp.subtitle} onChange={(e) => setBlockPage({...bp, subtitle: e.target.value})} />
+                <div className="space-y-1.5">
+                  <label className="block text-xs text-gray-500 font-mono uppercase tracking-wider">Message</label>
+                  <textarea rows={3} value={bp.message} onChange={(e) => setBlockPage({...bp, message: e.target.value})}
+                    className="w-full border border-cyan-500/15 rounded-lg px-3 py-2 text-sm text-gray-200 font-mono placeholder-gray-600 focus:outline-none focus:border-cyan-500/60 resize-none"
+                    style={{ background: 'rgba(0,0,0,0.6)' }} />
+                </div>
+                <Input label="Logo URL (optional)" placeholder="https://example.com/logo.png" value={bp.logo_url || ''} onChange={(e) => setBlockPage({...bp, logo_url: e.target.value})} />
+                <Input label="Contact Email (optional)" type="email" value={bp.contact_email || ''} onChange={(e) => setBlockPage({...bp, contact_email: e.target.value})} />
+              </div>
+            </Card>
+            <Card>
+              <CardHeader>
+                <p className="text-xs font-mono font-medium text-cyan-400 uppercase tracking-widest">Appearance</p>
+              </CardHeader>
+              <div className="space-y-4">
+                <div className="flex gap-4">
+                  <div className="flex-1 space-y-1.5">
+                    <label className="block text-xs text-gray-500 font-mono uppercase tracking-wider">Background</label>
+                    <div className="flex items-center gap-2">
+                      <input type="color" value={bp.bg_color} onChange={(e) => setBlockPage({...bp, bg_color: e.target.value})}
+                        className="w-10 h-10 rounded border border-cyan-500/20 cursor-pointer bg-transparent" />
+                      <Input value={bp.bg_color} onChange={(e) => setBlockPage({...bp, bg_color: e.target.value})} className="font-mono text-xs" />
+                    </div>
+                  </div>
+                  <div className="flex-1 space-y-1.5">
+                    <label className="block text-xs text-gray-500 font-mono uppercase tracking-wider">Accent</label>
+                    <div className="flex items-center gap-2">
+                      <input type="color" value={bp.accent_color} onChange={(e) => setBlockPage({...bp, accent_color: e.target.value})}
+                        className="w-10 h-10 rounded border border-cyan-500/20 cursor-pointer bg-transparent" />
+                      <Input value={bp.accent_color} onChange={(e) => setBlockPage({...bp, accent_color: e.target.value})} className="font-mono text-xs" />
+                    </div>
+                  </div>
+                </div>
+                <div className="divide-y divide-cyan-500/10">
+                  <Toggle label="Show Request ID" description="Display a unique request code blocked users can reference" checked={bp.show_request_id} onChange={(v) => setBlockPage({...bp, show_request_id: v})} />
+                  <Toggle label="Show Contact Email" description="Show contact email on the block page" checked={bp.show_contact} onChange={(v) => setBlockPage({...bp, show_contact: v})} />
+                </div>
+              </div>
+              <div className="mt-5 flex justify-end">
+                <Button loading={saving} onClick={saveBlockPage} icon={saved === 'block' ? CheckCircle : Save}>
+                  {saved === 'block' ? 'Saved!' : 'Save Block Page'}
+                </Button>
+              </div>
+            </Card>
+          </div>
+
+          {/* Live preview */}
+          <Card>
+            <CardHeader>
+              <p className="text-xs font-mono font-medium text-cyan-400 uppercase tracking-widest">Live Preview</p>
+            </CardHeader>
+            <div className="rounded-xl overflow-hidden border border-cyan-500/10" style={{ height: '420px' }}>
+              <div className="w-full h-full flex items-center justify-center font-mono" style={{ background: bp.bg_color }}>
+                <div className="text-center max-w-xs px-6 py-8"
+                  style={{ border: `1px solid ${bp.accent_color}33`, background: 'rgba(255,255,255,0.02)', boxShadow: `0 0 30px ${bp.accent_color}15` }}>
+                  {bp.logo_url && <img src={bp.logo_url} style={{ height: 36, margin: '0 auto 16px', display: 'block' }} alt="" onError={(e) => (e.target.style.display = 'none')} />}
+                  <div className="flex items-center justify-center mx-auto mb-4"
+                    style={{ width: 44, height: 44, border: `1.5px solid ${bp.accent_color}`, borderRadius: '50%', color: bp.accent_color, fontSize: 18, boxShadow: `0 0 14px ${bp.accent_color}55` }}>
+                    ✕
+                  </div>
+                  <p style={{ color: bp.accent_color, fontSize: 13, fontWeight: 700, letterSpacing: '0.12em', marginBottom: 8 }}>{bp.title || '—'}</p>
+                  <p style={{ color: '#9ca3af', fontSize: 11, marginBottom: 10, lineHeight: 1.5 }}>{bp.subtitle || '—'}</p>
+                  <p style={{ color: '#6b7280', fontSize: 10, marginBottom: 14, lineHeight: 1.6 }}>{bp.message || '—'}</p>
+                  {bp.show_request_id && <code style={{ color: '#374151', fontSize: 9, display: 'block', marginBottom: 10 }}>REQ#A1B2C3D4</code>}
+                  {bp.show_contact && bp.contact_email && (
+                    <span style={{ color: bp.accent_color, fontSize: 10 }}>{bp.contact_email}</span>
+                  )}
+                </div>
+              </div>
             </div>
           </Card>
         </div>

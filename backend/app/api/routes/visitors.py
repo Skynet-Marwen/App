@@ -5,6 +5,7 @@ from ...core.database import get_db
 from ...core.security import get_current_user
 from ...models.user import User
 from ...models.visitor import Visitor
+from ...models.device import Device
 from ...schemas.visitor import BlockRequest
 
 router = APIRouter(prefix="/visitors", tags=["visitors"])
@@ -69,6 +70,11 @@ async def block_visitor(visitor_id: str, body: BlockRequest, db: AsyncSession = 
     if not v:
         raise HTTPException(404, "Not found")
     v.status = "blocked"
+    # Cascade → block linked device
+    if v.device_id:
+        device = await db.get(Device, v.device_id)
+        if device:
+            device.status = "blocked"
     await db.commit()
     return {"message": "Blocked"}
 
@@ -79,5 +85,10 @@ async def unblock_visitor(visitor_id: str, db: AsyncSession = Depends(get_db), _
     if not v:
         raise HTTPException(404, "Not found")
     v.status = "active"
+    # Cascade → unblock linked device
+    if v.device_id:
+        device = await db.get(Device, v.device_id)
+        if device:
+            device.status = "active"
     await db.commit()
     return {"message": "Unblocked"}

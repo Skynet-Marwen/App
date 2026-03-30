@@ -1,7 +1,7 @@
 # SkyNet — Architecture
 
 > Living document. Update on every structural change.
-> Last updated: 2026-03-29 — post v1.0.0 fixes
+> Last updated: 2026-03-29 — post v1.0.1 — rate limiter, block-page config, system/info endpoint, Keycloak admin auth removed
 
 ---
 
@@ -100,23 +100,31 @@ Anti-Evasion Service (async)
   └─ 15. If anomaly detected → Insert Incident → optionally auto-block
 ```
 
-### 2. Dashboard Auth Flow (JWT)
+### 2. Dashboard Auth Flow (JWT — native only)
 ```
-Browser → POST /api/v1/auth/login { username, password }
-FastAPI  → Validate credentials → Issue JWT (24h expiry)
+Browser → POST /api/v1/auth/login (application/x-www-form-urlencoded)
+          Body: username=admin@skynet.local&password=...
+FastAPI  → OAuth2PasswordRequestForm → validate credentials → issue JWT (24h)
 Browser  → Stores JWT in localStorage (key: skynet_token)
 Browser  → All dashboard API calls: Authorization: Bearer <token>
-FastAPI  → Decode JWT → Fetch User from DB → Inject as dependency
+FastAPI  → Decode JWT → fetch User from DB → inject as dependency
 ```
 
-### 3. Keycloak Auth Flow (optional SSO)
+> Note: Keycloak is **not used** for SkyNet admin authentication. Keycloak is
+> targeted as a security enforcement layer for *tracked websites* (v1.5.0 roadmap).
+
+### 3. Rate Limiting Flow
 ```
-Browser → Redirect to Keycloak login page
-Keycloak → Authenticate user → Return code
-FastAPI /auth/keycloak/callback → Exchange code for tokens
-FastAPI → Upsert User (keycloak_id) → Issue local JWT
-Browser → Standard JWT flow from here
+Request → slowapi limiter (app.state.limiter)
+  ├─ Limit not exceeded → pass through to route handler
+  └─ Limit exceeded     → RateLimitExceeded exception
+                            → typed 429 response { "detail": "Rate limit exceeded" }
 ```
+
+Limits applied (see `docs/SECURITY.md` for the full table):
+- `/api/v1/track/*` — 200 req/min per IP
+- `/api/v1/auth/login` — 10 req/min per IP
+- All other `/api/v1/*` — 300 req/min per authenticated user
 
 ### 4. Device Linking Flow
 ```

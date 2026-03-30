@@ -16,10 +16,23 @@
 
 ---
 
-## Done (Metric Synchronization — 2026-03-30)
+## Done (Block-Page Config & Rate Limiter — 2026-03-29)
 
-- [x] 2026-03-30 — fix(stats): synchronized visitor/blocked/event metrics in dashboard
-  - Backend: `overview()` endpoint now properly aggregates distinct visitors, summed blocked attempts, device count, traffic hourly chart, blocking by incident type
+- [x] 2026-03-29 — feat(settings): `GET /settings/block-page` + `PUT /settings/block-page` — persists custom block page (title, subtitle, message, colors, logo, contact) to `BlockPageConfig` DB singleton; `settingsApi.getBlockPage()` / `settingsApi.updateBlockPage()` added to frontend
+- [x] 2026-03-29 — feat(system): `GET /system/info` — no-auth endpoint returning app/api/fastapi/python/sqlalchemy/alembic version strings; `systemApi.info()` added to frontend
+- [x] 2026-03-29 — feat(middleware): `slowapi` rate limiter integrated in `main.py` — `app.state.limiter` bound; `RateLimitExceeded` → typed 429 response
+
+---
+
+## Done (Traffic Heatmap Refactor — 2026-03-30)
+
+- [x] 2026-03-30 — refactor(dashboard): Traffic Over Time chart → time-based heatmap visualization
+  - Created `TrafficHeatmap` component with CSS Grid layout supporting 1h/24h/7d/30d modes
+  - Backend: Extended `stats/overview` API with `traffic_heatmap` field using dynamic DATE_TRUNC queries
+  - Frontend: Replaced area chart with heatmap component in OverviewPage, normalized color scaling (dark navy → neon cyan)
+  - Component layers: Container (data normalization), Grid (CSS Grid layout), Cell (intensity visualization + tooltips)
+
+---
   - Backend: `realtime()` endpoint now calculates active visitors (5-min window), blocked attempts (1-min window), suspicious sessions (1-hour incidents)
   - Frontend: real-time refresh reduced from 30s → 10s, overview auto-refresh every 60s
   - `backend/app/api/routes/stats.py` — 156 lines (split if crosses 300)
@@ -41,8 +54,8 @@
 ## Backlog — Priority Order
 
 ### P0 — Critical (blocks production use)
-- [x] Alembic migration setup — replace `create_all()` with proper migrations
-- [x] Rate limiting middleware — implement slowapi on all route groups
+- [x] ~~Alembic migration setup~~ — ✅ resolved v1.1.0-dev
+- [x] ~~Rate limiting middleware~~ — ✅ resolved (slowapi, 2026-03-29)
 - [ ] GeoIP enrichment — integrate MaxMind GeoLite2 on visitor upsert
 - [ ] Redis session store — implement real session tracking (currently returns `[]`)
 - [ ] Anti-evasion background tasks — wire up async checks after pageview

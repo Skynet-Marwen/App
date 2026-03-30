@@ -10,7 +10,10 @@ from ...core.database import AsyncSessionLocal
 from ...models.site import Site
 from ...models.visitor import Visitor
 from ...models.device import Device
+from ...models.event import Event
 from ...models.incident import Incident
+from ...models.blocking import BlockedIP
+from ...models.block_page_config import BlockPageConfig
 from ...schemas.track import PageviewPayload, EventPayload, IdentifyPayload
 import uuid
 from datetime import datetime, timezone
@@ -34,6 +37,77 @@ async def validate_site_key(api_key: str) -> Site:
         if not s:
             raise HTTPException(403, "Invalid API key")
         return s
+
+
+_DEFAULT_BLOCK_CONFIG = {
+    "title": "ACCESS RESTRICTED",
+    "subtitle": "Your access to this site has been blocked.",
+    "message": "This action was taken automatically for security reasons.",
+    "bg_color": "#050505",
+    "accent_color": "#ef4444",
+    "logo_url": None,
+    "contact_email": None,
+    "show_request_id": True,
+    "show_contact": True,
+}
+
+
+@router.get("/check-access")
+@limiter.limit("200/minute")
+async def check_access(
+    request: Request,
+    key: Optional[str] = Query(None),
+    x_skynet_key: Optional[str] = Header(None),
+    fp: Optional[str] = Query(None),
+):
+    """Fast block check called by skynet.js on every page load.
+    Returns block status + block page config if blocked.
+    Fails open — any error returns {blocked: false}.
+    """
+    try:
+        await validate_site_key(await resolve_api_key(x_skynet_key, key))
+    except HTTPException:
+        return {"blocked": False}
+
+    ip = request.client.host
+    async with AsyncSessionLocal() as db:
+        blocked_ip = await db.get(BlockedIP, ip)
+        blocked_device = False
+        blocked_visitor = False
+
+        if not blocked_ip:
+            # Check visitor status by IP
+            blocked_visitor = await db.scalar(
+                select(Visitor.id).where(Visitor.ip == ip, Visitor.status == "blocked")
+            ) is not None
+
+        if not blocked_ip and not blocked_visitor and fp:
+            # Check device fingerprint
+            device = await db.scalar(select(Device).where(Device.fingerprint == fp))
+            blocked_device = device is not None and device.status == "blocked"
+
+        if not blocked_ip and not blocked_visitor and not blocked_device:
+            return {"blocked": False}
+
+        cfg = await db.get(BlockPageConfig, 1)
+        config = {
+            "title":           cfg.title          if cfg else _DEFAULT_BLOCK_CONFIG["title"],
+            "subtitle":        cfg.subtitle        if cfg else _DEFAULT_BLOCK_CONFIG["subtitle"],
+            "message":         cfg.message         if cfg else _DEFAULT_BLOCK_CONFIG["message"],
+            "bg_color":        cfg.bg_color        if cfg else _DEFAULT_BLOCK_CONFIG["bg_color"],
+            "accent_color":    cfg.accent_color    if cfg else _DEFAULT_BLOCK_CONFIG["accent_color"],
+            "logo_url":        cfg.logo_url        if cfg else None,
+            "contact_email":   cfg.contact_email   if cfg else None,
+            "show_request_id": cfg.show_request_id if cfg else True,
+            "show_contact":    cfg.show_contact    if cfg else True,
+        }
+
+    return {
+        "blocked": True,
+        "reason": "ip" if blocked_ip else "visitor" if blocked_visitor else "device",
+        "request_id": str(uuid.uuid4())[:8].upper(),
+        "config": config,
+    }
 
 
 @router.post("/pageview")

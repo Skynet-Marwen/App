@@ -12,11 +12,23 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 ### Added
 - `docs/ROADMAP.md`: v1.5.0 Keycloak Security Enforcement Layer — Keycloak as security enforcement for tracked websites (event monitoring, user sync, threat correlation, session revocation)
 - `docs/ROADMAP.md`: v1.6.0 Active Anti-Bot / Anti-Spam Gateway — reverse proxy mode, bot detection pipeline, spam prevention, gateway dashboard
+- `backend/main.py`: integrated `slowapi` rate limiter — `app.state.limiter` bound; `RateLimitExceeded` returns typed 429 response; all route groups can now apply `@limiter.limit()` decorators
+- `GET /api/v1/system/info` — no auth required; returns `app`, `api`, `fastapi`, `python`, `sqlalchemy`, `alembic` version strings for the dashboard footer
+- `GET /api/v1/settings/block-page` — auth required; returns customisable block-page config (title, subtitle, message, colors, logo, contact email, flags)
+- `PUT /api/v1/settings/block-page` — auth required; persists block-page config to `BlockPageConfig` DB row (id=1 singleton)
+- `frontend/src/services/api.js`: added `systemApi.info()` → `GET /system/info`
+- `frontend/src/services/api.js`: added `settingsApi.getBlockPage()` and `settingsApi.updateBlockPage()` for block-page customisation
+- `GET /api/v1/devices/{id}/visitors` — returns all visitors linked to a device fingerprint (multiple browser/OS/IP combos sharing the same hardware fingerprint)
+- `frontend/src/services/api.js`: added `devicesApi.visitors(id)`
 
 ### Changed
 - SkyNet admin authentication is **native JWT only** — Keycloak is no longer used or intended for SkyNet dashboard login
 - `backend/app/api/routes/stats.py`: overview and realtime endpoints now properly aggregate metrics from Event and Incident tables with distinct visitor counts, summed blocked attempts, device tracking
 - `frontend/src/pages/OverviewPage.jsx`: real-time refresh interval reduced from 30s to 10s, overview auto-refreshes every 60s for better metric synchronization
+- `backend/main.py`: `version` field now reads from `settings.APP_VERSION` instead of hardcoded string
+- `frontend/src/pages/OverviewPage.jsx`: Traffic Over Time area chart replaced with time-based heatmap visualization using CSS Grid; supports 1h/24h/7d/30d modes with normalized color intensity scaling
+- `backend/app/api/routes/stats.py`: `GET /api/v1/stats/overview` extended with `traffic_heatmap` field containing pre-aggregated bucket data for heatmap rendering
+- `frontend/src/components/ui/TrafficHeatmap.jsx`: new component implementing 3-layer architecture (Container/Grid/Cell) for responsive heatmap display
 
 ### Removed
 - Keycloak SSO settings tab from `frontend/src/pages/SettingsPage.jsx`
@@ -25,6 +37,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - `settingsApi.keycloak()` and `settingsApi.updateKeycloak()` from `frontend/src/services/api.js`
 
 ### Fixed
+- `backend/app/api/routes/devices.py`: `last_seen` / `first_seen` now serialised as ISO 8601 (`isoformat()`) — `strftime` was stripping timezone context and would crash on `None` values
+- `frontend/src/pages/DevicesPage.jsx`: timestamps rendered via `fmtDate(iso)` → `toLocaleString()`, displaying in the operator's local timezone
+- `backend/app/api/routes/devices.py`: `list_devices` now includes `visitor_count` per device via correlated subquery
 - Stats dashboard metrics now synchronized: visitor counts, blocked attempts, events, incidents properly aggregated
 - Realtime visitor count now uses distinct visitor IDs in 5-minute rolling window
 - Blocked count now includes blocked IPs, visitors, and devices based on status fields

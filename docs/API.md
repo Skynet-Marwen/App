@@ -170,6 +170,31 @@ Revoke a specific session.
 ### `GET /devices`
 Auth required. Params: `page`, `page_size`, `search`
 
+**Response** includes `visitor_count` (number of distinct visitors sharing this device fingerprint) and ISO 8601 timestamps for `first_seen` / `last_seen`.
+
+### `GET /devices/{id}/visitors`
+Auth required. Returns all visitors recorded on this device fingerprint — covers multiple browser/OS/IP combinations that resolved to the same hardware fingerprint.
+
+**Response `200`**
+```json
+{
+  "items": [
+    {
+      "id": "uuid",
+      "ip": "1.2.3.4",
+      "browser": "Chrome 120",
+      "os": "Windows 10",
+      "device_type": "desktop",
+      "country": "Tunisia",
+      "country_flag": "🇹🇳",
+      "page_views": 12,
+      "status": "active",
+      "last_seen": "2026-03-29T14:30:00+00:00"
+    }
+  ]
+}
+```
+
 ### `POST /devices/{id}/link`
 **Body** `{ "user_id": "uuid" }` Links device to user account.
 
@@ -177,7 +202,10 @@ Auth required. Params: `page`, `page_size`, `search`
 Unlinks device from user.
 
 ### `POST /devices/{id}/block`
+Blocks device + cascades to all visitors with this `device_id`.
+
 ### `DELETE /devices/{id}/block`
+Unblocks device + cascades to all associated visitors.
 
 ---
 
@@ -276,11 +304,75 @@ Returns the HTML embed snippet for the site.
 ## Settings
 
 ### `GET /settings`
-### `PUT /settings`
-### `GET /settings/keycloak`
-Note: `client_secret` and `admin_password` are never returned in GET responses.
+Auth required. Returns in-memory general config object.
 
-### `PUT /settings/keycloak`
+**Response `200`**
+```json
+{
+  "instance_name": "SkyNet",
+  "base_url": "http://localhost:8000",
+  "timezone": "UTC",
+  "realtime_enabled": true,
+  "auto_block_tor_vpn": false,
+  "require_auth": false,
+  "visitor_retention_days": 90,
+  "event_retention_days": 90,
+  "incident_retention_days": 365,
+  "anonymize_ips": false,
+  "webhook_url": "",
+  "webhook_secret": "",
+  "webhook_events": {}
+}
+```
+
+### `PUT /settings`
+Auth required. Merges partial update into the in-memory settings object.
+
+---
+
+### `GET /settings/block-page`
+Auth required. Returns customisable block page configuration.
+
+**Response `200`**
+```json
+{
+  "title": "ACCESS RESTRICTED",
+  "subtitle": "Your access to this site has been blocked.",
+  "message": "This action was taken automatically for security reasons.",
+  "bg_color": "#050505",
+  "accent_color": "#ef4444",
+  "logo_url": null,
+  "contact_email": null,
+  "show_request_id": true,
+  "show_contact": true
+}
+```
+
+### `PUT /settings/block-page`
+Auth required. Persists block-page config to DB (`BlockPageConfig` singleton, id=1).
+
+**Accepted fields:** `title`, `subtitle`, `message`, `bg_color`, `accent_color`, `logo_url`, `contact_email`, `show_request_id`, `show_contact`
+
+**Response `200`** `{ "ok": true }`
+
+---
+
+## System
+
+### `GET /system/info`
+No auth required. Returns component version strings for the dashboard footer.
+
+**Response `200`**
+```json
+{
+  "app": "1.0.1",
+  "api": "v1",
+  "fastapi": "0.115.5",
+  "python": "3.12.0",
+  "sqlalchemy": "2.0.36",
+  "alembic": "1.13.3"
+}
+```
 
 ---
 
