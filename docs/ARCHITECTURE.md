@@ -1,7 +1,7 @@
 # SkyNet — Architecture
 
 > Living document. Update on every structural change.
-> Last updated: 2026-03-29 — v1.0.0
+> Last updated: 2026-03-29 — post v1.0.0 fixes
 
 ---
 
@@ -232,7 +232,7 @@ incidents
   user_id       UUID
   severity      VARCHAR(20)  (low | medium | high | critical)
   status        VARCHAR(20)  (open | resolved)
-  metadata      TEXT (JSON)
+  extra_data    TEXT (JSON)   -- column name in DB: "metadata"
   detected_at   TIMESTAMPTZ
   resolved_at   TIMESTAMPTZ
 ```
@@ -241,16 +241,33 @@ incidents
 
 ## Infrastructure
 
+### Production (`docker-compose.yml`)
+
 | Service | Image | Port | Purpose |
 |---------|-------|------|---------|
 | `backend` | python:3.12-slim | 8000 | FastAPI application |
-| `frontend` | node:22 → nginx:alpine | 3000 | React dashboard |
+| `frontend` | node:20 → nginx:alpine | 3000 | React dashboard (built bundle) |
 | `db` | postgres:16-alpine | 5432 | Primary data store |
 | `redis` | redis:7-alpine | 6379 | Sessions, rate limits, cache |
-| `keycloak` | keycloak:24.0 | 8080 | SSO (optional profile) |
+| `keycloak` | keycloak:24.0 | 8080 | SSO (optional `--profile keycloak`) |
+
+### Development (`docker-compose.dev.yml`)
+
+| Service | Image | Port | Purpose |
+|---------|-------|------|---------|
+| `backend` | python:3.12-slim | 8000 | FastAPI + uvicorn `--reload` (live Python reload) |
+| `frontend` | node:20-alpine | 5173 | Vite dev server with HMR (no-refresh code updates) |
+| `db` | postgres:16-alpine | 5432 | Same as production |
+| `redis` | redis:7-alpine | 6379 | Same as production |
+| `adminer` | adminer | 8888 | DB GUI (optional `--profile tools`) |
+| `redisinsight` | redis/redisinsight | 5540 | Redis GUI (optional `--profile tools`) |
+
+**HMR configuration:** `VITE_HMR_HOST` must be set to the server's LAN IP in `docker-compose.dev.yml` for WebSocket HMR to work across machines.
 
 **Volumes:**
-- `postgres_data` — persistent DB storage
-- `redis_data` — persistent Redis AOF
+- `postgres_data` / `postgres_dev_data` — persistent DB storage
+- `redis_data` / `redis_dev_data` — persistent Redis AOF
+- `./backend:/app` (dev only) — live code mount for uvicorn reload
+- `./frontend:/app` (dev only) — live code mount for Vite HMR
 
 **Networks:** All services share the default bridge network. No service exposes a port except those listed above.

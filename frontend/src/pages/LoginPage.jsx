@@ -19,7 +19,8 @@ export default function LoginPage() {
       await login({ username: form.email, password: form.password })
       navigate('/')
     } catch (err) {
-      setError(err.response?.data?.detail || 'Invalid credentials')
+      const detail = err.response?.data?.detail
+      setError(Array.isArray(detail) ? detail.map((d) => d.msg).join(', ') : (detail || 'Invalid credentials'))
     } finally {
       setLoading(false)
     }

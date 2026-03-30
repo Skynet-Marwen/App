@@ -10,10 +10,19 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 ## [Unreleased]
 
 ### Added
+- Dev stack in `docker-compose.dev.yml`: Vite HMR (port 5173) + uvicorn `--reload` with live volume mounts
+- `tracker/test-site.html` — standalone single-file test site for SkyNet tracker integration testing
+
 ### Changed
+- `frontend/vite.config.js`: added `host`, `port`, `hmr.host` (via `VITE_HMR_HOST`), `VITE_PROXY_TARGET` env var support, and `/tracker/` proxy rule
+- `docker-compose.dev.yml`: complete rewrite — now runs full dev stack (backend + frontend + db + redis) with hot reload
+
 ### Fixed
-### Removed
-### Security
+- `backend/app/models/incident.py`: renamed column `metadata` → `extra_data` (SQLAlchemy reserved name conflict, caused startup crash)
+- `backend/requirements.txt`: added `pydantic[email]` (missing `email-validator` dependency)
+- `backend/requirements.txt`: pinned `bcrypt==4.0.1` (bcrypt 5.x incompatible with passlib 1.7.4)
+- `frontend/src/services/api.js`: login now sends `application/x-www-form-urlencoded` (OAuth2PasswordRequestForm requires form data, not JSON)
+- `frontend/src/pages/LoginPage.jsx`: error handler now safely stringifies Pydantic 422 array responses (prevented React error #31)
 
 ---
 

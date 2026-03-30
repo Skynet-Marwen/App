@@ -1,8 +1,9 @@
 """
 Public tracking endpoints — called by the embedded JS tracker.
-No auth required; validated via X-SkyNet-Key header.
+No auth required; validated via X-SkyNet-Key header OR ?key= query param.
+sendBeacon() cannot set custom headers, so the key falls back to ?key=.
 """
-from fastapi import APIRouter, Request, Header, HTTPException
+from fastapi import APIRouter, Request, Header, HTTPException, Query
 from sqlalchemy import select
 from ...core.database import AsyncSessionLocal
 from ...models.site import Site
@@ -14,7 +15,17 @@ from ...schemas.track import PageviewPayload, EventPayload, IdentifyPayload
 import uuid
 from datetime import datetime, timezone
 
+from typing import Optional
+
 router = APIRouter(prefix="/track", tags=["tracker"])
+
+
+async def resolve_api_key(header_key: Optional[str], query_key: Optional[str]) -> str:
+    """Accept key from X-SkyNet-Key header (XHR) or ?key= param (sendBeacon)."""
+    key = header_key or query_key
+    if not key:
+        raise HTTPException(403, "API key required")
+    return key
 
 
 async def validate_site_key(api_key: str) -> Site:
@@ -26,8 +37,13 @@ async def validate_site_key(api_key: str) -> Site:
 
 
 @router.post("/pageview")
-async def track_pageview(payload: PageviewPayload, request: Request, x_skynet_key: str = Header(...)):
-    site = await validate_site_key(x_skynet_key)
+async def track_pageview(
+    payload: PageviewPayload,
+    request: Request,
+    key: Optional[str] = Query(None),
+    x_skynet_key: Optional[str] = Header(None),
+):
+    site = await validate_site_key(await resolve_api_key(x_skynet_key, key))
     ip = request.client.host
 
     async with AsyncSessionLocal() as db:
@@ -93,8 +109,13 @@ async def track_pageview(payload: PageviewPayload, request: Request, x_skynet_ke
 
 
 @router.post("/event")
-async def track_event(payload: EventPayload, request: Request, x_skynet_key: str = Header(...)):
-    site = await validate_site_key(x_skynet_key)
+async def track_event(
+    payload: EventPayload,
+    request: Request,
+    key: Optional[str] = Query(None),
+    x_skynet_key: Optional[str] = Header(None),
+):
+    site = await validate_site_key(await resolve_api_key(x_skynet_key, key))
     async with AsyncSessionLocal() as db:
         event = Event(
             id=str(uuid.uuid4()),
@@ -110,8 +131,13 @@ async def track_event(payload: EventPayload, request: Request, x_skynet_key: str
 
 
 @router.post("/identify")
-async def identify_user(payload: IdentifyPayload, request: Request, x_skynet_key: str = Header(...)):
-    await validate_site_key(x_skynet_key)
+async def identify_user(
+    payload: IdentifyPayload,
+    request: Request,
+    key: Optional[str] = Query(None),
+    x_skynet_key: Optional[str] = Header(None),
+):
+    await validate_site_key(await resolve_api_key(x_skynet_key, key))
     async with AsyncSessionLocal() as db:
         if payload.fingerprint:
             device = await db.scalar(select(Device).where(Device.fingerprint == payload.fingerprint))

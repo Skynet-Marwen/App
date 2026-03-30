@@ -65,6 +65,59 @@ Make the dashboard pleasant to use at scale.
 
 ---
 
+## v1.4.0 — Trust & Identity `Target: Q1 2027`
+Harden device identity, make risk scoring authoritative, lock down geo access.
+
+### Multi-Layer Browser Fingerprinting
+- [ ] **Canvas fingerprint** — already collected; add per-browser variance normalization
+- [ ] **WebGL fingerprint** — renderer + vendor string + precision floats
+- [ ] **Audio fingerprint** — OfflineAudioContext signal hash
+- [ ] **Font enumeration** — CSS `@font-face` probe list (300+ fonts)
+- [ ] **Timing fingerprint** — `performance.now()` resolution, requestAnimationFrame jitter
+- [ ] **Navigator entropy** — hardwareConcurrency, deviceMemory, connection type
+- [ ] Composite fingerprint score: weighted hash of all signals
+- [ ] Fingerprint stability tracking across sessions (drift detection)
+
+### Server-Side Risk Scoring
+- [ ] **Automation detection** — headless browser signals (missing plugins, navigator.webdriver, broken APIs)
+- [ ] **Clock skew detection** — compare client-reported timezone offset vs GeoIP expected offset
+- [ ] **VPN/proxy detection** — IP reputation DB (IPInfo or custom curated list, daily refresh)
+- [ ] **Rate limiting per device** — Redis sliding window: requests/min, pageviews/hour, sessions/day
+- [ ] **Behavioral entropy** — mouse movement, scroll cadence, click timing variance vs bots
+- [ ] Risk score composition: 0–100 from weighted signal contributions (documented in LOGIC.md)
+- [ ] Risk score thresholds: auto-flag (>60), auto-challenge (>80), auto-block (>95)
+
+### HMAC-SHA256 Signed Device Cookies
+- [ ] On first pageview: server issues a signed device token (`skynet_did` cookie)
+  - Payload: `{ device_id, fingerprint_hash, issued_at, site_id }`
+  - Signature: `HMAC-SHA256(payload, APP_SECRET_KEY)`
+- [ ] On every subsequent pageview: server verifies signature before trusting device_id
+- [ ] Tamper detection: mismatched fingerprint vs cookie → increment risk score + log incident
+- [ ] Cookie rotation: re-issue token every 30 days or on fingerprint drift
+- [ ] Fallback: if cookie absent/invalid, treat as new device (no silent trust)
+
+### Identity Engine — Smart Device Linking
+- [ ] **User parent graph**: one User → many Devices → many Sessions
+- [ ] **Auto-linking heuristics**: same IP + same fingerprint within 1h window → suggest link
+- [ ] **Cross-device detection**: same user_id seen on multiple fingerprints → merge into user profile
+- [ ] **Session continuity**: cookie-based session chaining across browser restarts
+- [ ] Dashboard: User detail page shows full device tree + session timeline
+- [ ] API: `GET /api/v1/users/{id}/devices` — all linked devices with risk scores
+- [ ] API: `POST /api/v1/devices/{id}/link` — manual admin link
+- [ ] API: `POST /api/v1/devices/{id}/unlink` — remove association
+
+### Geo-Based Access Control
+- [ ] **Country allowlist/blocklist** — already in blocking engine; promote to first-class ACL
+- [ ] **Region/state-level rules** — block by MaxMind subdivision (e.g. block specific US states)
+- [ ] **City-level rules** — granular block by city name or coordinates + radius
+- [ ] **ASN rules** — block by Autonomous System Number (e.g. block all AWS/GCP/Azure ASNs)
+- [ ] **ISP rules** — block by ISP name string match (e.g. block "Tor Project", "NordVPN")
+- [ ] Geo ACL rule priority order: IP > ASN > ISP > City > Region > Country
+- [ ] Dashboard: visual world map with block/allow overlays
+- [ ] Real-time geo rule evaluation on every pageview (cached in Redis, 5-min TTL)
+
+---
+
 ## v2.0.0 — Multi-Tenancy `Target: 2027`
 Support multiple organizations on one SkyNet instance.
 

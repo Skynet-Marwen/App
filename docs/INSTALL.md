@@ -81,6 +81,36 @@ CORS_ORIGINS=https://skynet.yourdomain.com
 
 ---
 
+## Development Mode (Hot Reload)
+
+For active development — code changes reflect instantly without rebuilding or refreshing.
+
+```bash
+# Set your VM's LAN IP in docker-compose.dev.yml → VITE_HMR_HOST
+# Then start the dev stack:
+docker compose -f docker-compose.dev.yml up
+```
+
+| URL | Purpose |
+|-----|---------|
+| `http://<VM_IP>:5173` | Frontend — Vite HMR (JSX/CSS changes patch live) |
+| `http://<VM_IP>:8000` | Backend — uvicorn `--reload` (Python changes restart in ~1s) |
+| `http://<VM_IP>:8000/docs` | FastAPI auto-generated API docs |
+
+**How it works:**
+- `./frontend/src` is volume-mounted into the Vite container. Save a `.jsx` or `.css` file → Vite pushes a diff to the browser via WebSocket — no page reload.
+- `./backend` is volume-mounted into the FastAPI container. Save a `.py` file → uvicorn detects the change and restarts within ~1 second.
+- The prod stack (`:3000`) and dev stack (`:5173`) can run simultaneously on separate volumes.
+
+```bash
+# With optional DB/Redis GUIs:
+docker compose -f docker-compose.dev.yml --profile tools up
+# Adminer (DB):    http://<VM_IP>:8888
+# RedisInsight:    http://<VM_IP>:5540
+```
+
+---
+
 ## Production Deployment (with HTTPS)
 
 ### Option A: Nginx Reverse Proxy on Host
@@ -170,6 +200,18 @@ docker compose restart backend
 ---
 
 ## Embedding the Tracker
+
+### Quick Test (no real site needed)
+
+A ready-made test page is included at `tracker/test-site.html`. It simulates a real website with clicks, scroll, mouse movement, and form interactions.
+
+1. Create a site in **Integration → Add Site**, copy the API key.
+2. Edit `tracker/test-site.html` — replace `REPLACE_WITH_YOUR_SITE_API_KEY`.
+3. Open `http://<VM_IP>:8000/tracker/test-site.html` in a browser.
+
+---
+
+### Real Site Integration
 
 After adding your site in Integration → Add Site:
 

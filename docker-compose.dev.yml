@@ -1,9 +1,22 @@
 version: "3.9"
 
-# Development override — start dependencies only, run app locally
-# Usage: docker compose -f docker-compose.dev.yml up -d
+# ── Dev stack — hot reload on every save ─────────────────────────────────────
+#
+# Usage:
+#   docker compose -f docker-compose.dev.yml up
+#
+# Frontend (Vite HMR) : http://10.0.0.39:5173
+# Backend  (auto-reload): http://10.0.0.39:8000
+# Adminer (DB GUI)     : http://10.0.0.39:8888   (--profile tools)
+# RedisInsight         : http://10.0.0.39:5540   (--profile tools)
+#
+# Code changes in ./frontend/src  → browser updates instantly (no refresh)
+# Code changes in ./backend       → uvicorn restarts automatically
+# ─────────────────────────────────────────────────────────────────────────────
 
 services:
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
   db:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -21,6 +34,7 @@ services:
       timeout: 3s
       retries: 10
 
+  # ── Redis ───────────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -34,7 +48,52 @@ services:
       timeout: 3s
       retries: 10
 
-  # Optional: Adminer — DB GUI at http://localhost:8888
+  # ── FastAPI — uvicorn --reload ───────────────────────────────────────────────
+  # Source is mounted as a volume → save a .py file → server reloads in ~1s
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://skynet:skynet_secret@db:5432/skynet
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app          # live mount — every save triggers reload
+      - ./tracker:/app/tracker:ro
+      - ./backend/data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ── Vite dev server — HMR ───────────────────────────────────────────────────
+  # Source is mounted as a volume → save a .jsx/.css file → browser patches
+  # itself via WebSocket without a full page reload.
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev"
+    environment:
+      # VM LAN IP — HMR WebSocket advertises this to connecting browsers
+      VITE_HMR_HOST: "10.0.0.39"
+      # Proxy API calls to the backend container
+      VITE_PROXY_TARGET: "http://backend:8000"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app          # live mount — HMR picks up every .jsx change
+      - /app/node_modules        # keep node_modules inside container
+    depends_on:
+      - backend
+
+  # ── Optional tools ──────────────────────────────────────────────────────────
   adminer:
     image: adminer:latest
     restart: unless-stopped
@@ -46,7 +105,6 @@ services:
     profiles:
       - tools
 
-  # Optional: RedisInsight — Redis GUI at http://localhost:5540
   redisinsight:
     image: redis/redisinsight:latest
     restart: unless-stopped

@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TechPulse — Latest in Technology</title>
+  <style>
+    /* ── Reset & Base ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f8fafc;
+      color: #1e293b;
+      line-height: 1.6;
+    }
+
+    /* ── Nav ── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: #0f172a;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 2rem; height: 60px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.4);
+    }
+    .nav-logo { color: #38bdf8; font-weight: 700; font-size: 1.2rem; cursor: pointer; }
+    .nav-links { display: flex; gap: 1.5rem; }
+    .nav-links a {
+      color: #94a3b8; text-decoration: none; font-size: .9rem;
+      transition: color .2s;
+    }
+    .nav-links a:hover { color: #f8fafc; }
+    .nav-cta {
+      background: #38bdf8; color: #0f172a;
+      border: none; padding: .45rem 1.1rem;
+      border-radius: 6px; font-weight: 600; font-size: .85rem;
+      cursor: pointer; transition: background .2s;
+    }
+    .nav-cta:hover { background: #7dd3fc; }
+
+    /* ── Hero ── */
+    #hero {
+      background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
+      color: #fff;
+      text-align: center;
+      padding: 6rem 2rem 5rem;
+    }
+    #hero h1 { font-size: 2.8rem; font-weight: 800; margin-bottom: 1rem; }
+    #hero h1 span { color: #38bdf8; }
+    #hero p { font-size: 1.1rem; color: #94a3b8; max-width: 540px; margin: 0 auto 2rem; }
+    .hero-buttons { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+    .btn-primary {
+      background: #38bdf8; color: #0f172a;
+      border: none; padding: .75rem 2rem;
+      border-radius: 8px; font-weight: 700; font-size: 1rem;
+      cursor: pointer; transition: transform .15s, background .2s;
+    }
+    .btn-primary:hover { background: #7dd3fc; transform: translateY(-2px); }
+    .btn-secondary {
+      background: transparent; color: #f8fafc;
+      border: 2px solid #475569; padding: .75rem 2rem;
+      border-radius: 8px; font-weight: 600; font-size: 1rem;
+      cursor: pointer; transition: border-color .2s;
+    }
+    .btn-secondary:hover { border-color: #94a3b8; }
+
+    /* ── Ticker ── */
+    .ticker-wrap {
+      background: #1e293b; overflow: hidden;
+      border-top: 1px solid #334155; border-bottom: 1px solid #334155;
+      padding: .5rem 0;
+    }
+    .ticker {
+      display: flex; gap: 3rem;
+      animation: ticker-scroll 30s linear infinite;
+      white-space: nowrap;
+    }
+    .ticker span { color: #38bdf8; font-size: .8rem; font-weight: 500; }
+    .ticker span::before { content: '▶ '; color: #475569; }
+    @keyframes ticker-scroll {
+      from { transform: translateX(0); }
+      to   { transform: translateX(-50%); }
+    }
+
+    /* ── Search ── */
+    .search-section {
+      background: #fff;
+      padding: 2rem;
+      display: flex; justify-content: center;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .search-box {
+      display: flex; width: 100%; max-width: 600px;
+      border: 2px solid #cbd5e1; border-radius: 10px;
+      overflow: hidden; transition: border-color .2s;
+    }
+    .search-box:focus-within { border-color: #38bdf8; }
+    .search-box input {
+      flex: 1; border: none; outline: none;
+      padding: .75rem 1rem; font-size: .95rem; color: #1e293b;
+    }
+    .search-box button {
+      background: #0f172a; color: #fff;
+      border: none; padding: 0 1.5rem;
+      cursor: pointer; font-weight: 600; font-size: .9rem;
+      transition: background .2s;
+    }
+    .search-box button:hover { background: #1e3a5f; }
+
+    /* ── Cards ── */
+    #articles {
+      max-width: 1100px; margin: 3rem auto; padding: 0 1.5rem;
+    }
+    #articles h2 { font-size: 1.5rem; font-weight: 700; margin-bottom: 1.5rem; }
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1.5rem;
+    }
+    .card {
+      background: #fff; border-radius: 12px;
+      overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.08);
+      transition: transform .2s, box-shadow .2s;
+      cursor: pointer;
+    }
+    .card:hover { transform: translateY(-4px); box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+    .card-thumb {
+      height: 160px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 3rem;
+    }
+    .card-body { padding: 1.2rem; }
+    .card-tag {
+      display: inline-block;
+      background: #eff6ff; color: #3b82f6;
+      border-radius: 4px; padding: .15rem .5rem;
+      font-size: .72rem; font-weight: 600;
+      text-transform: uppercase; margin-bottom: .5rem;
+    }
+    .card-title { font-size: 1rem; font-weight: 700; margin-bottom: .4rem; line-height: 1.4; }
+    .card-meta { font-size: .78rem; color: #64748b; }
+    .card-actions { display: flex; gap: .75rem; margin-top: 1rem; }
+    .btn-read {
+      flex: 1; background: #0f172a; color: #fff;
+      border: none; padding: .5rem; border-radius: 6px;
+      font-size: .82rem; font-weight: 600; cursor: pointer;
+      transition: background .2s;
+    }
+    .btn-read:hover { background: #1e3a5f; }
+    .btn-save {
+      background: transparent; color: #64748b;
+      border: 1px solid #e2e8f0; padding: .5rem .85rem;
+      border-radius: 6px; font-size: .82rem; cursor: pointer;
+      transition: color .2s, border-color .2s;
+    }
+    .btn-save:hover { color: #0f172a; border-color: #94a3b8; }
+
+    /* ── Newsletter ── */
+    #newsletter {
+      background: linear-gradient(135deg, #0f172a, #1e3a5f);
+      padding: 4rem 2rem;
+      text-align: center; color: #fff;
+      margin: 3rem 0;
+    }
+    #newsletter h2 { font-size: 1.8rem; font-weight: 800; margin-bottom: .5rem; }
+    #newsletter p { color: #94a3b8; margin-bottom: 1.5rem; }
+    .newsletter-form {
+      display: flex; max-width: 460px; margin: 0 auto;
+      gap: .75rem; flex-wrap: wrap; justify-content: center;
+    }
+    .newsletter-form input {
+      flex: 1; min-width: 220px;
+      border: 2px solid #334155; background: #1e293b;
+      color: #fff; border-radius: 8px;
+      padding: .7rem 1rem; font-size: .9rem; outline: none;
+      transition: border-color .2s;
+    }
+    .newsletter-form input:focus { border-color: #38bdf8; }
+    .newsletter-form input::placeholder { color: #475569; }
+    .newsletter-form button {
+      background: #38bdf8; color: #0f172a;
+      border: none; padding: .7rem 1.5rem;
+      border-radius: 8px; font-weight: 700; cursor: pointer;
+      transition: background .2s;
+    }
+    .newsletter-form button:hover { background: #7dd3fc; }
+    .newsletter-msg { margin-top: .75rem; font-size: .85rem; color: #4ade80; min-height: 1.2em; }
+
+    /* ── Stats Banner ── */
+    .stats-banner {
+      background: #fff; border-top: 1px solid #e2e8f0;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex; justify-content: center; flex-wrap: wrap;
+      gap: 2rem; padding: 2rem;
+    }
+    .stat-item { text-align: center; }
+    .stat-item .num { font-size: 2rem; font-weight: 800; color: #0f172a; }
+    .stat-item .lbl { font-size: .8rem; color: #64748b; text-transform: uppercase; letter-spacing: .05em; }
+
+    /* ── Footer ── */
+    footer {
+      background: #0f172a; color: #475569;
+      text-align: center; padding: 2rem;
+      font-size: .85rem;
+    }
+    footer a { color: #38bdf8; text-decoration: none; }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed; bottom: 1.5rem; right: 1.5rem;
+      background: #0f172a; color: #f8fafc;
+      padding: .8rem 1.2rem; border-radius: 10px;
+      font-size: .88rem; font-weight: 500;
+      box-shadow: 0 4px 16px rgba(0,0,0,.3);
+      transform: translateY(100px); opacity: 0;
+      transition: transform .3s, opacity .3s;
+      pointer-events: none; z-index: 999;
+    }
+    #toast.show { transform: translateY(0); opacity: 1; }
+
+    /* ── Cookie Banner ── */
+    #cookie-banner {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: #1e293b; color: #e2e8f0;
+      padding: 1rem 2rem;
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 1rem;
+      border-top: 1px solid #334155;
+      z-index: 998;
+    }
+    #cookie-banner p { font-size: .85rem; }
+    #cookie-banner .btns { display: flex; gap: .75rem; }
+    #cookie-banner .btns button {
+      padding: .45rem 1rem; border-radius: 6px;
+      font-size: .82rem; font-weight: 600; cursor: pointer; border: none;
+    }
+    #btn-accept { background: #38bdf8; color: #0f172a; }
+    #btn-decline { background: #334155; color: #94a3b8; }
+  </style>
+</head>
+<body>
+
+  <!-- ── Navigation ── -->
+  <nav>
+    <span class="nav-logo" onclick="scrollTo({top:0,behavior:'smooth'})">⚡ TechPulse</span>
+    <div class="nav-links">
+      <a href="#articles" onclick="trackNav('Articles')">Articles</a>
+      <a href="#newsletter" onclick="trackNav('Newsletter')">Newsletter</a>
+      <a href="#" onclick="trackNav('About')">About</a>
+    </div>
+    <button class="nav-cta" onclick="handleCta()">Subscribe Free</button>
+  </nav>
+
+  <!-- ── Hero ── -->
+  <section id="hero">
+    <h1>Stay Ahead of <span>Technology</span></h1>
+    <p>In-depth articles, breaking news, and expert analysis on AI, security, software, and hardware.</p>
+    <div class="hero-buttons">
+      <button class="btn-primary" onclick="handleHeroBtn('explore')">Explore Articles</button>
+      <button class="btn-secondary" onclick="handleHeroBtn('demo')">Watch Demo</button>
+    </div>
+  </section>
+
+  <!-- ── Breaking News Ticker ── -->
+  <div class="ticker-wrap">
+    <div class="ticker" id="ticker">
+      <span>AI surpasses human performance on new benchmark</span>
+      <span>Quantum computing reaches 1000 qubit milestone</span>
+      <span>Major browser update patches zero-day exploit</span>
+      <span>Open-source LLM beats GPT-4 on code tasks</span>
+      <span>New RISC-V chip draws 0.3W at peak load</span>
+      <span>WebAssembly 2.0 spec officially finalized</span>
+      <!-- Duplicate for seamless loop -->
+      <span>AI surpasses human performance on new benchmark</span>
+      <span>Quantum computing reaches 1000 qubit milestone</span>
+      <span>Major browser update patches zero-day exploit</span>
+      <span>Open-source LLM beats GPT-4 on code tasks</span>
+      <span>New RISC-V chip draws 0.3W at peak load</span>
+      <span>WebAssembly 2.0 spec officially finalized</span>
+    </div>
+  </div>
+
+  <!-- ── Search Bar ── -->
+  <div class="search-section">
+    <div class="search-box">
+      <input type="text" id="search-input" placeholder="Search articles, topics, authors…" oninput="handleSearch(this.value)" />
+      <button onclick="submitSearch()">Search</button>
+    </div>
+  </div>
+
+  <!-- ── Article Cards ── -->
+  <section id="articles">
+    <h2>Latest Articles</h2>
+    <div class="cards-grid" id="cards-grid"></div>
+  </section>
+
+  <!-- ── Stats ── -->
+  <div class="stats-banner">
+    <div class="stat-item"><div class="num" id="s-articles">0</div><div class="lbl">Articles Published</div></div>
+    <div class="stat-item"><div class="num" id="s-readers">0</div><div class="lbl">Monthly Readers</div></div>
+    <div class="stat-item"><div class="num" id="s-authors">0</div><div class="lbl">Expert Authors</div></div>
+    <div class="stat-item"><div class="num" id="s-topics">0</div><div class="lbl">Topics Covered</div></div>
+  </div>
+
+  <!-- ── Newsletter ── -->
+  <section id="newsletter">
+    <h2>Never Miss a Story</h2>
+    <p>Join 80,000+ readers. No spam, unsubscribe anytime.</p>
+    <form class="newsletter-form" onsubmit="handleNewsletter(event)">
+      <input type="email" id="nl-email" placeholder="you@example.com" required />
+      <button type="submit">Subscribe</button>
+    </form>
+    <p class="newsletter-msg" id="nl-msg"></p>
+  </section>
+
+  <!-- ── Footer ── -->
+  <footer>
+    <p>© 2026 TechPulse — <a href="#">Privacy</a> · <a href="#">Terms</a> · <a href="#">Contact</a></p>
+    <p style="margin-top:.4rem; font-size:.75rem; color:#334155;">
+      This page is a SkyNet tracking test environment.
+    </p>
+  </footer>
+
+  <!-- ── Toast ── -->
+  <div id="toast"></div>
+
+  <!-- ── Cookie Banner ── -->
+  <div id="cookie-banner">
+    <p>🍪 We use cookies to improve your experience. <a href="#" style="color:#38bdf8">Learn more.</a></p>
+    <div class="btns">
+      <button id="btn-accept" onclick="acceptCookies()">Accept</button>
+      <button id="btn-decline" onclick="declineCookies()">Decline</button>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════════
+       SKYNET TRACKER — configuration
+       Replace SITE_API_KEY with a real key from Integration page.
+  ═════════════════════════════════════════════════════════════════ -->
+  <script>
+    window._skynet = {
+      key: '8427e15910ab35aa70075bb2a82d1a7d81dada595f779ae9d68104a55bce6355',
+      api: 'http://10.0.0.39:8000'  // SkyNet backend URL
+    };
+  </script>
+  <script src="http://10.0.0.39:8000/tracker/skynet.js"></script>
+
+  <!-- ── App Logic ── -->
+  <script>
+    'use strict';
+
+    // ── Article data ──────────────────────────────────────────────
+    var ARTICLES = [
+      { tag: 'AI', emoji: '🤖', title: 'How Large Language Models Are Rewriting Software Development', author: 'Sara Chen', date: 'Mar 28, 2026', read: '8 min' },
+      { tag: 'Security', emoji: '🔒', title: 'Zero-Trust Architecture: A Practical Guide for 2026', author: 'Ahmed Karim', date: 'Mar 27, 2026', read: '11 min' },
+      { tag: 'Hardware', emoji: '⚙️', title: 'RISC-V Goes Mainstream: What It Means for the Chip Industry', author: 'Lena Müller', date: 'Mar 26, 2026', read: '6 min' },
+      { tag: 'Web', emoji: '🌐', title: 'WebAssembly 2.0 Feature Deep Dive and Migration Guide', author: 'James Park', date: 'Mar 25, 2026', read: '9 min' },
+      { tag: 'AI', emoji: '🧠', title: 'Multimodal Models and the End of Single-Purpose AI', author: 'Priya Nair', date: 'Mar 24, 2026', read: '7 min' },
+      { tag: 'Cloud', emoji: '☁️', title: 'Edge Computing in 2026: Latency Under 1ms Is Now Real', author: 'Tom Rivera', date: 'Mar 23, 2026', read: '5 min' },
+    ];
+
+    var TAG_COLORS = {
+      'AI': '#eff6ff:#3b82f6',
+      'Security': '#fef2f2:#ef4444',
+      'Hardware': '#f0fdf4:#22c55e',
+      'Web': '#fdf4ff:#a855f7',
+      'Cloud': '#fff7ed:#f97316',
+    };
+
+    // ── Render cards ──────────────────────────────────────────────
+    function renderCards(data) {
+      var grid = document.getElementById('cards-grid');
+      grid.innerHTML = '';
+      data.forEach(function(a, i) {
+        var colors = (TAG_COLORS[a.tag] || '#f8fafc:#64748b').split(':');
+        var card = document.createElement('div');
+        card.className = 'card';
+        card.setAttribute('data-index', i);
+        card.innerHTML = [
+          '<div class="card-thumb" style="background:' + colors[0] + '"><span>' + a.emoji + '</span></div>',
+          '<div class="card-body">',
+          '  <span class="card-tag" style="background:' + colors[0] + ';color:' + colors[1] + '">' + a.tag + '</span>',
+          '  <p class="card-title">' + a.title + '</p>',
+          '  <p class="card-meta">' + a.author + ' &middot; ' + a.date + ' &middot; ' + a.read + ' read</p>',
+          '  <div class="card-actions">',
+          '    <button class="btn-read" onclick="openArticle(' + i + ')">Read Article</button>',
+          '    <button class="btn-save" onclick="saveArticle(event,' + i + ')">&#9825; Save</button>',
+          '  </div>',
+          '</div>',
+        ].join('');
+        grid.appendChild(card);
+      });
+    }
+
+    // ── Search ────────────────────────────────────────────────────
+    function handleSearch(val) {
+      var q = val.toLowerCase().trim();
+      var filtered = q
+        ? ARTICLES.filter(function(a) {
+            return a.title.toLowerCase().includes(q) ||
+                   a.tag.toLowerCase().includes(q) ||
+                   a.author.toLowerCase().includes(q);
+          })
+        : ARTICLES;
+      renderCards(filtered);
+    }
+
+    function submitSearch() {
+      var val = document.getElementById('search-input').value;
+      handleSearch(val);
+      toast('Searched: "' + val + '"');
+    }
+
+    // ── Card interactions ─────────────────────────────────────────
+    function openArticle(i) {
+      toast('Opening: ' + ARTICLES[i].title.substring(0, 40) + '…');
+    }
+
+    function saveArticle(e, i) {
+      e.stopPropagation();
+      var btn = e.target;
+      btn.textContent = '♥ Saved';
+      btn.style.color = '#ef4444';
+      btn.style.borderColor = '#ef4444';
+      toast('Saved to your reading list');
+    }
+
+    // ── Navigation ────────────────────────────────────────────────
+    function trackNav(label) {
+      // SkyNet will capture this click automatically via event listeners
+    }
+
+    function handleCta() {
+      document.getElementById('nl-email').focus();
+      document.getElementById('newsletter').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function handleHeroBtn(type) {
+      if (type === 'explore') {
+        document.getElementById('articles').scrollIntoView({ behavior: 'smooth' });
+      } else {
+        toast('Video demo coming soon!');
+      }
+    }
+
+    // ── Newsletter ────────────────────────────────────────────────
+    function handleNewsletter(e) {
+      e.preventDefault();
+      var email = document.getElementById('nl-email').value;
+      var msg = document.getElementById('nl-msg');
+      msg.textContent = '✓ Subscribed! Welcome, ' + email.split('@')[0] + '.';
+      document.getElementById('nl-email').value = '';
+      toast('Subscription confirmed');
+    }
+
+    // ── Cookie Banner ─────────────────────────────────────────────
+    function acceptCookies() {
+      document.getElementById('cookie-banner').style.display = 'none';
+      toast('Preferences saved');
+    }
+    function declineCookies() {
+      document.getElementById('cookie-banner').style.display = 'none';
+    }
+
+    // ── Toast ─────────────────────────────────────────────────────
+    var toastTimer;
+    function toast(msg) {
+      var el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(function() { el.classList.remove('show'); }, 2800);
+    }
+
+    // ── Animated stat counters ────────────────────────────────────
+    function animateCounter(id, target, suffix) {
+      suffix = suffix || '';
+      var el = document.getElementById(id);
+      var start = 0;
+      var step = Math.ceil(target / 60);
+      var timer = setInterval(function() {
+        start += step;
+        if (start >= target) { start = target; clearInterval(timer); }
+        el.textContent = start.toLocaleString() + suffix;
+      }, 25);
+    }
+
+    // Trigger counters when stats banner enters viewport
+    var statsObserver = new IntersectionObserver(function(entries) {
+      if (entries[0].isIntersecting) {
+        animateCounter('s-articles', 2847);
+        animateCounter('s-readers', 81000, '+');
+        animateCounter('s-authors', 142);
+        animateCounter('s-topics', 38);
+        statsObserver.disconnect();
+      }
+    }, { threshold: 0.3 });
+    statsObserver.observe(document.querySelector('.stats-banner'));
+
+    // ── Synthetic user activity (for testing tracker signal) ──────
+    // Simulates realistic mouse movement, scrolling, and idle periods.
+    (function simulateActivity() {
+      var actions = [
+        // Scroll down slowly
+        function() { window.scrollBy({ top: 300, behavior: 'smooth' }); },
+        function() { window.scrollBy({ top: 400, behavior: 'smooth' }); },
+        // Simulate mouse move events across the page
+        function() {
+          var positions = [[200,300],[450,500],[700,250],[300,600]];
+          positions.forEach(function(pos, idx) {
+            setTimeout(function() {
+              document.dispatchEvent(new MouseEvent('mousemove', {
+                clientX: pos[0], clientY: pos[1], bubbles: true
+              }));
+            }, idx * 300);
+          });
+        },
+        // Scroll back up
+        function() { window.scrollTo({ top: 0, behavior: 'smooth' }); },
+        // Simulate hover over a card (mouseover)
+        function() {
+          var cards = document.querySelectorAll('.card');
+          if (cards.length > 0) {
+            cards[0].dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+          }
+        },
+        // Focus the search input
+        function() {
+          document.getElementById('search-input').focus();
+        },
+        // Scroll to newsletter
+        function() {
+          document.getElementById('newsletter').scrollIntoView({ behavior: 'smooth' });
+        },
+      ];
+
+      var idx = 0;
+      // Stagger actions with realistic delays (3–8 seconds apart)
+      function runNext() {
+        if (idx >= actions.length) { idx = 0; } // loop
+        actions[idx]();
+        idx++;
+        var delay = 3000 + Math.random() * 5000;
+        setTimeout(runNext, delay);
+      }
+      // Start after page settles
+      setTimeout(runNext, 4000);
+    })();
+
+    // ── Init ──────────────────────────────────────────────────────
+    renderCards(ARTICLES);
+  </script>
+
+</body>
+</html>

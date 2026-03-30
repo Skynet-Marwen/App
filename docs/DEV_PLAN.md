@@ -16,6 +16,10 @@
 
 ---
 
+## Done (Post-Scaffold Fixes — 2026-03-29)
+
+---
+
 ## Backlog — Priority Order
 
 ### P0 — Critical (blocks production use)
@@ -64,6 +68,12 @@
 - [x] 2026-03-29 — CLAUDE.md behavioral contract
 - [x] 2026-03-29 — docs/ directory (ARCHITECTURE, LOGIC, WORKFLOW, DEV_PLAN, API, SECURITY, INSTALL, CONTRIBUTING, ROADMAP)
 - [x] 2026-03-29 — shared/ contracts (error_codes.json, event_types.json)
+- [x] 2026-03-29 — Fix: `Incident.metadata` → `extra_data` (SQLAlchemy reserved name crash)
+- [x] 2026-03-29 — Fix: `pydantic[email]` + `bcrypt==4.0.1` added to requirements.txt
+- [x] 2026-03-29 — Fix: login API call converted to `application/x-www-form-urlencoded`
+- [x] 2026-03-29 — Fix: LoginPage error handler guards against Pydantic 422 array response
+- [x] 2026-03-29 — Dev stack with Vite HMR + uvicorn --reload (docker-compose.dev.yml)
+- [x] 2026-03-29 — tracker/test-site.html — standalone tracker test page
 
 ---
 
@@ -83,3 +93,4 @@
 | Inline Pydantic models in routes | v1.0.0 | Violates Phase 2 rules | v1.1.0 |
 | Stats charts return mock data | v1.0.0 | Dashboard shows no real data | v1.1.0 |
 | Sessions endpoint returns `[]` | v1.0.0 | No session management | v1.1.0 |
+| `VITE_HMR_HOST` hardcoded to `10.0.0.39` in dev compose | v1.0.0 | Must be changed per deployment | v1.1.0 |

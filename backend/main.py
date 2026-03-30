@@ -57,10 +57,10 @@ app.add_middleware(
 
 app.include_router(api_router)
 
-# Serve tracker script
-tracker_path = os.path.join(os.path.dirname(__file__), "..", "tracker")
+# Serve tracker script and test pages
+tracker_path = os.path.join(os.path.dirname(__file__), "tracker")
 if os.path.exists(tracker_path):
-    app.mount("/tracker", StaticFiles(directory=tracker_path), name="tracker")
+    app.mount("/tracker", StaticFiles(directory=tracker_path, html=True), name="tracker")
 
 
 @app.get("/health")
