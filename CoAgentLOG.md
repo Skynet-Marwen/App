@@ -37,5 +37,13 @@
 [2026-03-30 03:50] Committed and pushed incident-based blocked count fix
 [2026-03-30 03:55] Added basic anti-evasion check in track.py to detect bots and create incidents
 [2026-03-30 04:00] Backend rebuild completed with anti-evasion checks
+[2026-03-30 04:05] Committed and pushed basic anti-evasion bot detection
+[2026-03-30 04:10] All blocked count fixes deployed - now uses incident detections with anti-evasion checks
 
-*Last updated: 2026-03-30 — Agent: GitHub Copilot*
+[2026-03-30 05:00] fix(stats): corrected total_blocked in /stats/overview — was returning incident count (total_detected), now returns blocked_ips + blocked_visitors + blocked_devices; Device model import added to stats.py — Agent: Claude Sonnet 4.6
+[2026-03-30 05:01] fix(stats): validated Visitor.status and Device.status columns exist in ORM models before using in query — Agent: Claude Sonnet 4.6
+[2026-03-30 05:05] Backend rebuilt and restarted with corrected blocked count (blocked IPs + visitors + devices)
+
+[2026-03-30 05:10] fix(devices): added Unblock button in DevicesPage.jsx for blocked devices — backend DELETE /devices/{id}/block existed but UI had no trigger; added handleUnblock() and conditional Unblock/Block render in actions column — Agent: Claude Sonnet 4.6
+
+*Last updated: 2026-03-30 — Agent: Claude Sonnet 4.6*

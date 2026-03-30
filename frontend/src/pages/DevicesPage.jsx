@@ -57,6 +57,11 @@ export default function DevicesPage() {
     fetchDevices()
   }
 
+  const handleUnblock = async (device) => {
+    await devicesApi.unblock(device.id)
+    fetchDevices()
+  }
+
   const riskBadge = (score) => {
     if (score >= 80) return <Badge variant="danger">{score} High</Badge>
     if (score >= 50) return <Badge variant="warning">{score} Medium</Badge>
@@ -100,7 +105,11 @@ export default function DevicesPage() {
               Link
             </Button>
           )}
-          {row.status !== 'blocked' && (
+          {row.status === 'blocked' ? (
+            <Button variant="secondary" size="sm" icon={Ban} onClick={(e) => { e.stopPropagation(); handleUnblock(row) }}>
+              Unblock
+            </Button>
+          ) : (
             <Button variant="danger" size="sm" icon={Ban} onClick={(e) => { e.stopPropagation(); handleBlock(row) }} />
           )}
         </div>

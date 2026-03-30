@@ -5,6 +5,7 @@ from ...core.database import get_db
 from ...core.security import get_current_user
 from ...models.user import User
 from ...models.visitor import Visitor
+from ...models.device import Device
 from ...models.blocking import BlockedIP, BlockingRule
 from ...models.incident import Incident
 from ...models.event import Event
@@ -45,6 +46,16 @@ async def overview(
     total_devices = await db.scalar(
         select(func.count(func.distinct(Visitor.device_id))).where(Visitor.first_seen >= since, Visitor.device_id.isnot(None))
     ) or 0
+
+    # Blocked count: blocked IPs + blocked visitors + blocked devices
+    blocked_ips_count = await db.scalar(select(func.count(BlockedIP.ip))) or 0
+    blocked_visitors_count = await db.scalar(
+        select(func.count(Visitor.id)).where(Visitor.status == "blocked")
+    ) or 0
+    blocked_devices_count = await db.scalar(
+        select(func.count(Device.id)).where(Device.status == "blocked")
+    ) or 0
+    total_blocked = blocked_ips_count + blocked_visitors_count + blocked_devices_count
     
     # Evasion attempts from incidents
     evasion_attempts = await db.scalar(
@@ -141,7 +152,7 @@ async def overview(
         "total_visitors": total_visitors,
         "unique_users": unique_users,
         "total_devices": total_devices,
-        "total_blocked": total_detected,
+        "total_blocked": total_blocked,
         "evasion_attempts": evasion_attempts,
         "spam_detected": spam_events,
         "visitors_change": visitors_change,
