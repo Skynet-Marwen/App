@@ -26,5 +26,9 @@
 [2026-03-30 02:15] Committed CoAgentLOG.md to Git repository
 [2026-03-30 03:00] Fixed blocked count calculation inconsistency: Changed total_blocked from sum of hits to count of blocked IPs for consistency with previous period comparison
 [2026-03-30 03:05] Updated backend/app/api/routes/stats.py: Modified overview() to use total_blocked_ips for total_blocked metric instead of blocked_attempts sum
+[2026-03-30 03:10] Updated CHANGELOG.md with blocked count calculation fix
+[2026-03-30 03:15] Committed and pushed stats calculation fix to GitHub
+[2026-03-30 03:20] Updated stats to count blocking rules + blocked IPs as total_blocked entities
+[2026-03-30 03:25] Rebuilding backend container with expanded blocked count calculation
 
 *Last updated: 2026-03-30 — Agent: GitHub Copilot*

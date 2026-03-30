@@ -27,7 +27,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 ### Fixed
 - Stats dashboard metrics now synchronized: visitor counts, blocked attempts, events, incidents properly aggregated
 - Realtime visitor count now uses distinct visitor IDs in 5-minute rolling window
-- Blocked count calculation now uses consistent count of blocked IPs for both current and previous periods (instead of mixing count vs sum of hits)
+- Blocked count calculation now includes both blocking rules and blocked IPs for comprehensive blocked entities metric
 - Traffic chart now shows hourly visitor/blocked aggregation via SQL DATE_TRUNC
 - Blocking activity chart now breaks down by incident type
 

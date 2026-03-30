@@ -27,7 +27,8 @@ async def overview(
     
     # Current period metrics
     total_visitors = await db.scalar(select(func.count(func.distinct(Visitor.id))).where(Visitor.first_seen >= since)) or 0
-    total_blocked_ips = await db.scalar(select(func.count(BlockedIP.ip))) or 0
+    total_blocked_entities = await db.scalar(select(func.count(BlockingRule.id))) or 0
+    total_blocked_entities += await db.scalar(select(func.count(BlockedIP.ip))) or 0
     blocked_attempts = await db.scalar(
         select(func.sum(BlockedIP.hits)).select_from(BlockedIP)
     ) or 0
@@ -62,9 +63,9 @@ async def overview(
             Visitor.first_seen >= prev_since, Visitor.first_seen < since
         )
     ) or 1
-    prev_blocked = await db.scalar(
-        select(func.count(BlockedIP.ip))
-    ) or 1
+    prev_blocked = await db.scalar(select(func.count(BlockingRule.id))) or 0
+    prev_blocked += await db.scalar(select(func.count(BlockedIP.ip))) or 0
+    prev_blocked = prev_blocked or 1
     
     # Calculate percentage changes
     visitors_change = round(((total_visitors - prev_visitors) / prev_visitors * 100)) if prev_visitors else 0
@@ -134,7 +135,7 @@ async def overview(
         "total_visitors": total_visitors,
         "unique_users": unique_users,
         "total_devices": total_devices,
-        "total_blocked": total_blocked_ips,
+        "total_blocked": total_blocked_entities,
         "evasion_attempts": evasion_attempts,
         "spam_detected": spam_events,
         "visitors_change": visitors_change,
