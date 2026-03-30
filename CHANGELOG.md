@@ -15,6 +15,8 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Changed
 - SkyNet admin authentication is **native JWT only** — Keycloak is no longer used or intended for SkyNet dashboard login
+- `backend/app/api/routes/stats.py`: overview and realtime endpoints now properly aggregate metrics from Event and Incident tables with distinct visitor counts, summed blocked attempts, device tracking
+- `frontend/src/pages/OverviewPage.jsx`: real-time refresh interval reduced from 30s to 10s, overview auto-refreshes every 60s for better metric synchronization
 
 ### Removed
 - Keycloak SSO settings tab from `frontend/src/pages/SettingsPage.jsx`
@@ -23,6 +25,12 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - `settingsApi.keycloak()` and `settingsApi.updateKeycloak()` from `frontend/src/services/api.js`
 
 ### Fixed
+- Stats dashboard metrics now synchronized: visitor counts, blocked attempts, events, incidents properly aggregated
+- Realtime visitor count now uses distinct visitor IDs in 5-minute rolling window
+- Blocked attempts now sum from BlockedIP.hits instead of static count
+- Traffic chart now shows hourly visitor/blocked aggregation via SQL DATE_TRUNC
+- Blocking activity chart now breaks down by incident type
+
 ### Security
 
 ---

@@ -16,6 +16,16 @@
 
 ---
 
+## Done (Metric Synchronization — 2026-03-30)
+
+- [x] 2026-03-30 — fix(stats): synchronized visitor/blocked/event metrics in dashboard
+  - Backend: `overview()` endpoint now properly aggregates distinct visitors, summed blocked attempts, device count, traffic hourly chart, blocking by incident type
+  - Backend: `realtime()` endpoint now calculates active visitors (5-min window), blocked attempts (1-min window), suspicious sessions (1-hour incidents)
+  - Frontend: real-time refresh reduced from 30s → 10s, overview auto-refresh every 60s
+  - `backend/app/api/routes/stats.py` — 156 lines (split if crosses 300)
+
+---
+
 ## Done (Post-Scaffold Fixes — 2026-03-29, continued)
 
 - [x] 2026-03-29 — refactor(auth): removed Keycloak SSO from SkyNet admin — native JWT only; Keycloak repurposed as security enforcement layer for tracked websites (v1.5.0)
