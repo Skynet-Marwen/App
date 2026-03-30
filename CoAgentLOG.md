@@ -34,5 +34,8 @@
 [2026-03-30 03:35] Backend container rebuild completed successfully, fix deployed
 [2026-03-30 03:40] Updated blocked count to use incident detections instead of blocked entities
 [2026-03-30 03:45] Backend rebuild completed for incident-based blocked count
+[2026-03-30 03:50] Committed and pushed incident-based blocked count fix
+[2026-03-30 03:55] Added basic anti-evasion check in track.py to detect bots and create incidents
+[2026-03-30 04:00] Backend rebuild completed with anti-evasion checks
 
 *Last updated: 2026-03-30 — Agent: GitHub Copilot*

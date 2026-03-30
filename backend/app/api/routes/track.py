@@ -10,8 +10,7 @@ from ...core.database import AsyncSessionLocal
 from ...models.site import Site
 from ...models.visitor import Visitor
 from ...models.device import Device
-from ...models.event import Event
-from ...models.blocking import BlockedIP
+from ...models.incident import Incident
 from ...schemas.track import PageviewPayload, EventPayload, IdentifyPayload
 import uuid
 from datetime import datetime, timezone
@@ -105,6 +104,20 @@ async def track_pageview(
             ip=ip,
         )
         db.add(event)
+
+        # Basic anti-evasion check
+        if "bot" in ua_string.lower() or "crawler" in ua_string.lower() or "spider" in ua_string.lower():
+            incident = Incident(
+                id=str(uuid.uuid4()),
+                site_id=site.id,
+                type="bot_detection",
+                description=f"Bot detected: {ua_string}",
+                ip=ip,
+                severity="medium",
+                status="open",
+            )
+            db.add(incident)
+
         await db.commit()
 
     return {"ok": True}
