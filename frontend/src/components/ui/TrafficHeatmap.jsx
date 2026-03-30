@@ -1,4 +1,8 @@
 import { useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
+
+// 7d (24×7) is the visual reference — all modes occupy this exact space
+const GRID_RATIO = '24 / 7'
 
 const TIME_MODES = {
   '1h':  { cols: 10, rows: 6, total: 60,  label: '1 cell = 1 min' },
@@ -10,7 +14,6 @@ const TIME_MODES = {
 const DOW_HDR  = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-// Interpolate dark navy → neon cyan (#06b6d4)
 function cellColor(intensity) {
   if (intensity === 0) return 'rgb(10,15,40)'
   const r = Math.round(10 - intensity * 4)
@@ -19,7 +22,6 @@ function cellColor(intensity) {
   return `rgb(${r},${g},${b})`
 }
 
-// Glow proportional to intensity, threshold 0.4
 function cellGlow(intensity) {
   if (intensity < 0.4) return 'none'
   const alpha = (((intensity - 0.4) / 0.6) * 0.8).toFixed(2)
@@ -55,7 +57,8 @@ export function TrafficHeatmap({ data, range, className = '' }) {
 
   if (!data?.length) {
     return (
-      <div className={`flex items-center justify-center h-28 text-xs font-mono text-gray-700 ${className}`}>
+      <div className={`flex items-center justify-center text-xs font-mono text-gray-700 ${className}`}
+        style={{ aspectRatio: GRID_RATIO }}>
         // NO DATA
       </div>
     )
@@ -98,20 +101,34 @@ export function TrafficHeatmap({ data, range, className = '' }) {
         <span className="text-[9px] font-mono text-gray-700 uppercase tracking-widest">High</span>
       </div>
 
-      {/* Floating tooltip */}
-      {tip && (
+      {/* Tooltip — portalled to body so fixed positioning is never broken by
+          ancestor transforms/filters in the dashboard layout */}
+      {tip && createPortal(
         <div
-          className="fixed z-[9999] pointer-events-none"
-          style={{ left: tip.x + 14, top: tip.y - 54 }}
+          style={{
+            position: 'fixed',
+            left: tip.x + 16,
+            top:  tip.y - 58,
+            zIndex: 9999,
+            pointerEvents: 'none',
+          }}
         >
-          <div
-            className="rounded px-2.5 py-1.5 text-[10px] font-mono border border-cyan-500/25"
-            style={{ background: 'rgba(2,6,23,0.96)', backdropFilter: 'blur(8px)' }}
-          >
-            <p className="text-gray-500 mb-0.5">{tip.ts}</p>
-            <p className="text-cyan-400 font-bold">{tip.count.toLocaleString()} requests</p>
+          <div style={{
+            background: 'rgba(2,6,23,0.97)',
+            backdropFilter: 'blur(8px)',
+            border: '1px solid rgba(6,182,212,0.25)',
+            borderRadius: '4px',
+            padding: '6px 10px',
+            fontFamily: 'monospace',
+            fontSize: '10px',
+            lineHeight: '1.5',
+            whiteSpace: 'nowrap',
+          }}>
+            <div style={{ color: '#6b7280', marginBottom: '2px' }}>{tip.ts}</div>
+            <div style={{ color: '#22d3ee', fontWeight: 700 }}>{tip.count.toLocaleString()} requests</div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
@@ -119,7 +136,7 @@ export function TrafficHeatmap({ data, range, className = '' }) {
 
 // ─── Grid layer ───────────────────────────────────────────────────────────────
 function HeatmapGrid({ data, mode, calOffset, range, setTip }) {
-  const isCalendar  = !!mode.calendar
+  const isCalendar   = !!mode.calendar
   const show7dLabels = range === '7d'
 
   const { cells, rows } = useMemo(() => {
@@ -127,12 +144,11 @@ function HeatmapGrid({ data, mode, calOffset, range, setTip }) {
       return {
         cells: Array.from({ length: mode.total }, (_, i) => ({
           bucket: data[i] || { count: 0, timestamp: '', intensity: 0 },
-          blank: i >= data.length,
+          blank:  i >= data.length,
         })),
         rows: mode.rows,
       }
     }
-    // Calendar: blank cells before first day, then data, pad trailing
     const rows = Math.ceil((calOffset + mode.total) / 7)
     const totalCells = rows * 7
     return {
@@ -149,7 +165,6 @@ function HeatmapGrid({ data, mode, calOffset, range, setTip }) {
     }
   }, [data, mode, calOffset, isCalendar])
 
-  // Derive day labels from first bucket timestamp (7d mode)
   const dayLabels = useMemo(() => {
     if (!show7dLabels || !data[0]?.timestamp) return []
     const start = new Date(data[0].timestamp.replace(' ', 'T') + 'Z')
@@ -163,47 +178,37 @@ function HeatmapGrid({ data, mode, calOffset, range, setTip }) {
   const cols = isCalendar ? 7 : mode.cols
 
   return (
-    <div className="flex gap-1.5">
+    <div className="flex gap-1.5" style={{ aspectRatio: GRID_RATIO }}>
+
       {/* 7d: Y-axis day labels */}
       {show7dLabels && (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateRows: `repeat(7, 1fr)`,
-            gap: '2px',
-            alignSelf: 'stretch',
-            flexShrink: 0,
-          }}
-        >
+        <div style={{ display: 'grid', gridTemplateRows: 'repeat(7,1fr)', gap: '2px', alignSelf: 'stretch', flexShrink: 0 }}>
           {dayLabels.map((d, i) => (
-            <div
-              key={i}
-              className="flex items-center justify-end text-[8px] font-mono text-gray-700 pr-1.5"
-            >
+            <div key={i} className="flex items-center justify-end text-[8px] font-mono text-gray-700 pr-1.5">
               {d}
             </div>
           ))}
         </div>
       )}
 
-      <div style={{ flex: 1 }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         {/* 30d: day-of-week header */}
         {isCalendar && (
-          <div className="grid grid-cols-7 mb-[2px]" style={{ gap: '2px' }}>
+          <div className="grid grid-cols-7 mb-[2px]" style={{ gap: '2px', flexShrink: 0 }}>
             {DOW_HDR.map((d, i) => (
               <div key={i} className="text-center text-[8px] font-mono text-gray-700">{d}</div>
             ))}
           </div>
         )}
 
-        {/* Main grid */}
+        {/* Main grid — fills the remaining height so all modes share the same outer box */}
         <div
           style={{
+            flex: 1,
             display: 'grid',
             gridTemplateColumns: `repeat(${cols}, 1fr)`,
             gridTemplateRows: `repeat(${rows}, 1fr)`,
             gap: '2px',
-            aspectRatio: `${cols} / ${rows}`,
           }}
         >
           {cells.map(({ bucket, blank }, i) => (
