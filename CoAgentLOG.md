@@ -78,4 +78,4 @@
 
 [2026-03-30 14:00] feat(delete): DELETE /devices/{id} and DELETE /visitors/{id} — bidirectional cleanup; events.device_id and incidents.device_id nullified (no FK, manual UPDATE); visitor events deleted on visitor delete; visitors.device_id auto-unlinked by DB FK SET NULL; delete buttons + confirmation modals in DevicesPage and VisitorsPage; devicesApi.delete() and visitorsApi.delete() added to api.js — Agent: Claude Sonnet 4.6
 
-*Last updated: 2026-03-30 14:00 — Agent: Claude Sonnet 4.6*
+*Last updated: 2026-03-30 14:00 — Agent: Claude Sonnet 4.6*[2026-03-30 14:34] CHECKPOINT: checkpoint_20260330_143452 created (images tagged + DB dump)

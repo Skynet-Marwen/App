@@ -1,0 +1,71 @@
+.traffic-heatmap__cell {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  border-radius: 2px;
+  transition: transform 0.16s ease, box-shadow 0.18s ease, filter 0.18s ease;
+}
+
+.traffic-heatmap__cell--blank::before,
+.traffic-heatmap__cell--blank::after {
+  display: none;
+}
+
+.traffic-heatmap__cell--active::before,
+.traffic-heatmap__cell--active::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.traffic-heatmap__cell--active::before {
+  inset: -35%;
+  opacity: var(--nebula-opacity, 0.3);
+  background:
+    radial-gradient(circle at 22% 30%, rgba(255,255,255,0.14) 0, transparent 20%),
+    radial-gradient(circle at 68% 28%, rgba(34,211,238,0.26) 0, transparent 26%),
+    radial-gradient(circle at 52% 72%, rgba(14,165,233,0.18) 0, transparent 30%);
+  filter: blur(8px) saturate(125%);
+  transform: translate3d(var(--drift-start, -3px), 0, 0) scale(0.92);
+  animation: traffic-heatmap-nebula var(--pulse-duration, 4.8s) ease-in-out infinite alternate;
+}
+
+.traffic-heatmap__cell--active::after {
+  opacity: var(--spark-opacity, 0.28);
+  background-image:
+    radial-gradient(circle, rgba(255,255,255,0.95) 0 0.9px, transparent 1.8px),
+    radial-gradient(circle, rgba(125,211,252,0.92) 0 1.1px, transparent 2px);
+  background-size: var(--spark-size, 22px) var(--spark-size, 22px), var(--spark-size-alt, 32px) var(--spark-size-alt, 32px);
+  background-position: 18% 24%, 72% 58%;
+  mix-blend-mode: screen;
+  animation: traffic-heatmap-stars var(--star-duration, 6.4s) linear infinite;
+}
+
+.traffic-heatmap__cell--interactive:hover {
+  transform: scale(1.22);
+  z-index: 10;
+  filter: saturate(118%);
+  box-shadow: var(--cell-hover-glow);
+}
+
+@keyframes traffic-heatmap-nebula {
+  0% {
+    transform: translate3d(var(--drift-start, -3px), -4%, 0) scale(0.9);
+  }
+  100% {
+    transform: translate3d(var(--drift-distance, 6px), 7%, 0) scale(1.14);
+  }
+}
+
+@keyframes traffic-heatmap-stars {
+  0% {
+    transform: translate3d(-8%, 0, 0);
+  }
+  50% {
+    transform: translate3d(4%, -6%, 0);
+  }
+  100% {
+    transform: translate3d(10%, 4%, 0);
+  }
+}

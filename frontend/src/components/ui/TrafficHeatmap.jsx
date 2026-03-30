@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
+import './TrafficHeatmap.css'
 
 // 7d (24×7) is the visual reference — all modes occupy this exact space
 const GRID_RATIO = '24 / 7'
@@ -15,18 +16,26 @@ const DOW_HDR  = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 function cellColor(intensity) {
-  if (intensity === 0) return 'rgb(10,15,40)'
-  const r = Math.round(10 - intensity * 4)
-  const g = Math.round(15 + intensity * 167)
-  const b = Math.round(40  + intensity * 172)
-  return `rgb(${r},${g},${b})`
+  if (intensity === 0) return 'rgba(3,8,20,0.22)'
+  const eased = Math.pow(intensity, 0.82)
+  const r = Math.round(4 + eased * 18)
+  const g = Math.round(11 + eased * 171)
+  const b = Math.round(24 + eased * 188)
+  const alpha = (0.24 + eased * 0.58).toFixed(2)
+  return `rgba(${r},${g},${b},${alpha})`
 }
 
 function cellGlow(intensity) {
-  if (intensity < 0.4) return 'none'
-  const alpha = (((intensity - 0.4) / 0.6) * 0.8).toFixed(2)
-  const spread = Math.round(4 + intensity * 10)
+  if (intensity <= 0) return 'none'
+  const alpha = (0.1 + intensity * 0.42).toFixed(2)
+  const spread = Math.round(5 + intensity * 12)
   return `0 0 ${spread}px rgba(6,182,212,${alpha})`
+}
+
+function cellHoverGlow(intensity) {
+  const alpha = (0.42 + intensity * 0.5).toFixed(2)
+  const spread = Math.round(12 + intensity * 16)
+  return `0 0 ${spread}px rgba(34,211,238,${alpha})`
 }
 
 // ─── Container layer ──────────────────────────────────────────────────────────
@@ -96,7 +105,7 @@ export function TrafficHeatmap({ data, range, className = '' }) {
         <span className="text-[9px] font-mono text-gray-700 uppercase tracking-widest">Low</span>
         <div
           className="flex-1 h-1.5 rounded-full"
-          style={{ background: 'linear-gradient(90deg, rgb(10,15,40), rgb(6,182,212))' }}
+          style={{ background: 'linear-gradient(90deg, rgba(3,8,20,0.88), rgba(6,182,212,0.92))' }}
         />
         <span className="text-[9px] font-mono text-gray-700 uppercase tracking-widest">High</span>
       </div>
@@ -223,35 +232,51 @@ function HeatmapGrid({ data, mode, calOffset, range, setTip }) {
 // ─── Cell layer ───────────────────────────────────────────────────────────────
 function HeatmapCell({ bucket, blank, setTip }) {
   const { count, timestamp, intensity } = bucket
-  const bg   = blank ? 'rgba(255,255,255,0.02)' : cellColor(intensity)
+  const active = !blank && count > 0
+  const bg = blank ? 'rgba(255,255,255,0.02)' : cellColor(intensity)
   const glow = blank ? 'none' : cellGlow(intensity)
+  const hoverGlow = blank ? 'none' : cellHoverGlow(intensity)
+  const drift = `${Math.round(5 + intensity * 9)}px`
+  const driftStart = `${Math.round((5 + intensity * 9) * -0.45)}px`
+  const pulseDuration = `${(4.8 - intensity * 2.3).toFixed(2)}s`
+  const starDuration = `${(6.4 - intensity * 2.8).toFixed(2)}s`
+  const sparkOpacity = (0.16 + intensity * 0.48).toFixed(2)
+  const nebulaOpacity = (0.2 + intensity * 0.52).toFixed(2)
+  const sparkSize = `${Math.round(18 + intensity * 18)}px`
+  const sparkSizeAlt = `${Math.round(28 + intensity * 26)}px`
 
   return (
     <div
+      className={[
+        'traffic-heatmap__cell',
+        blank ? 'traffic-heatmap__cell--blank' : '',
+        active ? 'traffic-heatmap__cell--active traffic-heatmap__cell--interactive' : '',
+      ].filter(Boolean).join(' ')}
       style={{
         backgroundColor: bg,
-        borderRadius: '2px',
         opacity: blank ? 0.15 : 1,
         cursor: !blank && count > 0 ? 'crosshair' : 'default',
-        transition: 'transform 0.12s ease, box-shadow 0.12s ease',
         boxShadow: glow,
+        '--cell-glow': glow,
+        '--cell-hover-glow': hoverGlow,
+        '--pulse-duration': pulseDuration,
+        '--spark-opacity': sparkOpacity,
+        '--nebula-opacity': nebulaOpacity,
+        '--drift-distance': drift,
+        '--drift-start': driftStart,
+        '--spark-size': sparkSize,
+        '--spark-size-alt': sparkSizeAlt,
+        '--star-duration': starDuration,
       }}
       onMouseEnter={(e) => {
         if (blank || count === 0) return
-        e.currentTarget.style.transform = 'scale(1.25)'
-        e.currentTarget.style.zIndex    = '10'
-        e.currentTarget.style.position  = 'relative'
-        e.currentTarget.style.boxShadow = '0 0 14px rgba(6,182,212,0.9)'
         setTip({ x: e.clientX, y: e.clientY, ts: timestamp, count })
       }}
       onMouseMove={(e) => {
         if (!blank && count > 0)
           setTip(prev => ({ ...prev, x: e.clientX, y: e.clientY }))
       }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.transform = 'scale(1)'
-        e.currentTarget.style.zIndex    = ''
-        e.currentTarget.style.boxShadow = glow
+      onMouseLeave={() => {
         setTip(null)
       }}
     />
