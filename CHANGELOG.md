@@ -10,19 +10,34 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 ## [Unreleased]
 
 ### Added
-- Dev stack in `docker-compose.dev.yml`: Vite HMR (port 5173) + uvicorn `--reload` with live volume mounts
-- `tracker/test-site.html` — standalone single-file test site for SkyNet tracker integration testing
+### Changed
+### Fixed
+### Removed
+### Security
+
+---
+
+## [1.0.1] - 2026-03-30
+
+### Added
+- Dev stack in `docker-compose.dev.yml`: Vite HMR (port 5173) + uvicorn `--reload` with live volume mounts — code changes reflect in browser without page reload
+- `tracker/test-site.html` — standalone single-file test site for SkyNet tracker integration testing (simulates clicks, scroll, mouse movement, form interactions)
+- Integration page: multi-tab integration guide (HTML Script, Google Tag Manager, WordPress, Python/Server, REST API curl) with per-tab copy button
+- `APP_VERSION` field added to `backend/app/core/config.py`
 
 ### Changed
-- `frontend/vite.config.js`: added `host`, `port`, `hmr.host` (via `VITE_HMR_HOST`), `VITE_PROXY_TARGET` env var support, and `/tracker/` proxy rule
-- `docker-compose.dev.yml`: complete rewrite — now runs full dev stack (backend + frontend + db + redis) with hot reload
+- `frontend/vite.config.js`: added `host: 0.0.0.0`, `port: 5173`, `hmr.host` (via `VITE_HMR_HOST`), `VITE_PROXY_TARGET` env var, `/tracker/` proxy rule
+- `docker-compose.dev.yml`: complete rewrite — full dev stack with hot reload for both backend and frontend
+- Integration page: "Get Script" button renamed to "Integrate", script modal replaced with tabbed integration guide
+- `frontend/package.json`: version bumped from `0.0.0` to `1.0.1`
 
 ### Fixed
-- `backend/app/models/incident.py`: renamed column `metadata` → `extra_data` (SQLAlchemy reserved name conflict, caused startup crash)
-- `backend/requirements.txt`: added `pydantic[email]` (missing `email-validator` dependency)
-- `backend/requirements.txt`: pinned `bcrypt==4.0.1` (bcrypt 5.x incompatible with passlib 1.7.4)
-- `frontend/src/services/api.js`: login now sends `application/x-www-form-urlencoded` (OAuth2PasswordRequestForm requires form data, not JSON)
-- `frontend/src/pages/LoginPage.jsx`: error handler now safely stringifies Pydantic 422 array responses (prevented React error #31)
+- `backend/app/models/incident.py`: renamed ORM attribute `metadata` → `extra_data` (SQLAlchemy reserved name conflict caused startup crash on first boot)
+- `backend/requirements.txt`: `pydantic` → `pydantic[email]` (missing `email-validator` dependency caused startup crash)
+- `backend/requirements.txt`: pinned `bcrypt==4.0.1` (bcrypt 5.x broke passlib 1.7.4 compatibility, caused startup crash)
+- `backend/app/api/routes/track.py`: tracker endpoints now accept API key from `?key=` query param in addition to `X-SkyNet-Key` header — required for `sendBeacon()` which cannot set custom headers
+- `backend/main.py`: fixed tracker static files path (`../tracker` → `tracker`) — was silently skipping the mount, causing 404 JSON on `/tracker/*`
+- `backend/main.py`: added `html=True` to `StaticFiles` mount so `.html` files are served directly
 
 ---
 

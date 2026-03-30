@@ -5,8 +5,8 @@
 
 ---
 
-## Current Version: `1.0.0`
-## Phase: Post-Scaffold — Hardening & Feature Completion
+## Current Version: `1.0.1`
+## Phase: Hardening — P0 items next (see Backlog)
 
 ---
 
