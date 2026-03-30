@@ -41,11 +41,20 @@ export default function OverviewPage() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  // Auto-refresh realtime every 30s
+  // Auto-refresh realtime every 10s for better sync
   useEffect(() => {
-    const id = setInterval(() => statsApi.realtime().then((r) => setRealtime(r.data)).catch(() => {}), 30000)
+    const id = setInterval(() => {
+      statsApi.realtime().then((r) => setRealtime(r.data)).catch(() => {})
+      // Refresh full overview every 1 minute
+      let count = 0
+      if (count % 6 === 0) fetchData()
+      count++
+    }, 10000)
     return () => clearInterval(id)
-  }, [])
+  }, [fetchData])
+  
+  // Refresh overview data when range changes
+  useEffect(() => { fetchData() }, [statsRange, fetchData])
 
   return (
     <DashboardLayout title="Overview" showRange onRefresh={fetchData}>
