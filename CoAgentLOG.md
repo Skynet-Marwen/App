@@ -30,5 +30,9 @@
 [2026-03-30 03:15] Committed and pushed stats calculation fix to GitHub
 [2026-03-30 03:20] Updated stats to count blocking rules + blocked IPs as total_blocked entities
 [2026-03-30 03:25] Rebuilding backend container with expanded blocked count calculation
+[2026-03-30 03:30] Committed and pushed expanded blocked count fix to GitHub
+[2026-03-30 03:35] Backend container rebuild completed successfully, fix deployed
+[2026-03-30 03:40] Updated blocked count to use incident detections instead of blocked entities
+[2026-03-30 03:45] Backend rebuild completed for incident-based blocked count
 
 *Last updated: 2026-03-30 — Agent: GitHub Copilot*
