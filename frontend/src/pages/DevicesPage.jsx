@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Search, Monitor, Link2, Unlink, Ban, Fingerprint, Users } from 'lucide-react'
+import { Search, Monitor, Link2, Unlink, Ban, Fingerprint, Users, Trash2 } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
 import { Card, Table, Badge, Button, Input, Pagination, Modal, Select } from '../components/ui/index'
 import { devicesApi, usersApi } from '../services/api'
@@ -19,6 +19,8 @@ export default function DevicesPage() {
   const [usersList, setUsersList] = useState([])
   const [linkUserId, setLinkUserId] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deleting, setDeleting] = useState(false)
 
   const fetchDevices = useCallback(async () => {
     setLoading(true)
@@ -64,6 +66,17 @@ export default function DevicesPage() {
   const handleBlock = async (device) => { await devicesApi.block(device.id, 'Manual block'); fetchDevices() }
   const handleUnblock = async (device) => { await devicesApi.unblock(device.id); fetchDevices() }
 
+  const handleDelete = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await devicesApi.delete(deleteTarget.id)
+      setDeleteTarget(null)
+      fetchDevices()
+    } catch (_) {}
+    finally { setDeleting(false) }
+  }
+
   const riskBadge = (score) => {
     if (score >= 80) return <Badge variant="danger">{score} High</Badge>
     if (score >= 50) return <Badge variant="warning">{score} Medium</Badge>
@@ -99,7 +112,7 @@ export default function DevicesPage() {
       v === 'blocked' ? <Badge variant="danger">Blocked</Badge> : <Badge variant="success">Active</Badge>
     )},
     {
-      key: 'actions', label: '', width: '140px',
+      key: 'actions', label: '', width: '180px',
       render: (_, row) => (
         <div className="flex gap-1">
           {row.linked_user
@@ -110,6 +123,7 @@ export default function DevicesPage() {
             ? <Button variant="secondary" size="sm" icon={Ban} onClick={(e) => { e.stopPropagation(); handleUnblock(row) }}>Unblock</Button>
             : <Button variant="danger" size="sm" icon={Ban} onClick={(e) => { e.stopPropagation(); handleBlock(row) }} />
           }
+          <Button variant="danger" size="sm" icon={Trash2} onClick={(e) => { e.stopPropagation(); setDeleteTarget(row) }} />
         </div>
       )
     },
@@ -193,6 +207,21 @@ export default function DevicesPage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete Device">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-400">
+            Permanently delete device <code className="text-cyan-400 text-xs">{deleteTarget?.fingerprint?.slice(0, 16)}…</code>?
+            <br />
+            <span className="text-red-400">All linked visitors will be unlinked. Events will lose device context.</span>
+          </p>
+          <div className="flex gap-2 justify-end">
+            <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="danger" loading={deleting} onClick={handleDelete} icon={Trash2}>Delete</Button>
+          </div>
+        </div>
       </Modal>
 
       {/* Link to User Modal */}

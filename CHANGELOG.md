@@ -10,6 +10,11 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 ## [Unreleased]
 
 ### Added
+- `DELETE /api/v1/devices/{id}` — permanently deletes a device; nullifies `events.device_id` and `incidents.device_id` (plain-string columns, no DB FK); linked visitors auto-unlinked via DB FK `ondelete=SET NULL`
+- `DELETE /api/v1/visitors/{id}` — permanently deletes a visitor and all their events; linked device is preserved but unlinked via DB FK `ondelete=SET NULL`
+- `frontend/src/pages/DevicesPage.jsx`: Delete button (trash icon) per row + confirmation modal with impact warning
+- `frontend/src/pages/VisitorsPage.jsx`: Delete button (trash icon) per row + confirmation modal with impact warning
+- `frontend/src/services/api.js`: added `devicesApi.delete(id)` and `visitorsApi.delete(id)`
 - `backend/app/core/geoip.py`: GeoIP lookup service — lazy-loads MaxMind GeoLite2-City reader, fails silently if DB file absent; `lookup(ip)` returns `country`, `country_code`, `country_flag` (Unicode flag emoji), `city`
 - `backend/app/middleware/security_headers.py`: HTTP security headers middleware — sets `X-Content-Type-Options`, `X-Frame-Options: DENY`, `X-XSS-Protection`, `Referrer-Policy`, `Permissions-Policy`, `Content-Security-Policy`, `Strict-Transport-Security` on every response
 - `docs/ROADMAP.md`: v1.5.0 Keycloak Security Enforcement Layer — Keycloak as security enforcement for tracked websites (event monitoring, user sync, threat correlation, session revocation)

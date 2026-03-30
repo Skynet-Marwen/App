@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, text
 from ...core.database import get_db
 from ...core.security import get_current_user
 from ...models.user import User
@@ -92,3 +92,16 @@ async def unblock_visitor(visitor_id: str, db: AsyncSession = Depends(get_db), _
             device.status = "active"
     await db.commit()
     return {"message": "Unblocked"}
+
+
+@router.delete("/{visitor_id}")
+async def delete_visitor(visitor_id: str, db: AsyncSession = Depends(get_db), _: User = Depends(get_current_user)):
+    v = await db.get(Visitor, visitor_id)
+    if not v:
+        raise HTTPException(404, "Visitor not found")
+    # Delete events owned by this visitor (no DB-level FK — manual cleanup)
+    await db.execute(text("DELETE FROM events WHERE visitor_id = :id"), {"id": visitor_id})
+    # Delete visitor (device_id FK ondelete=SET NULL: device stays, link dropped by DB)
+    await db.delete(v)
+    await db.commit()
+    return {"message": "Deleted"}

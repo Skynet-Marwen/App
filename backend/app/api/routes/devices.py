@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, text
 from ...core.database import get_db
 from ...core.security import get_current_user
 from ...models.user import User
@@ -176,3 +176,21 @@ async def unblock_device(
         v.status = "active"
     await db.commit()
     return {"message": "Unblocked"}
+
+
+@router.delete("/{device_id}")
+async def delete_device(
+    device_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    d = await db.get(Device, device_id)
+    if not d:
+        raise HTTPException(404, "Device not found")
+    # Nullify plain-string foreign refs (no DB-level FK cascade)
+    await db.execute(text("UPDATE events SET device_id = NULL WHERE device_id = :id"), {"id": device_id})
+    await db.execute(text("UPDATE incidents SET device_id = NULL WHERE device_id = :id"), {"id": device_id})
+    # visitors.device_id → FK ondelete=SET NULL, handled by DB on delete
+    await db.delete(d)
+    await db.commit()
+    return {"message": "Deleted"}

@@ -48,6 +48,7 @@ export const visitorsApi = {
   get: (id) => api.get(`/visitors/${id}`),
   block: (id, reason) => api.post(`/visitors/${id}/block`, { reason }),
   unblock: (id) => api.delete(`/visitors/${id}/block`),
+  delete: (id) => api.delete(`/visitors/${id}`),
 }
 
 // --- Users ---
@@ -73,6 +74,7 @@ export const devicesApi = {
   unlink: (deviceId) => api.delete(`/devices/${deviceId}/link`),
   block: (id, reason) => api.post(`/devices/${id}/block`, { reason }),
   unblock: (id) => api.delete(`/devices/${id}/block`),
+  delete: (id) => api.delete(`/devices/${id}`),
 }
 
 // --- Blocking ---

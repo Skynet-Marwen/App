@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Eye, Search, Ban, Globe, Monitor, Clock } from 'lucide-react'
+import { Eye, Search, Ban, Globe, Monitor, Clock, Trash2 } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
 import { Card, Table, Badge, Button, Input, Pagination, Modal } from '../components/ui/index'
 import { visitorsApi } from '../services/api'
@@ -20,6 +20,8 @@ export default function VisitorsPage() {
   const [blockModal, setBlockModal] = useState(null)
   const [blockReason, setBlockReason] = useState('')
   const [blocking, setBlocking] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deleting, setDeleting] = useState(false)
 
   const fetchVisitors = useCallback(async () => {
     setLoading(true)
@@ -50,6 +52,17 @@ export default function VisitorsPage() {
     fetchVisitors()
   }
 
+  const handleDelete = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await visitorsApi.delete(deleteTarget.id)
+      setDeleteTarget(null)
+      fetchVisitors()
+    } catch (_) {}
+    finally { setDeleting(false) }
+  }
+
   const columns = [
     { key: 'ip', label: 'IP Address', render: (v) => <code className="text-cyan-400 text-xs">{v}</code> },
     { key: 'country', label: 'Country', render: (_, r) => (
@@ -71,7 +84,7 @@ export default function VisitorsPage() {
     { key: 'page_views', label: 'Page Views', render: (v) => <span className="text-xs text-white font-medium">{v}</span> },
     { key: 'status', label: 'Status', render: (v) => statusBadge(v) },
     {
-      key: 'actions', label: '', width: '100px',
+      key: 'actions', label: '', width: '140px',
       render: (_, row) => (
         <div className="flex gap-1">
           {row.status !== 'blocked' ? (
@@ -83,6 +96,7 @@ export default function VisitorsPage() {
               Unblock
             </Button>
           )}
+          <Button variant="danger" size="sm" icon={Trash2} onClick={(e) => { e.stopPropagation(); setDeleteTarget(row) }} />
         </div>
       )
     },
@@ -151,6 +165,21 @@ export default function VisitorsPage() {
             )}
           </div>
         )}
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete Visitor">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-400">
+            Permanently delete visitor <code className="text-cyan-400">{deleteTarget?.ip}</code>?
+            <br />
+            <span className="text-red-400">All events for this visitor will be deleted. Linked device will be unlinked.</span>
+          </p>
+          <div className="flex gap-2 justify-end">
+            <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="danger" loading={deleting} onClick={handleDelete} icon={Trash2}>Delete</Button>
+          </div>
+        </div>
       </Modal>
 
       {/* Block Modal */}
