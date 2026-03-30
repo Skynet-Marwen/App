@@ -15,6 +15,7 @@ async def get_db() -> AsyncSession:
         yield session
 
 
+# DB schema is managed by Alembic migrations.
+# Run `alembic upgrade head` before starting the app (done in Dockerfile CMD).
 async def init_db():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    pass

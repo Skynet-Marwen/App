@@ -23,7 +23,7 @@
 ## Backlog — Priority Order
 
 ### P0 — Critical (blocks production use)
-- [ ] Alembic migration setup — replace `create_all()` with proper migrations
+- [x] Alembic migration setup — replace `create_all()` with proper migrations
 - [ ] Rate limiting middleware — implement slowapi on all route groups
 - [ ] GeoIP enrichment — integrate MaxMind GeoLite2 on visitor upsert
 - [ ] Redis session store — implement real session tracking (currently returns `[]`)
@@ -89,7 +89,7 @@
 |------|-----------|--------|------------------|
 | Settings stored in-memory (not DB) | v1.0.0 | Lost on restart | v1.1.0 |
 | Anti-evasion config in-memory | v1.0.0 | Lost on restart | v1.1.0 |
-| `create_all()` instead of Alembic | v1.0.0 | No migration history | v1.1.0 |
+| ~~`create_all()` instead of Alembic~~ | ~~v1.0.0~~ | ~~No migration history~~ | ✅ resolved v1.1.0-dev |
 | Inline Pydantic models in routes | v1.0.0 | Violates Phase 2 rules | v1.1.0 |
 | Stats charts return mock data | v1.0.0 | Dashboard shows no real data | v1.1.0 |
 | Sessions endpoint returns `[]` | v1.0.0 | No session management | v1.1.0 |
