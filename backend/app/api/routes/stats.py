@@ -68,7 +68,7 @@ async def overview(
     
     # Calculate percentage changes
     visitors_change = round(((total_visitors - prev_visitors) / prev_visitors * 100)) if prev_visitors else 0
-    blocked_change = round(((blocked_attempts - prev_blocked) / prev_blocked * 100)) if prev_blocked else 0
+    blocked_change = round(((total_blocked_ips - prev_blocked) / prev_blocked * 100)) if prev_blocked else 0
     
     # Traffic chart - hourly aggregation
     from sqlalchemy import cast, String
@@ -134,7 +134,7 @@ async def overview(
         "total_visitors": total_visitors,
         "unique_users": unique_users,
         "total_devices": total_devices,
-        "total_blocked": blocked_attempts,
+        "total_blocked": total_blocked_ips,
         "evasion_attempts": evasion_attempts,
         "spam_detected": spam_events,
         "visitors_change": visitors_change,

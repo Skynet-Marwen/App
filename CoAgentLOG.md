@@ -23,7 +23,8 @@
 [2026-03-30 02:00] Rebuilt frontend container to ensure latest code deployment
 [2026-03-30 02:05] Verified production containers running (frontend:3000, backend:8000, db, redis)
 [2026-03-30 02:10] Created CoAgentLOG.md and updated CLAUDE.md with logging requirement
-
----
+[2026-03-30 02:15] Committed CoAgentLOG.md to Git repository
+[2026-03-30 03:00] Fixed blocked count calculation inconsistency: Changed total_blocked from sum of hits to count of blocked IPs for consistency with previous period comparison
+[2026-03-30 03:05] Updated backend/app/api/routes/stats.py: Modified overview() to use total_blocked_ips for total_blocked metric instead of blocked_attempts sum
 
 *Last updated: 2026-03-30 — Agent: GitHub Copilot*
