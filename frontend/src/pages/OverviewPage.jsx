@@ -6,6 +6,8 @@ import {
 import DashboardLayout from '../components/layout/DashboardLayout'
 import { StatCard, Card, CardHeader } from '../components/ui/index'
 import { TrafficHeatmap } from '../components/ui/TrafficHeatmap'
+import { WorldGlobe } from '../components/ui/WorldGlobe'
+import { CombatLog } from '../components/ui/CombatLog'
 import { statsApi } from '../services/api'
 import { useUIStore } from '../store/useAppStore'
 
