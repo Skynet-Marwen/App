@@ -101,6 +101,11 @@ export const integrationApi = {
   trackerScript: (siteId) => api.get(`/integration/tracker-script?site_id=${siteId}`),
 }
 
+// --- System ---
+export const systemApi = {
+  info: () => api.get('/system/info'),
+}
+
 // --- Settings ---
 export const settingsApi = {
   get: () => api.get('/settings'),

@@ -4,6 +4,7 @@ No auth required; validated via X-SkyNet-Key header OR ?key= query param.
 sendBeacon() cannot set custom headers, so the key falls back to ?key=.
 """
 from fastapi import APIRouter, Request, Header, HTTPException, Query
+from app.middleware.rate_limit import limiter
 from sqlalchemy import select
 from ...core.database import AsyncSessionLocal
 from ...models.site import Site
@@ -37,6 +38,7 @@ async def validate_site_key(api_key: str) -> Site:
 
 
 @router.post("/pageview")
+@limiter.limit("200/minute")
 async def track_pageview(
     payload: PageviewPayload,
     request: Request,
@@ -109,6 +111,7 @@ async def track_pageview(
 
 
 @router.post("/event")
+@limiter.limit("200/minute")
 async def track_event(
     payload: EventPayload,
     request: Request,
@@ -131,6 +134,7 @@ async def track_event(
 
 
 @router.post("/identify")
+@limiter.limit("200/minute")
 async def identify_user(
     payload: IdentifyPayload,
     request: Request,

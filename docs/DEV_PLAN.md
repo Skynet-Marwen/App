@@ -24,7 +24,7 @@
 
 ### P0 — Critical (blocks production use)
 - [x] Alembic migration setup — replace `create_all()` with proper migrations
-- [ ] Rate limiting middleware — implement slowapi on all route groups
+- [x] Rate limiting middleware — implement slowapi on all route groups
 - [ ] GeoIP enrichment — integrate MaxMind GeoLite2 on visitor upsert
 - [ ] Redis session store — implement real session tracking (currently returns `[]`)
 - [ ] Anti-evasion background tasks — wire up async checks after pageview

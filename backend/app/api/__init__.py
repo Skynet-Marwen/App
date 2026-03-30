@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from .routes import auth, stats, visitors, users, devices, blocking, anti_evasion, integration, track, settings
+from .routes import auth, stats, visitors, users, devices, blocking, anti_evasion, integration, track, settings, system
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -13,3 +13,4 @@ api_router.include_router(anti_evasion.router)
 api_router.include_router(integration.router)
 api_router.include_router(track.router)
 api_router.include_router(settings.router)
+api_router.include_router(system.router)

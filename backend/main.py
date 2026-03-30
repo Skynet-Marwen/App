@@ -7,6 +7,8 @@ import os
 from app.core.config import settings
 from app.core.database import init_db
 from app.api import api_router
+from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 
 @asynccontextmanager
@@ -42,10 +44,13 @@ async def create_default_admin():
 
 app = FastAPI(
     title="SkyNet API",
-    version="1.0.0",
+    version=settings.APP_VERSION,
     description="SkyNet — Self-Hosted Visitor Tracking & Security Dashboard",
     lifespan=lifespan,
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,

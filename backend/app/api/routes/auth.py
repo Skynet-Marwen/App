@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from ...core.database import get_db
 from ...core.security import verify_password, create_access_token, get_current_user, hash_password
 from ...models.user import User
+from ...middleware.rate_limit import limiter
 from datetime import datetime, timezone
 from pydantic import BaseModel
 
@@ -18,7 +19,8 @@ class LoginResponse(BaseModel):
 
 
 @router.post("/login")
-async def login(form: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def login(request: Request, form: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(User).where((User.email == form.username) | (User.username == form.username))
     )
@@ -40,12 +42,14 @@ async def login(form: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = 
 
 
 @router.post("/logout")
-async def logout(current_user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def logout(request: Request, current_user: User = Depends(get_current_user)):
     return {"message": "Logged out"}
 
 
 @router.get("/me")
-async def me(current_user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+async def me(request: Request, current_user: User = Depends(get_current_user)):
     return {
         "id": current_user.id,
         "email": current_user.email,
