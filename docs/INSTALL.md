@@ -19,7 +19,7 @@
 
 ```bash
 # 1. Clone
-git clone https://github.com/your-org/skynet.git
+git clone https://github.com/Skynet-Marwen/App.git skynet
 cd skynet
 
 # 2. Configure
@@ -209,10 +209,10 @@ SkyNet.track('purchase', { plan: 'pro', amount: 49.99 });
 ## Updating
 
 ```bash
-git pull origin main
+git pull origin master
 docker compose build
 docker compose up -d
-# Migrations run automatically on startup
+# Alembic migrations run automatically on startup via Dockerfile CMD
 ```
 
 ---
@@ -234,10 +234,13 @@ cat backup_20260329.sql | docker exec -i skynet-db-1 psql -U skynet skynet
 | Problem | Check |
 |---------|-------|
 | Dashboard shows "Not authenticated" | JWT expired or wrong `APP_BASE_URL` in `.env` |
-| No GeoIP data | `GEOIP_DB_PATH` wrong or file missing |
+| No GeoIP data | `GEOIP_DB_PATH` wrong or file missing — service continues without it |
+| Visitor country/flag blank | GeoIP DB absent or IP is private/loopback |
 | Tracker not sending | `CORS_ORIGINS` missing your site domain |
 | Login returns 422 | Ensure `Content-Type: application/x-www-form-urlencoded` on `/auth/login` |
 | DB connection refused | Check `DATABASE_URL` and that `db` container is healthy |
+| Heatmap empty on dashboard | Ensure events are being tracked (check tracker integration); verify `event_type='pageview'` rows exist in `events` table |
+| 502 on `/api/*` | Backend failed to start — check `docker compose logs backend` for Alembic migration errors |
 
 ```bash
 # Check logs

@@ -21,15 +21,15 @@ Core scaffold. Functional dashboard. Embeddable tracker. Docker deployment.
 ## v1.1.0 — Hardening `Target: Q2 2026`
 Make v1.0 production-ready. Close all technical debt.
 
-- [ ] Alembic migrations (replace `create_all`)
-- [ ] Rate limiting middleware (slowapi, Redis-backed)
-- [ ] GeoIP enrichment (MaxMind GeoLite2)
+- [x] Alembic migrations (replace `create_all`) — ✅ 2026-03-30
+- [x] Rate limiting middleware (slowapi, Redis-backed) — ✅ 2026-03-30
+- [x] GeoIP enrichment (MaxMind GeoLite2) — ✅ 2026-03-30
+- [x] Pydantic schemas layer (extract from routes) — ✅ 2026-03-30
+- [x] Real chart aggregation queries — ✅ traffic heatmap + blocking chart live 2026-03-30
+- [x] HTTP security headers (CSP, HSTS, X-Frame-Options) — ✅ 2026-03-30
 - [ ] Redis session store (real session management)
-- [ ] Pydantic schemas layer (extract from routes)
 - [ ] Frontend hooks layer (`useVisitors`, `useUsers`, etc.)
-- [ ] Real chart aggregation queries (no more mock data)
 - [ ] Audit log table + UI
-- [ ] HTTP security headers (CSP, HSTS, X-Frame-Options)
 - [ ] Input sanitization (strip HTML from user-supplied fields)
 - [ ] Anti-evasion async background checks
 

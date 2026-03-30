@@ -59,4 +59,21 @@
 
 [2026-03-30 08:15] fix(track): CRITICAL — Event model was never imported in routes/track.py; every POST /track/pageview was crashing with NameError 500 since v1.0.0, zero visitors/events were being recorded. Fixed by adding `from ...models.event import Event`. All devices now properly detected. — Agent: Claude Sonnet 4.6
 
-*Last updated: 2026-03-30 — Agent: Claude Sonnet 4.6*
+
+[2026-03-30 09:00] refactor(heatmap): replaced Traffic Over Time area chart with time-based CSS Grid heatmap — TrafficHeatmap component (Container/Grid/Cell layers), 1h/24h/7d/30d modes, dark navy→neon cyan gradient, hover tooltip — Agent: Claude Sonnet 4.6
+
+[2026-03-30 10:00] audit(codebase): full audit of DEV_PLAN against actual code — confirmed Pydantic schemas layer (9 files); fix(track): removed invalid site_id from Incident constructor (TypeError on bot detection); fix(schemas): replaced TrafficPoint/traffic_chart with HeatmapBucket/traffic_heatmap in OverviewResponse — Agent: Claude Sonnet 4.6
+
+[2026-03-30 10:30] feat(geoip): GeoIP enrichment on new visitor creation — backend/app/core/geoip.py lazy-loads MaxMind GeoLite2-City, silent fallback if DB absent, Unicode flag emoji; top_countries in /stats/overview now populated from real visitor data — Agent: Claude Sonnet 4.6
+
+[2026-03-30 11:00] security(middleware): HTTP security headers on all responses — SecurityHeadersMiddleware sets CSP, HSTS, X-Frame-Options DENY, X-Content-Type-Options, X-XSS-Protection, Referrer-Policy, Permissions-Policy; registered before CORSMiddleware in main.py — Agent: Claude Sonnet 4.6
+
+[2026-03-30 11:30] fix(heatmap/hardening): fixed 24h DATE_TRUNC expression, since_aligned bucket boundary alignment, traffic_heatmap key in response; enhanced TrafficHeatmap with 30d calendar layout, floating tooltip, meta row, color legend, 7d day labels — Agent: Claude Sonnet 4.6
+
+[2026-03-30 12:00] fix(stats): CRITICAL — `range: str` query param shadowed Python built-in `range()`, causing `TypeError: 'str' object is not callable` in fill-loop → `traffic_heatmap=[]` on every request; renamed param to `time_range` with `alias="range"` to preserve API contract — Agent: Claude Sonnet 4.6
+
+[2026-03-30 12:30] fix(heatmap): portal tooltip to document.body via createPortal — ancestor CSS transforms in dashboard layout broke position:fixed clientX/Y offset; locked all grid modes to aspectRatio '24/7' (7d reference) so 1h/24h/30d occupy identical visual space — Agent: Claude Sonnet 4.6
+
+[2026-03-30 13:00] docs: updated README, INSTALL, LOGIC, ROADMAP, CoAgentLOG — version bump to v1.0.1, correct repo URL, GeoIP implementation details, v1.1.0 completed items marked, troubleshooting entries added — Agent: Claude Sonnet 4.6
+
+*Last updated: 2026-03-30 13:00 — Agent: Claude Sonnet 4.6*

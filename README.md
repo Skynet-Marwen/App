@@ -14,7 +14,8 @@ SkyNet is a **self-hosted analytics and security dashboard** you can integrate w
 - **Device linking** — connect devices to user accounts across sessions
 - **Blocking engine** — block by IP, CIDR, country, ASN, user-agent, or device fingerprint
 - **Anti-evasion** — detect VPN, Tor, proxy, headless browsers, bots, IP rotation, multi-account abuse
-- **User management via Keycloak** — SSO, role sync, session revocation
+- **GeoIP enrichment** — country, city, flag emoji on every new visitor via MaxMind GeoLite2
+- **User management** — native dashboard users; Keycloak integration planned (v1.5.0)
 - **Embeddable tracker** — one `<script>` tag, works on any site
 
 ---
@@ -22,7 +23,7 @@ SkyNet is a **self-hosted analytics and security dashboard** you can integrate w
 ## Quick Start
 
 ```bash
-git clone https://github.com/your-org/skynet.git && cd skynet
+git clone https://github.com/Skynet-Marwen/App.git skynet && cd skynet
 cp backend/.env.example backend/.env   # set APP_SECRET_KEY and JWT_SECRET
 docker compose up -d
 ```
@@ -77,5 +78,5 @@ Get your API key from **Integration → Add Site** in the dashboard.
 
 ## Version
 
-Current: **v1.0.0**
+Current: **v1.0.1** (v1.1.0-dev in progress)
 See [CHANGELOG.md](CHANGELOG.md) for release history.

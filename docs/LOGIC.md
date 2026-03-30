@@ -129,14 +129,15 @@ Signals checked (any 2 = headless confirmed):
 
 ## 6. GeoIP Enrichment
 
-Triggered on every new Visitor record (or IP change):
-1. Lookup IP in MaxMind GeoLite2-City.mmdb.
-2. Extract: `country_name`, `country_code`, `city`, `latitude`, `longitude`, `ASN`, `ISP`.
-3. Map `country_code` → emoji flag (e.g., `TN` → `🇹🇳`).
-4. Store on Visitor record.
-5. Cache result in Redis for 1h (key: `geo:{ip}`).
+Triggered on **new Visitor creation only** (not on revisit — avoids redundant lookups):
+1. Lookup IP in `backend/app/core/geoip.py` → lazy-loaded MaxMind GeoLite2-City reader.
+2. Extract: `country`, `country_code`, `city`.
+3. Map `country_code` (ISO 3166-1 alpha-2) → Unicode flag emoji via regional indicator letters.
+4. Store on Visitor record (`country`, `country_code`, `country_flag`, `city`).
 
-If MaxMind DB not present: skip enrichment, log warning, continue.
+If MaxMind DB absent or IP unresolvable (private, loopback, unknown): fields left `null`, no error raised, tracking continues normally.
+
+**Planned (v1.4.0):** ASN lookup, ISP name, latitude/longitude, Redis cache (`geo:{ip}`, TTL 1h).
 
 ---
 
