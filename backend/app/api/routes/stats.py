@@ -19,11 +19,11 @@ RANGE_MAP = {"1h": 1/24, "24h": 1, "7d": 7, "30d": 30}
 
 @router.get("/overview")
 async def overview(
-    range: str = Query("24h"),
+    time_range: str = Query("24h", alias="range"),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    days = RANGE_MAP.get(range, 1)
+    days = RANGE_MAP.get(time_range, 1)
     since = datetime.now(timezone.utc) - timedelta(days=days)
     
     # Current period metrics
@@ -100,16 +100,16 @@ async def overview(
         '30d': ("DATE_TRUNC('day',  created_at)",  30,  timedelta(days=1)),
     }
     bucket_expr, expected_count, bucket_delta = _bucket_cfg.get(
-        range, ("DATE_TRUNC('hour', created_at)", 24, timedelta(hours=1))
+        time_range, ("DATE_TRUNC('hour', created_at)", 24, timedelta(hours=1))
     )
 
     # Align since to bucket boundary so fill-loop keys match SQL results
-    if range == '1h':
+    if time_range == '1h':
         since_aligned = since.replace(second=0, microsecond=0)
-    elif range == '24h':
+    elif time_range == '24h':
         m = (since.minute // 15) * 15
         since_aligned = since.replace(minute=m, second=0, microsecond=0)
-    elif range == '7d':
+    elif time_range == '7d':
         since_aligned = since.replace(minute=0, second=0, microsecond=0)
     else:
         since_aligned = since.replace(hour=0, minute=0, second=0, microsecond=0)
