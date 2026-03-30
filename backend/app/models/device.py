@@ -1,15 +1,20 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, Integer, Float, Text, ForeignKey
+from sqlalchemy import String, DateTime, Integer, Float, Text, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column
 from ..core.database import Base
 
 
 class Device(Base):
     __tablename__ = "devices"
+    __table_args__ = (
+        Index("ix_devices_match_key", "match_key"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     fingerprint: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    match_key: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    match_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     browser: Mapped[str | None] = mapped_column(String(100), nullable=True)
     os: Mapped[str | None] = mapped_column(String(100), nullable=True)

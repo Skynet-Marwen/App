@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from ...core.database import get_db
@@ -6,17 +6,11 @@ from ...core.security import get_current_user
 from ...models.user import User
 from ...models.site import Site
 from ...core.config import settings
-from pydantic import BaseModel
-from typing import Optional
+from ...schemas.site import CreateSiteRequest
+from ...services.audit import log_action, request_ip
 import uuid, secrets
 
 router = APIRouter(prefix="/integration", tags=["integration"])
-
-
-class CreateSiteRequest(BaseModel):
-    name: str
-    url: str
-    description: Optional[str] = None
 
 
 @router.get("/sites")
@@ -39,29 +33,32 @@ async def list_sites(db: AsyncSession = Depends(get_db), _: User = Depends(get_c
 
 
 @router.post("/sites")
-async def create_site(body: CreateSiteRequest, db: AsyncSession = Depends(get_db), _: User = Depends(get_current_user)):
+async def create_site(body: CreateSiteRequest, request: Request, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
     site = Site(id=str(uuid.uuid4()), **body.model_dump())
     db.add(site)
+    log_action(db, action="CREATE_SITE", actor_id=current.id, target_type="site", target_id=site.id, ip=request_ip(request))
     await db.commit()
     return {"id": site.id, "api_key": site.api_key, "message": "Site created"}
 
 
 @router.delete("/sites/{site_id}")
-async def delete_site(site_id: str, db: AsyncSession = Depends(get_db), _: User = Depends(get_current_user)):
+async def delete_site(site_id: str, request: Request, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
     s = await db.get(Site, site_id)
     if not s:
         raise HTTPException(404, "Not found")
+    log_action(db, action="DELETE_SITE", actor_id=current.id, target_type="site", target_id=s.id, ip=request_ip(request))
     await db.delete(s)
     await db.commit()
     return {"message": "Deleted"}
 
 
 @router.post("/sites/{site_id}/regenerate-key")
-async def regenerate_key(site_id: str, db: AsyncSession = Depends(get_db), _: User = Depends(get_current_user)):
+async def regenerate_key(site_id: str, request: Request, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
     s = await db.get(Site, site_id)
     if not s:
         raise HTTPException(404, "Not found")
     s.api_key = secrets.token_hex(32)
+    log_action(db, action="REGEN_KEY", actor_id=current.id, target_type="site", target_id=s.id, ip=request_ip(request))
     await db.commit()
     return {"api_key": s.api_key}
 

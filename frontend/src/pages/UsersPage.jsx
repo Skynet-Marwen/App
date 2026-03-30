@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import { Search, UserPlus, Ban, Key, Trash2, LogOut, ShieldCheck } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
 import { Card, Table, Badge, Button, Input, Pagination, Modal, Select, Alert } from '../components/ui/index'
-import { usersApi } from '../services/api'
+import { useUsers } from '../hooks/useUsers'
+import { useUserSessions } from '../hooks/useUserSessions'
 
 const roleBadge = (role) => {
   if (role === 'admin') return <Badge variant="purple">Admin</Badge>
@@ -19,47 +20,39 @@ const statusBadge = (status) => {
 const EMPTY_FORM = { email: '', username: '', role: 'user', password: '' }
 
 export default function UsersPage() {
-  const [users, setUsers] = useState([])
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
-  const [search, setSearch] = useState('')
-  const [loading, setLoading] = useState(true)
+  const {
+    users,
+    total,
+    page,
+    search,
+    loading,
+    setPage,
+    setSearch,
+    refresh,
+    createUser,
+    blockUser,
+    unblockUser,
+    resetPassword,
+  } = useUsers()
   const [selected, setSelected] = useState(null)
-  const [sessions, setSessions] = useState([])
   const [createModal, setCreateModal] = useState(false)
   const [blockModal, setBlockModal] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
-
-  const fetchUsers = useCallback(async () => {
-    setLoading(true)
-    try {
-      const res = await usersApi.list({ page, search, page_size: 20 })
-      setUsers(res.data.items)
-      setTotal(res.data.total)
-    } catch (_) {}
-    finally { setLoading(false) }
-  }, [page, search])
-
-  useEffect(() => { fetchUsers() }, [fetchUsers])
+  const { sessions, revoke } = useUserSessions(selected?.id)
 
   const openUser = async (user) => {
     setSelected(user)
-    try {
-      const res = await usersApi.sessions(user.id)
-      setSessions(res.data)
-    } catch (_) { setSessions([]) }
   }
 
   const handleCreate = async () => {
     setError('')
     setSubmitting(true)
     try {
-      await usersApi.create(form)
+      await createUser(form)
       setCreateModal(false)
       setForm(EMPTY_FORM)
-      fetchUsers()
     } catch (e) {
       setError(e.response?.data?.detail || 'Failed to create user')
     } finally { setSubmitting(false) }
@@ -69,22 +62,20 @@ export default function UsersPage() {
     if (!blockModal) return
     setSubmitting(true)
     try {
-      await usersApi.block(blockModal.id)
+      await blockUser(blockModal.id)
       setBlockModal(null)
-      fetchUsers()
     } catch (_) {}
     finally { setSubmitting(false) }
   }
 
   const handleResetPassword = async (userId) => {
-    try { await usersApi.resetPassword(userId) } catch (_) {}
+    try { await resetPassword(userId) } catch (_) {}
   }
 
   const handleRevokeSession = async (sessionId) => {
     if (!selected) return
     try {
-      await usersApi.revokeSession(selected.id, sessionId)
-      setSessions((s) => s.filter((x) => x.id !== sessionId))
+      await revoke(sessionId)
     } catch (_) {}
   }
 
@@ -113,7 +104,7 @@ export default function UsersPage() {
           {row.status !== 'blocked' ? (
             <Button variant="danger" size="sm" icon={Ban} onClick={(e) => { e.stopPropagation(); setBlockModal(row) }} title="Block" />
           ) : (
-            <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); usersApi.unblock(row.id).then(fetchUsers) }}>Unblock</Button>
+            <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); unblockUser(row.id) }}>Unblock</Button>
           )}
         </div>
       )
@@ -121,7 +112,7 @@ export default function UsersPage() {
   ]
 
   return (
-    <DashboardLayout title="Users" onRefresh={fetchUsers}>
+    <DashboardLayout title="Users" onRefresh={refresh}>
       <Card>
         <div className="flex items-center gap-3 mb-4">
           <div className="flex-1 relative">
@@ -141,7 +132,7 @@ export default function UsersPage() {
       </Card>
 
       {/* User Detail Modal */}
-      <Modal open={!!selected} onClose={() => { setSelected(null); setSessions([]) }} title="User Details" width="max-w-2xl">
+      <Modal open={!!selected} onClose={() => setSelected(null)} title="User Details" width="max-w-2xl">
         {selected && (
           <div className="space-y-5">
             <div className="grid grid-cols-3 gap-3">

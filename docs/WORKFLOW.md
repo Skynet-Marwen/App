@@ -5,10 +5,10 @@
 ## Branch Model
 
 ```
-main          Production-ready. Protected. No direct commits.
+master        Production-ready. Protected. No direct commits.
 dev           Integration branch. Default working branch.
 feature/*     New features — branch from dev
-hotfix/*      Critical prod fixes — branch from main
+hotfix/*      Critical prod fixes — branch from master
 release/*     Release prep — branch from dev
 ```
 
@@ -24,12 +24,12 @@ git push origin feature/geoip-enrichment
 
 ### Hotfix Process
 ```bash
-git checkout main
-git pull origin main
+git checkout master
+git pull origin master
 git checkout -b hotfix/block-bypass-ipv6
 # fix, commit with: fix(blocking): ...
 git push origin hotfix/block-bypass-ipv6
-# PR → main AND cherry-pick to dev
+# PR → master AND cherry-pick to dev
 git checkout dev && git cherry-pick <commit-sha>
 ```
 
@@ -71,14 +71,14 @@ git checkout dev && git checkout -b release/1.1.0
 # 4. Commit
 git commit -m "chore(release): bump version to 1.1.0"
 
-# 5. PR release/1.1.0 → main
+# 5. PR release/1.1.0 → master
 # 6. After merge, tag
-git checkout main && git pull
+git checkout master && git pull
 git tag -a v1.1.0 -m "Release v1.1.0"
 git push origin v1.1.0
 
-# 7. Merge main back to dev
-git checkout dev && git merge main && git push origin dev
+# 7. Merge master back to dev
+git checkout dev && git merge master && git push origin dev
 ```
 
 ---
@@ -88,7 +88,7 @@ git checkout dev && git merge main && git push origin dev
 - Title must follow Conventional Commits format.
 - Description must include: what changed, how to test, screenshots (UI changes).
 - Must pass: lint, build, tests.
-- At least one approval required before merge to `main`.
+- At least one approval required before merge to `master`.
 - Squash merge preferred for feature branches. Merge commit for releases.
 
 ---
@@ -121,7 +121,7 @@ echo "[$(date '+%Y-%m-%d %H:%M')] CHECKPOINT: docker checkpoint_${VERSION} + db 
 
 ```bash
 # Step 1 — Pull latest code on prod server (or locally before build)
-git checkout main && git pull origin main
+git checkout master && git pull origin master
 
 # Step 2 — Create rollback checkpoint (see above — ALWAYS do this first)
 VERSION=$(date +%Y%m%d_%H%M%S)
@@ -194,8 +194,8 @@ ls -t backups/db_*.sql | tail -n +6 | xargs -r rm
 
 ## Do Not
 
-- `git push --force` on `main` or `dev` — ever.
-- Commit directly to `main`.
+- `git push --force` on `master` or `dev` — ever.
+- Commit directly to `master`.
 - Skip the PR for hotfixes (even urgent ones need a PR review).
 - Merge a PR with failing checks.
 - Deploy to prod without creating a checkpoint first.

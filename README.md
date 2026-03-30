@@ -11,6 +11,7 @@ SkyNet is a **self-hosted analytics and security dashboard** you can integrate w
 
 - **Visitor tracking** — who visits, from where, on which device
 - **Device fingerprinting** — canvas, WebGL, audio, font signals combined into a persistent identity
+- **Same-machine grouping** — strict cross-browser clustering for Chrome/Firefox fingerprints from the same computer
 - **Device linking** — connect devices to user accounts across sessions
 - **Blocking engine** — block by IP, CIDR, country, ASN, user-agent, or device fingerprint
 - **Anti-evasion** — detect VPN, Tor, proxy, headless browsers, bots, IP rotation, multi-account abuse
@@ -78,5 +79,5 @@ Get your API key from **Integration → Add Site** in the dashboard.
 
 ## Version
 
-Current: **v1.0.1** (v1.1.0-dev in progress)
+Current: **v1.1.0**
 See [CHANGELOG.md](CHANGELOG.md) for release history.

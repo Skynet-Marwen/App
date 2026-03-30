@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import { Shield, Plus, Trash2, Search, Globe, Monitor, User } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
 import { Card, CardHeader, Table, Badge, Button, Input, Modal, Select, Alert, Pagination } from '../components/ui/index'
-import { blockingApi } from '../services/api'
+import { useBlocking } from '../hooks/useBlocking'
 
 const RULE_TYPES = [
   { value: 'ip', label: 'IP Address / CIDR' },
@@ -15,70 +15,59 @@ const RULE_TYPES = [
 const EMPTY_RULE = { type: 'ip', value: '', reason: '', action: 'block' }
 
 export default function BlockingPage() {
+  const {
+    rules,
+    ips,
+    ipTotal,
+    ipPage,
+    search,
+    loading,
+    setIpPage,
+    setSearch,
+    refresh,
+    createRule,
+    deleteRule,
+    blockIp,
+    unblockIp,
+  } = useBlocking()
   const [tab, setTab] = useState('rules')
-  const [rules, setRules] = useState([])
-  const [ips, setIps] = useState([])
-  const [ipTotal, setIpTotal] = useState(0)
-  const [ipPage, setIpPage] = useState(1)
-  const [loading, setLoading] = useState(true)
   const [ruleModal, setRuleModal] = useState(false)
   const [ipModal, setIpModal] = useState(false)
   const [form, setForm] = useState(EMPTY_RULE)
   const [ipForm, setIpForm] = useState({ ip: '', reason: '' })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
-  const [search, setSearch] = useState('')
-
-  const fetchData = useCallback(async () => {
-    setLoading(true)
-    try {
-      const [rulesRes, ipsRes] = await Promise.all([
-        blockingApi.rules(),
-        blockingApi.ipList({ page: ipPage, search, page_size: 20 }),
-      ])
-      setRules(rulesRes.data)
-      setIps(ipsRes.data.items)
-      setIpTotal(ipsRes.data.total)
-    } catch (_) {}
-    finally { setLoading(false) }
-  }, [ipPage, search])
-
-  useEffect(() => { fetchData() }, [fetchData])
 
   const handleCreateRule = async () => {
     setError('')
     setSubmitting(true)
     try {
-      await blockingApi.createRule(form)
+      await createRule(form)
       setRuleModal(false)
       setForm(EMPTY_RULE)
-      fetchData()
     } catch (e) {
       setError(e.response?.data?.detail || 'Failed to create rule')
     } finally { setSubmitting(false) }
   }
 
   const handleDeleteRule = async (id) => {
-    await blockingApi.deleteRule(id)
-    fetchData()
+    await deleteRule(id)
   }
 
   const handleBlockIp = async () => {
     setError('')
     setSubmitting(true)
     try {
-      await blockingApi.blockIp(ipForm.ip, ipForm.reason)
+      await blockIp(ipForm.ip, ipForm.reason)
       setIpModal(false)
       setIpForm({ ip: '', reason: '' })
-      fetchData()
     } catch (e) {
       setError(e.response?.data?.detail || 'Invalid IP')
     } finally { setSubmitting(false) }
   }
 
   const handleUnblockIp = async (ip) => {
-    await blockingApi.unblockIp(ip)
-    fetchData()
+    await unblockIp(ip)
   }
 
   const typeIcon = (type) => {
@@ -118,7 +107,7 @@ export default function BlockingPage() {
   ]
 
   return (
-    <DashboardLayout title="Blocking" onRefresh={fetchData}>
+    <DashboardLayout title="Blocking" onRefresh={refresh}>
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         {[

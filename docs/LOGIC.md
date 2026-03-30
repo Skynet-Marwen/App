@@ -11,6 +11,12 @@
 Every device gets a `risk_score` from 0 (clean) to 100 (high risk).
 The score is a weighted sum of signals. Recalculated on every pageview.
 
+### Exact Device vs Same-Machine Group
+- `devices.fingerprint` remains the authoritative exact browser fingerprint used for blocking, incidents, and audit history.
+- `devices.match_key` is a strict presentation-layer grouping key derived from `webgl_hash + screen_resolution + timezone + normalized language primary tag`.
+- `match_key` is only populated when all four stable signals exist; otherwise the exact fingerprint stands alone.
+- Dashboard grouping never hard-merges devices. Parent rows summarize children; all write actions still target exact fingerprints.
+
 ### Signal Weights
 
 | Signal | Condition | Points |
@@ -43,42 +49,30 @@ Auto-block is only triggered if `anti_evasion.auto_block_high_risk = true` in se
 
 ## 2. Anti-Evasion Detection Rules
 
-### 2.1 VPN / Proxy / Tor Detection
-- Source: MaxMind GeoIP2 + curated IP reputation lists (updated every 24h via background task).
-- Logic: Check IP against `vpn_ranges`, `tor_exit_nodes`, `proxy_ranges` sets in Redis.
-- On match: Add to incident log with type = `VPN_DETECTED | TOR_DETECTED | PROXY_DETECTED`.
+### 2.1 Execution Model
+- Tracking routes commit `Visitor` / `Device` / `Event` writes first.
+- After commit, the route dispatches an in-process async task.
+- The async worker opens its own DB session and Redis client usage; it never reuses the request DB session.
+- On pageview, the route resolves or creates the exact `Device` first, updates stable metadata, computes `match_key`, flushes, then upserts the `Visitor`.
+- Visitor upsert key is `site_id + device_id + ip` when a fingerprint is present; fallback remains `site_id + ip` when fingerprint data is absent.
 
-### 2.2 Headless Browser Detection
-Signals checked (any 2 = headless confirmed):
-- `navigator.webdriver === true`
-- `navigator.plugins.length === 0` on non-mobile
-- Chrome runtime missing (`!window.chrome`)
-- `navigator.languages` is empty
-- WebGL renderer contains `SwiftShader | llvmpipe | ANGLE`
-- Screen dimensions = 0×0 or `window.outerWidth === 0`
+### 2.2 Implemented Checks (v1.1)
+- **Bot user-agent detection**: if UA contains `bot | crawler | spider | headless` → incident `BOT_DETECTED` and `+30`.
+- **Missing canvas fingerprint**: if `canvas_hash` missing and module enabled → incident `CANVAS_FINGERPRINT_MISSING` and `+10`.
+- **Missing WebGL fingerprint**: if `webgl_hash` missing and module enabled → incident `WEBGL_FINGERPRINT_MISSING` and `+15`.
+- **IP rotation**: Redis set `ae:ips:{fingerprint}` with TTL 10 min; if unique IP count > 3 → incident `IP_ROTATION` and `+25`.
+- **Cookie / session evasion**: Redis set `ae:sessions:{fingerprint}` with TTL 30 min; if more than one distinct browser `session_id` appears for the same fingerprint → incident `COOKIE_EVASION` and `+10`.
+- **Multi-account device/IP detection**: count distinct `Visitor.linked_user` values per `device_id` and per `ip`; if counts exceed configured thresholds → incidents `MULTI_ACCOUNT_DEVICE` / `MULTI_ACCOUNT_IP` and `+20` per extra account.
+- **Spam burst detection**: Redis counter `spam:{site_id}:{fingerprint|ip}` with TTL 60s; if count exceeds `spam_rate_threshold` → incident `SPAM_DETECTED`.
 
-### 2.3 Bot Detection (Behavioral)
-- Mouse movement entropy < threshold (no movement = bot)
-- Click timing too regular (< 50ms variance = scripted)
-- Scroll events missing entirely on long pages
-- Event order violations (click before mouseover)
-- Page load → action time < 200ms
+### 2.3 Risk Score Update
+- On async pageview checks, the service recomputes the currently implemented risk signals and writes the resulting score to `devices.risk_score`.
+- Score is capped at `100`.
+- Spam burst incidents do not currently add a dedicated risk-score weight; they are logged as incidents only.
 
-### 2.4 IP Rotation Detection
-- Track last 5 IPs per device fingerprint in Redis (TTL: 10 min).
-- If unique IP count > 3 within window → incident: `IP_ROTATION`.
-
-### 2.5 Timezone Mismatch
-- GeoIP provides country → lookup canonical TZ for country.
-- Browser reports `Intl.DateTimeFormat().resolvedOptions().timeZone`.
-- If delta > 120 minutes → mismatch incident.
-- Exception: countries spanning multiple TZs (US, RU, CN) use range check.
-
-### 2.6 Multi-Account Detection
-- When `SkyNet.identify(userId)` is called, link device → user.
-- Query: how many distinct users linked to this device fingerprint?
-- If count > `settings.max_accounts_per_device` → incident: `MULTI_ACCOUNT`.
-- Same check per IP: count distinct users with same IP → compare to `max_accounts_per_ip`.
+### 2.4 Deferred Checks
+- VPN / Tor / proxy reputation feeds remain deferred until curated list refresh is implemented.
+- Behavioral mouse/click entropy and timezone/language mismatch checks remain documented roadmap items, not active code paths.
 
 ---
 
@@ -120,8 +114,10 @@ Signals checked (any 2 = headless confirmed):
 ## 5. Session Management
 
 - Sessions stored in Redis: key `session:{user_id}:{session_id}`.
+- Per-user index stored in Redis: `user:{user_id}:sessions`.
 - TTL: `JWT_EXPIRE_MINUTES` (default 1440 = 24h).
-- On logout: delete session key from Redis.
+- JWT contains internal `sid` claim; protected API requests require both a valid JWT and a live Redis session key.
+- On logout: delete current session key from Redis.
 - On block: delete ALL session keys for `user:{user_id}:sessions`.
 - Admin can revoke individual sessions via `DELETE /api/v1/users/{id}/sessions/{session_id}`.
 
@@ -169,5 +165,6 @@ Every write to the system that changes state must produce an audit entry:
 | Delete user | actor_id, action=DELETE_USER, target_id |
 | Config change | actor_id, action=CONFIG_CHANGE, field, old_value, new_value |
 | API key regen | actor_id, action=REGEN_KEY, target_type=site, target_id |
+| Session revoke | actor_id, action=REVOKE_SESSION, target_type=session, target_id |
 
 Audit logs: write-only via API. No delete endpoint. Retention controlled by `incident_retention_days`.

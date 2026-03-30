@@ -38,6 +38,8 @@ username=admin@skynet.local&password=admin
 
 **Errors:** `401` Invalid credentials · `403` Account blocked
 
+Successful login also creates a Redis-backed server session keyed by the JWT `sid` claim. Protected dashboard requests require both a valid JWT and a live Redis session record.
+
 ---
 
 ### `POST /auth/logout`
@@ -160,8 +162,50 @@ Triggers password reset email (or returns temp password).
 ### `GET /users/{id}/sessions`
 Returns active Redis sessions for this user.
 
+**Response `200`**
+```json
+[
+  {
+    "id": "session-uuid",
+    "ip": "1.2.3.4",
+    "device": "Mozilla/5.0 ...",
+    "created_at": "2026-03-30T15:00:00+00:00",
+    "last_active": "2026-03-30T15:12:00+00:00"
+  }
+]
+```
+
 ### `DELETE /users/{id}/sessions/{session_id}`
 Revoke a specific session.
+
+---
+
+## Audit
+
+### `GET /audit/logs`
+Auth required.
+
+**Query params:** `page`, `page_size`, `action`, `actor_id`, `target_type`, `target_id`, `search`
+
+**Response `200`**
+```json
+{
+  "total": 12,
+  "items": [
+    {
+      "id": "uuid",
+      "actor_id": "uuid",
+      "actor_label": "admin@skynet.local",
+      "action": "BLOCK_IP",
+      "target_type": "ip",
+      "target_id": "1.2.3.4",
+      "ip": "10.0.0.10",
+      "created_at": "2026-03-30T15:20:00+00:00",
+      "extra": { "reason": "Manual block" }
+    }
+  ]
+}
+```
 
 ---
 
@@ -170,7 +214,50 @@ Revoke a specific session.
 ### `GET /devices`
 Auth required. Params: `page`, `page_size`, `search`
 
-**Response** includes `visitor_count` (number of distinct visitors sharing this device fingerprint) and ISO 8601 timestamps for `first_seen` / `last_seen`.
+Returns the exact fingerprint list. Response includes `match_key`, `match_version`, `visitor_count`, and ISO 8601 timestamps for `first_seen` / `last_seen`.
+
+### `GET /devices/groups`
+Auth required. Params: `page`, `page_size`, `search`
+
+Returns grouped device clusters for the Devices dashboard. Each item is a presentation-only parent row; blocking/linking/deleting still targets exact child fingerprints.
+
+**Response `200`**
+```json
+{
+  "total": 12,
+  "items": [
+    {
+      "group_id": "strict:v1:abc123...",
+      "match_key": "strict:v1:abc123...",
+      "match_strength": "strict",
+      "fingerprint_count": 2,
+      "visitor_count": 2,
+      "status": "mixed",
+      "linked_user_state": "none",
+      "linked_user": null,
+      "first_seen": "2026-03-30T00:18:33+00:00",
+      "last_seen": "2026-03-30T15:18:44+00:00",
+      "devices": [
+        {
+          "id": "uuid",
+          "fingerprint": "26e1b036-000000cb",
+          "browser": "Firefox 148.0",
+          "os": "Windows 10",
+          "risk_score": 0,
+          "status": "active",
+          "linked_user": null,
+          "visitor_count": 1,
+          "first_seen": "2026-03-30T00:18:33+00:00",
+          "last_seen": "2026-03-30T15:18:44+00:00"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### `GET /devices/{id}`
+Auth required. Returns the full exact fingerprint record used by the Devices detail modal.
 
 ### `GET /devices/{id}/visitors`
 Auth required. Returns all visitors recorded on this device fingerprint — covers multiple browser/OS/IP combinations that resolved to the same hardware fingerprint.
@@ -275,7 +362,8 @@ Returns the HTML embed snippet for the site.
   "webgl_hash": "def456...",
   "screen": "1920x1080",
   "language": "en-US",
-  "timezone": "Africa/Tunis"
+  "timezone": "Africa/Tunis",
+  "session_id": "browser-session-id"
 }
 ```
 
@@ -283,6 +371,8 @@ Returns the HTML embed snippet for the site.
 ```json
 { "event_type": "button_click", "page_url": "...", "fingerprint": "...", "properties": {} }
 ```
+
+Tracker writes dispatch async anti-evasion checks after commit. Implemented checks currently include bot UA detection, missing canvas/WebGL signals, IP rotation, cookie/session continuity changes, multi-account detection, and custom-event spam bursts.
 
 ### `POST /track/identify`
 ```json
@@ -365,7 +455,7 @@ No auth required. Returns component version strings for the dashboard footer.
 **Response `200`**
 ```json
 {
-  "app": "1.0.1",
+  "app": "1.1.0",
   "api": "v1",
   "fastapi": "0.115.5",
   "python": "3.12.0",

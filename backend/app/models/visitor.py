@@ -1,12 +1,15 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, Integer, ForeignKey, Text
+from sqlalchemy import String, DateTime, Integer, ForeignKey, Text, Index
 from sqlalchemy.orm import Mapped, mapped_column
 from ..core.database import Base
 
 
 class Visitor(Base):
     __tablename__ = "visitors"
+    __table_args__ = (
+        Index("ix_visitors_site_device_ip", "site_id", "device_id", "ip"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     ip: Mapped[str] = mapped_column(String(45), nullable=False, index=True)

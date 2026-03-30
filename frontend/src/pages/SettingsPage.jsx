@@ -1,54 +1,36 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import { Save, CheckCircle, ShieldOff } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
 import { Card, CardHeader, Button, Input, Toggle, Select } from '../components/ui/index'
-import { settingsApi } from '../services/api'
-
-const DEFAULT_BLOCK = {
-  title: 'ACCESS RESTRICTED', subtitle: 'Your access to this site has been blocked.',
-  message: 'This action was taken automatically for security reasons.',
-  bg_color: '#050505', accent_color: '#ef4444',
-  logo_url: '', contact_email: '', show_request_id: true, show_contact: true,
-}
+import { useSettings } from '../hooks/useSettings'
 
 export default function SettingsPage() {
+  const {
+    settings,
+    setSettings,
+    blockPage,
+    setBlockPage,
+    saving,
+    saveSettings,
+    saveBlockPage,
+  } = useSettings()
   const [tab, setTab] = useState('general')
-  const [settings, setSettings] = useState({})
-  const [blockPage, setBlockPage] = useState(DEFAULT_BLOCK)
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState('')
 
-  const fetchData = useCallback(async () => {
-    setLoading(true)
-    try {
-      const [sRes, bRes] = await Promise.all([settingsApi.get(), settingsApi.getBlockPage()])
-      setSettings(sRes.data)
-      setBlockPage({ ...DEFAULT_BLOCK, ...bRes.data })
-    } catch (_) {}
-    finally { setLoading(false) }
-  }, [])
-
-  useEffect(() => { fetchData() }, [fetchData])
-
   const saveGeneral = async () => {
-    setSaving(true)
     try {
-      await settingsApi.update(settings)
+      await saveSettings(settings)
       setSaved('general')
       setTimeout(() => setSaved(''), 2000)
     } catch (_) {}
-    finally { setSaving(false) }
   }
 
-  const saveBlockPage = async () => {
-    setSaving(true)
+  const saveBlockPageSettings = async () => {
     try {
-      await settingsApi.updateBlockPage(blockPage)
+      await saveBlockPage(blockPage)
       setSaved('block')
       setTimeout(() => setSaved(''), 2000)
     } catch (_) {}
-    finally { setSaving(false) }
   }
 
   const bp = blockPage
@@ -204,7 +186,7 @@ export default function SettingsPage() {
                 </div>
               </div>
               <div className="mt-5 flex justify-end">
-                <Button loading={saving} onClick={saveBlockPage} icon={saved === 'block' ? CheckCircle : Save}>
+                <Button loading={saving} onClick={saveBlockPageSettings} icon={saved === 'block' ? CheckCircle : Save}>
                   {saved === 'block' ? 'Saved!' : 'Save Block Page'}
                 </Button>
               </div>

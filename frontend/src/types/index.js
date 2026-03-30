@@ -40,6 +40,8 @@
  * @typedef {Object} Device
  * @property {string} id
  * @property {string} fingerprint
+ * @property {string|null} match_key
+ * @property {number|null} match_version
  * @property {string|null} type
  * @property {string|null} browser
  * @property {string|null} os
@@ -51,8 +53,38 @@
  * @property {number} risk_score
  * @property {'active'|'blocked'} status
  * @property {string|null} linked_user
+ * @property {number} visitor_count
  * @property {string} first_seen
  * @property {string} last_seen
+ */
+
+/**
+ * @typedef {Object} DeviceGroupChild
+ * @property {string} id
+ * @property {string} fingerprint
+ * @property {string|null} browser
+ * @property {string|null} os
+ * @property {number} risk_score
+ * @property {'active'|'blocked'} status
+ * @property {string|null} linked_user
+ * @property {number} visitor_count
+ * @property {string} first_seen
+ * @property {string} last_seen
+ */
+
+/**
+ * @typedef {Object} DeviceGroup
+ * @property {string} group_id
+ * @property {string|null} match_key
+ * @property {'strict'|'exact'} match_strength
+ * @property {number} fingerprint_count
+ * @property {number} visitor_count
+ * @property {'active'|'blocked'|'mixed'} status
+ * @property {'none'|'single'|'mixed'} linked_user_state
+ * @property {string|null} linked_user
+ * @property {string} first_seen
+ * @property {string} last_seen
+ * @property {Array<DeviceGroupChild>} devices
  */
 
 /**
@@ -88,6 +120,28 @@
  */
 
 /**
+ * @typedef {Object} UserSession
+ * @property {string} id
+ * @property {string} ip
+ * @property {string} device
+ * @property {string|null} created_at
+ * @property {string|null} last_active
+ */
+
+/**
+ * @typedef {Object} AuditLog
+ * @property {string} id
+ * @property {string|null} actor_id
+ * @property {string|null} actor_label
+ * @property {string} action
+ * @property {string|null} target_type
+ * @property {string|null} target_id
+ * @property {string|null} ip
+ * @property {string} created_at
+ * @property {Object<string, *> | null} extra
+ */
+
+/**
  * @typedef {Object} Site
  * @property {string} id
  * @property {string} name
@@ -110,8 +164,8 @@
  * @property {number|null} visitors_change
  * @property {number|null} users_change
  * @property {number|null} blocked_change
- * @property {Array<{time: string, visitors: number, blocked: number}>} traffic_chart
- * @property {Array<{country: string, flag: string, percent: number}>} top_countries
+ * @property {Array<{timestamp: string, count: number}>} traffic_heatmap
+ * @property {Array<{country: string, flag: string, count: number, percent: number}>} top_countries
  * @property {Array<{reason: string, count: number}>} blocking_chart
  * @property {Array<{id: string, title: string, severity: string, time: string}>} recent_incidents
  */

@@ -5,6 +5,7 @@ import {
   Plug, Settings, LogOut, ChevronLeft, ChevronRight,
   Eye, Activity, Info, Cpu
 } from 'lucide-react'
+import { ScrollText } from 'lucide-react'
 import { useUIStore, useAuthStore } from '../../store/useAppStore'
 import { systemApi } from '../../services/api'
 
@@ -15,6 +16,7 @@ const navItems = [
   { to: '/devices', label: 'Devices', icon: Monitor },
   { to: '/blocking', label: 'Blocking', icon: Shield },
   { to: '/anti-evasion', label: 'Anti-Evasion', icon: AlertTriangle },
+  { to: '/audit', label: 'Audit', icon: ScrollText },
   { to: '/integration', label: 'Integration', icon: Plug },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, text
 from ...core.database import get_db
@@ -7,6 +7,7 @@ from ...models.user import User
 from ...models.visitor import Visitor
 from ...models.device import Device
 from ...schemas.visitor import BlockRequest
+from ...services.audit import log_action, request_ip
 
 router = APIRouter(prefix="/visitors", tags=["visitors"])
 
@@ -65,7 +66,13 @@ async def get_visitor(visitor_id: str, db: AsyncSession = Depends(get_db), _: Us
 
 
 @router.post("/{visitor_id}/block")
-async def block_visitor(visitor_id: str, body: BlockRequest, db: AsyncSession = Depends(get_db), _: User = Depends(get_current_user)):
+async def block_visitor(
+    visitor_id: str,
+    body: BlockRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
     v = await db.get(Visitor, visitor_id)
     if not v:
         raise HTTPException(404, "Not found")
@@ -75,12 +82,13 @@ async def block_visitor(visitor_id: str, body: BlockRequest, db: AsyncSession = 
         device = await db.get(Device, v.device_id)
         if device:
             device.status = "blocked"
+    log_action(db, action="BLOCK_VISITOR", actor_id=current.id, target_type="visitor", target_id=v.id, ip=request_ip(request), extra={"reason": body.reason})
     await db.commit()
     return {"message": "Blocked"}
 
 
 @router.delete("/{visitor_id}/block")
-async def unblock_visitor(visitor_id: str, db: AsyncSession = Depends(get_db), _: User = Depends(get_current_user)):
+async def unblock_visitor(visitor_id: str, request: Request, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
     v = await db.get(Visitor, visitor_id)
     if not v:
         raise HTTPException(404, "Not found")
@@ -90,18 +98,20 @@ async def unblock_visitor(visitor_id: str, db: AsyncSession = Depends(get_db), _
         device = await db.get(Device, v.device_id)
         if device:
             device.status = "active"
+    log_action(db, action="UNBLOCK_VISITOR", actor_id=current.id, target_type="visitor", target_id=v.id, ip=request_ip(request))
     await db.commit()
     return {"message": "Unblocked"}
 
 
 @router.delete("/{visitor_id}")
-async def delete_visitor(visitor_id: str, db: AsyncSession = Depends(get_db), _: User = Depends(get_current_user)):
+async def delete_visitor(visitor_id: str, request: Request, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
     v = await db.get(Visitor, visitor_id)
     if not v:
         raise HTTPException(404, "Visitor not found")
     # Delete events owned by this visitor (no DB-level FK — manual cleanup)
     await db.execute(text("DELETE FROM events WHERE visitor_id = :id"), {"id": visitor_id})
     # Delete visitor (device_id FK ondelete=SET NULL: device stays, link dropped by DB)
+    log_action(db, action="DELETE_VISITOR", actor_id=current.id, target_type="visitor", target_id=visitor_id, ip=request_ip(request))
     await db.delete(v)
     await db.commit()
     return {"message": "Deleted"}

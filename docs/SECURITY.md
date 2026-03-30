@@ -1,6 +1,6 @@
 # SkyNet — Security Model
 
-> Last reviewed: 2026-03-29
+> Last reviewed: 2026-03-30
 
 ---
 
@@ -9,7 +9,7 @@
 | Threat | Vector | Mitigation | Status |
 |--------|--------|-----------|--------|
 | Credential brute force | `POST /auth/login` | Rate limit: 10 req/min per IP (slowapi) | ✅ v1.1 |
-| JWT theft | XSS / network intercept | Short expiry (24h), HTTPS enforced | ✅ JWT, HTTPS infra |
+| JWT theft | XSS / network intercept | Short expiry (24h) + Redis-backed session revocation + HTTPS enforced | ✅ |
 | API key leak | Exposed in client source | Per-site keys, revocable instantly, per-request logging | ✅ |
 | IP spoofing | X-Forwarded-For manipulation | Trusted proxy list in config; validate header chain | Planned v1.1 |
 | Fingerprint evasion | Private mode, canvas block | Multi-signal composite score; flag absent signals | ✅ Risk scoring |
@@ -21,7 +21,8 @@
 | Information leakage via Referer | Cross-origin requests | `Referrer-Policy: strict-origin-when-cross-origin` | ✅ v1.1 |
 | Secret exposure | `.env` committed to git | `.gitignore` enforced; `.env.example` as template | ✅ |
 | Mass account creation | Tracker identify abuse | Max accounts per device/IP thresholds | ✅ Logic |
-| Insider threat | Admin account abuse | Audit log (write-only) for all state changes | Planned v1.1 |
+| Insider threat | Admin account abuse | Audit log (write-only) for all state changes | ✅ v1.1 |
+| False same-device merge | Cross-browser fingerprint similarity | Strict stable tuple grouping; exact fingerprint remains blocking authority | ✅ v1.1 |
 | Container escape | Docker misconfiguration | Non-root user in containers; read-only FS planned | Planned v1.2 |
 
 ---
@@ -104,6 +105,21 @@ Rate limit exceeded response: `HTTP 429` with `Retry-After` header.
 - No `DELETE` or `UPDATE` endpoint for audit logs — write-only.
 - Retention: same as `incident_retention_days` setting.
 - Format: JSONB for `extra` fields to allow flexible querying.
+
+Implemented v1.1 coverage:
+- auth login success/failure/logout
+- user create/update/delete/block/unblock
+- visitor block/unblock/delete
+- device link/unlink/block/unblock/delete
+- blocking rule and blocked IP changes
+- anti-evasion config changes and incident resolve
+- site create/delete/API key regeneration
+- settings and block-page updates
+
+### Device Identity Boundary
+- `devices.fingerprint` is the enforcement key for block/link/delete, incidents, and audit history.
+- `devices.match_key` is a strict grouping aid for the dashboard only.
+- Grouped parent rows never widen a block automatically across sibling fingerprints.
 
 ---
 

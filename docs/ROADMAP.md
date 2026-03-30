@@ -18,7 +18,7 @@ Core scaffold. Functional dashboard. Embeddable tracker. Docker deployment.
 
 ---
 
-## v1.1.0 — Hardening `Target: Q2 2026`
+## v1.1.0 — Hardening ✅ `2026-03-30`
 Make v1.0 production-ready. Close all technical debt.
 
 - [x] Alembic migrations (replace `create_all`) — ✅ 2026-03-30
@@ -27,11 +27,12 @@ Make v1.0 production-ready. Close all technical debt.
 - [x] Pydantic schemas layer (extract from routes) — ✅ 2026-03-30
 - [x] Real chart aggregation queries — ✅ traffic heatmap + blocking chart live 2026-03-30
 - [x] HTTP security headers (CSP, HSTS, X-Frame-Options) — ✅ 2026-03-30
-- [ ] Redis session store (real session management)
-- [ ] Frontend hooks layer (`useVisitors`, `useUsers`, etc.)
-- [ ] Audit log table + UI
-- [ ] Input sanitization (strip HTML from user-supplied fields)
-- [ ] Anti-evasion async background checks
+- [x] Redis session store (real session management) — ✅ 2026-03-30
+- [x] Frontend hooks layer (`useVisitors`, `useUsers`, etc.) — ✅ 2026-03-30
+- [x] Audit log table + UI — ✅ 2026-03-30
+- [x] Input sanitization (strip HTML from user-supplied fields) — ✅ 2026-03-30
+- [x] Anti-evasion async background checks — ✅ 2026-03-30
+- [x] Strict same-machine device grouping across browsers — ✅ 2026-03-30
 
 ---
 

@@ -7,6 +7,7 @@ import UsersPage from './pages/UsersPage'
 import DevicesPage from './pages/DevicesPage'
 import BlockingPage from './pages/BlockingPage'
 import AntiEvasionPage from './pages/AntiEvasionPage'
+import AuditPage from './pages/AuditPage'
 import IntegrationPage from './pages/IntegrationPage'
 import SettingsPage from './pages/SettingsPage'
 
@@ -26,6 +27,7 @@ export default function App() {
         <Route path="/devices" element={<ProtectedRoute><DevicesPage /></ProtectedRoute>} />
         <Route path="/blocking" element={<ProtectedRoute><BlockingPage /></ProtectedRoute>} />
         <Route path="/anti-evasion" element={<ProtectedRoute><AntiEvasionPage /></ProtectedRoute>} />
+        <Route path="/audit" element={<ProtectedRoute><AuditPage /></ProtectedRoute>} />
         <Route path="/integration" element={<ProtectedRoute><IntegrationPage /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />

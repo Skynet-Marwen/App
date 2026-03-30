@@ -78,4 +78,22 @@
 
 [2026-03-30 14:00] feat(delete): DELETE /devices/{id} and DELETE /visitors/{id} — bidirectional cleanup; events.device_id and incidents.device_id nullified (no FK, manual UPDATE); visitor events deleted on visitor delete; visitors.device_id auto-unlinked by DB FK SET NULL; delete buttons + confirmation modals in DevicesPage and VisitorsPage; devicesApi.delete() and visitorsApi.delete() added to api.js — Agent: Claude Sonnet 4.6
 
-*Last updated: 2026-03-30 14:00 — Agent: Claude Sonnet 4.6*[2026-03-30 14:34] CHECKPOINT: checkpoint_20260330_143452 created (images tagged + DB dump)
+*Last updated: 2026-03-30 14:00 — Agent: Claude Sonnet 4.6*
+[2026-03-30 14:34] CHECKPOINT: checkpoint_20260330_143452 created (images tagged + DB dump)
+[2026-03-30 14:37] CHECKPOINT: checkpoint_20260330_143724 created (images tagged + DB dump)
+[2026-03-30 14:42] DEPLOY FAILED: health check failed — rollback available at [0;36m[INFO][0m  Creating checkpoint: checkpoint_20260330_143724
+[0;32m[OK][0m    Tagged skynet-backend:checkpoint_20260330_143724
+[0;32m[OK][0m    Tagged skynet-frontend:checkpoint_20260330_143724
+[0;36m[INFO][0m  Dumping database → backups/db_20260330_143724.sql
+[0;32m[OK][0m    DB dump saved: backups/db_20260330_143724.sql
+[0;32m[OK][0m    Checkpoint checkpoint_20260330_143724 ready
+checkpoint_20260330_143724
+[2026-03-30 15:20] CHECKPOINT: checkpoint_20260330_152048 created (images tagged + DB dump)
+[2026-03-30 15:26] DEPLOY FAILED: health check failed — rollback available at [0;36m[INFO][0m  Creating checkpoint: checkpoint_20260330_152048
+[0;32m[OK][0m    Tagged skynet-backend:checkpoint_20260330_152048
+[0;32m[OK][0m    Tagged skynet-frontend:checkpoint_20260330_152048
+[0;36m[INFO][0m  Dumping database → backups/db_20260330_152048.sql
+[0;32m[OK][0m    DB dump saved: backups/db_20260330_152048.sql
+[0;32m[OK][0m    Checkpoint checkpoint_20260330_152048 ready
+checkpoint_20260330_152048
+[2026-03-30 16:10] release(1.1.0): bumped backend/frontend version to 1.1.0, refreshed core markdown docs for same-machine grouping release, pending push + prod rebuild — Agent: Codex

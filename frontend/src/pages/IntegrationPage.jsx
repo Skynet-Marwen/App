@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import { Plug, Plus, Trash2, RefreshCw, Copy, Code, CheckCircle, Globe } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
 import { Card, Button, Input, Modal, Alert, Badge } from '../components/ui/index'
-import { integrationApi } from '../services/api'
+import { useSites } from '../hooks/useSites'
 
 // ── Integration snippet generators ───────────────────────────────────────────
 const TABS = [
@@ -107,8 +107,7 @@ curl "${origin}/api/v1/track/check/ip?ip=1.2.3.4" \\
 
 // ── Page component ────────────────────────────────────────────────────────────
 export default function IntegrationPage() {
-  const [sites, setSites] = useState([])
-  const [loading, setLoading] = useState(true)
+  const { sites, loading, refresh, createSite, deleteSite, regenerateKey } = useSites()
   const [createModal, setCreateModal] = useState(false)
   const [integModal, setIntegModal] = useState(null)   // site object
   const [activeTab, setActiveTab] = useState('html')
@@ -117,19 +116,11 @@ export default function IntegrationPage() {
   const [error, setError] = useState('')
   const [copied, setCopied] = useState('')
 
-  const fetchSites = useCallback(async () => {
-    setLoading(true)
-    try { const res = await integrationApi.sites(); setSites(res.data) }
-    catch (_) {} finally { setLoading(false) }
-  }, [])
-
-  useEffect(() => { fetchSites() }, [fetchSites])
-
   const handleCreate = async () => {
     setError(''); setSubmitting(true)
     try {
-      await integrationApi.createSite(form)
-      setCreateModal(false); setForm({ name: '', url: '', description: '' }); fetchSites()
+      await createSite(form)
+      setCreateModal(false); setForm({ name: '', url: '', description: '' })
     } catch (e) { setError(e.response?.data?.detail || 'Failed to create site') }
     finally { setSubmitting(false) }
   }
@@ -142,7 +133,7 @@ export default function IntegrationPage() {
   const snips = integModal ? buildSnippets(integModal.api_key, window.location.origin) : null
 
   return (
-    <DashboardLayout title="Integration" onRefresh={fetchSites}>
+    <DashboardLayout title="Integration" onRefresh={refresh}>
       <Alert type="info">
         <p className="font-medium">Embed SkyNet in any website or app</p>
         <p className="mt-0.5 text-xs opacity-80">Add a site, grab the integration snippet, or send events directly from your backend.</p>
@@ -206,8 +197,8 @@ export default function IntegrationPage() {
                     onClick={() => { setActiveTab('html'); setIntegModal(site) }}>
                     Integrate
                   </Button>
-                  <Button variant="secondary" size="sm" icon={RefreshCw} onClick={() => integrationApi.regenerateKey(site.id).then(fetchSites)} title="Regenerate API key" />
-                  <Button variant="danger" size="sm" icon={Trash2} onClick={() => integrationApi.deleteSite(site.id).then(fetchSites)} title="Delete site" />
+                  <Button variant="secondary" size="sm" icon={RefreshCw} onClick={() => regenerateKey(site.id)} title="Regenerate API key" />
+                  <Button variant="danger" size="sm" icon={Trash2} onClick={() => deleteSite(site.id)} title="Delete site" />
                 </div>
               </Card>
             ))}

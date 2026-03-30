@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import { Eye, Search, Ban, Globe, Monitor, Clock, Trash2 } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
 import { Card, Table, Badge, Button, Input, Pagination, Modal } from '../components/ui/index'
-import { visitorsApi } from '../services/api'
+import { useVisitors } from '../hooks/useVisitors'
 
 const statusBadge = (status) => {
   if (status === 'blocked') return <Badge variant="danger">Blocked</Badge>
@@ -11,11 +11,19 @@ const statusBadge = (status) => {
 }
 
 export default function VisitorsPage() {
-  const [visitors, setVisitors] = useState([])
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
-  const [search, setSearch] = useState('')
-  const [loading, setLoading] = useState(true)
+  const {
+    visitors,
+    total,
+    page,
+    search,
+    loading,
+    setPage,
+    setSearch,
+    refresh,
+    blockVisitor,
+    unblockVisitor,
+    deleteVisitor,
+  } = useVisitors()
   const [selected, setSelected] = useState(null)
   const [blockModal, setBlockModal] = useState(null)
   const [blockReason, setBlockReason] = useState('')
@@ -23,42 +31,27 @@ export default function VisitorsPage() {
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleting, setDeleting] = useState(false)
 
-  const fetchVisitors = useCallback(async () => {
-    setLoading(true)
-    try {
-      const res = await visitorsApi.list({ page, search, page_size: 20 })
-      setVisitors(res.data.items)
-      setTotal(res.data.total)
-    } catch (_) {}
-    finally { setLoading(false) }
-  }, [page, search])
-
-  useEffect(() => { fetchVisitors() }, [fetchVisitors])
-
   const handleBlock = async () => {
     if (!blockModal) return
     setBlocking(true)
     try {
-      await visitorsApi.block(blockModal.id, blockReason)
+      await blockVisitor(blockModal.id, blockReason)
       setBlockModal(null)
       setBlockReason('')
-      fetchVisitors()
     } catch (_) {}
     finally { setBlocking(false) }
   }
 
   const handleUnblock = async (visitor) => {
-    await visitorsApi.unblock(visitor.id)
-    fetchVisitors()
+    await unblockVisitor(visitor.id)
   }
 
   const handleDelete = async () => {
     if (!deleteTarget) return
     setDeleting(true)
     try {
-      await visitorsApi.delete(deleteTarget.id)
+      await deleteVisitor(deleteTarget.id)
       setDeleteTarget(null)
-      fetchVisitors()
     } catch (_) {}
     finally { setDeleting(false) }
   }
@@ -103,7 +96,7 @@ export default function VisitorsPage() {
   ]
 
   return (
-    <DashboardLayout title="Visitors" onRefresh={fetchVisitors}>
+    <DashboardLayout title="Visitors" onRefresh={refresh}>
       <Card>
         <div className="flex items-center gap-3 mb-4">
           <div className="flex-1 relative">

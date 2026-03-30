@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from ...core.database import get_db
 from ...core.security import get_current_user
 from ...models.user import User
 from ...models.block_page_config import BlockPageConfig
+from ...services.audit import log_action, request_ip
+from ...services.sanitize import clean_optional_text, clean_text, clean_url
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -30,8 +32,22 @@ async def get_settings(_: User = Depends(get_current_user)):
 
 
 @router.put("")
-async def update_settings(data: dict, _: User = Depends(get_current_user)):
-    _settings.update(data)
+async def update_settings(data: dict, request: Request, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
+    cleaned = {}
+    try:
+        for key, value in data.items():
+            if isinstance(value, str):
+                if key in {"base_url", "webhook_url"}:
+                    cleaned[key] = clean_url(value) or ""
+                else:
+                    cleaned[key] = clean_text(value)
+            else:
+                cleaned[key] = value
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    _settings.update(cleaned)
+    log_action(db, action="CONFIG_CHANGE", actor_id=current.id, target_type="settings", target_id="general", ip=request_ip(request), extra={"updated_keys": sorted(cleaned.keys())})
+    await db.commit()
     return _settings
 
 
@@ -54,15 +70,29 @@ async def get_block_page(db: AsyncSession = Depends(get_db), _: User = Depends(g
 
 
 @router.put("/block-page")
-async def update_block_page(data: dict, db: AsyncSession = Depends(get_db), _: User = Depends(get_current_user)):
+async def update_block_page(data: dict, request: Request, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
     allowed = {"title", "subtitle", "message", "bg_color", "accent_color", "logo_url", "contact_email", "show_request_id", "show_contact"}
     data = {k: v for k, v in data.items() if k in allowed}
+    cleaned = {}
+    try:
+        for key, value in data.items():
+            if key == "logo_url":
+                cleaned[key] = clean_url(value)
+            elif key == "contact_email":
+                cleaned[key] = clean_optional_text(value)
+            elif isinstance(value, str):
+                cleaned[key] = clean_text(value)
+            else:
+                cleaned[key] = value
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     cfg = await db.get(BlockPageConfig, 1)
     if not cfg:
-        cfg = BlockPageConfig(id=1, **data)
+        cfg = BlockPageConfig(id=1, **cleaned)
         db.add(cfg)
     else:
-        for k, v in data.items():
+        for k, v in cleaned.items():
             setattr(cfg, k, v)
+    log_action(db, action="CONFIG_CHANGE", actor_id=current.id, target_type="settings", target_id="block-page", ip=request_ip(request), extra={"updated_keys": sorted(cleaned.keys())})
     await db.commit()
     return {"ok": True}

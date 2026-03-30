@@ -9,6 +9,8 @@ class LinkRequest(BaseModel):
 class DeviceOut(BaseModel):
     id: str
     fingerprint: str
+    match_key: Optional[str] = None
+    match_version: Optional[int] = None
     type: Optional[str] = None
     browser: Optional[str] = None
     os: Optional[str] = None
@@ -20,6 +22,7 @@ class DeviceOut(BaseModel):
     risk_score: int = 0
     status: str
     linked_user: Optional[str] = None
+    visitor_count: int = 0
     first_seen: str
     last_seen: str
 
@@ -27,3 +30,35 @@ class DeviceOut(BaseModel):
 class DeviceListResponse(BaseModel):
     total: int
     items: List[DeviceOut]
+
+
+class DeviceGroupChildOut(BaseModel):
+    id: str
+    fingerprint: str
+    browser: Optional[str] = None
+    os: Optional[str] = None
+    risk_score: int = 0
+    status: str
+    linked_user: Optional[str] = None
+    visitor_count: int = 0
+    first_seen: str
+    last_seen: str
+
+
+class DeviceGroupOut(BaseModel):
+    group_id: str
+    match_key: Optional[str] = None
+    match_strength: str
+    fingerprint_count: int
+    visitor_count: int
+    status: str
+    linked_user_state: str
+    linked_user: Optional[str] = None
+    first_seen: str
+    last_seen: str
+    devices: List[DeviceGroupChildOut]
+
+
+class DeviceGroupListResponse(BaseModel):
+    total: int
+    items: List[DeviceGroupOut]

@@ -1,59 +1,18 @@
-import { useEffect, useState, useCallback } from 'react'
 import { Eye, Users, Monitor, Shield, AlertTriangle, Activity } from 'lucide-react'
-import {
-  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
-} from 'recharts'
 import DashboardLayout from '../components/layout/DashboardLayout'
 import { StatCard, Card, CardHeader } from '../components/ui/index'
 import { TrafficHeatmap } from '../components/ui/TrafficHeatmap'
 import { WorldGlobe } from '../components/ui/WorldGlobe'
 import { CombatLog } from '../components/ui/CombatLog'
-import { statsApi } from '../services/api'
+import { useOverview } from '../hooks/useOverview'
 import { useUIStore } from '../store/useAppStore'
-
-const HUDTooltip = ({ active, payload, label }) => {
-  if (!active || !payload?.length) return null
-  return (
-    <div className="rounded-lg px-3 py-2 text-xs font-mono border border-cyan-500/20"
-      style={{ background: 'rgba(0,0,0,0.92)', backdropFilter: 'blur(8px)' }}>
-      <p className="text-gray-500 mb-1">{label}</p>
-      {payload.map((p) => (
-        <p key={p.dataKey} style={{ color: p.color }}>{p.name}: {p.value}</p>
-      ))}
-    </div>
-  )
-}
 
 export default function OverviewPage() {
   const { statsRange } = useUIStore()
-  const [overview, setOverview] = useState(null)
-  const [realtime, setRealtime] = useState(null)
-  const [loading, setLoading] = useState(true)
-
-  const fetchData = useCallback(async () => {
-    try {
-      const [ovRes, rtRes] = await Promise.all([
-        statsApi.overview(statsRange),
-        statsApi.realtime(),
-      ])
-      setOverview(ovRes.data)
-      setRealtime(rtRes.data)
-    } catch (_) {}
-    finally { setLoading(false) }
-  }, [statsRange])
-
-  useEffect(() => { fetchData() }, [fetchData])
-
-  useEffect(() => {
-    const id = setInterval(() => {
-      statsApi.realtime().then((r) => setRealtime(r.data)).catch(() => {})
-      fetchData()
-    }, 10000)
-    return () => clearInterval(id)
-  }, [fetchData])
+  const { overview, realtime, loading, refresh } = useOverview(statsRange)
 
   return (
-    <DashboardLayout title="Overview" showRange onRefresh={fetchData}>
+    <DashboardLayout title="Overview" showRange onRefresh={refresh}>
 
       {/* Realtime HUD banner */}
       <div className="flex items-center gap-4 mb-6 px-5 py-3 rounded-xl border border-cyan-500/15 animate-border-breathe"

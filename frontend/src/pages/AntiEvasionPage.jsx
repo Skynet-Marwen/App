@@ -1,64 +1,23 @@
-import { useState, useEffect, useCallback } from 'react'
-import { AlertTriangle, CheckCircle, XCircle, Settings2, RefreshCw } from 'lucide-react'
+import { useState } from 'react'
+import { CheckCircle, Settings2 } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
 import { Card, CardHeader, Table, Badge, Button, Toggle, Alert } from '../components/ui/index'
-import { antiEvasionApi } from '../services/api'
-
-const DEFAULT_CONFIG = {
-  vpn_detection: true,
-  tor_detection: true,
-  proxy_detection: true,
-  datacenter_detection: true,
-  headless_browser_detection: true,
-  bot_detection: true,
-  canvas_fingerprint: true,
-  webgl_fingerprint: true,
-  font_fingerprint: true,
-  audio_fingerprint: true,
-  timezone_mismatch: true,
-  language_mismatch: true,
-  cookie_evasion: true,
-  ip_rotation_detection: true,
-  spam_rate_threshold: 10,
-  max_accounts_per_device: 3,
-  max_accounts_per_ip: 5,
-}
+import { useAntiEvasion } from '../hooks/useAntiEvasion'
 
 export default function AntiEvasionPage() {
-  const [config, setConfig] = useState(DEFAULT_CONFIG)
-  const [incidents, setIncidents] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
+  const { config, setConfig, incidents, loading, saving, refresh, saveConfig, resolveIncident } = useAntiEvasion()
   const [saved, setSaved] = useState(false)
 
-  const fetchData = useCallback(async () => {
-    setLoading(true)
-    try {
-      const [cfgRes, incRes] = await Promise.all([
-        antiEvasionApi.config(),
-        antiEvasionApi.incidents({ page_size: 30 }),
-      ])
-      setConfig({ ...DEFAULT_CONFIG, ...cfgRes.data })
-      setIncidents(incRes.data.items ?? [])
-    } catch (_) {}
-    finally { setLoading(false) }
-  }, [])
-
-  useEffect(() => { fetchData() }, [fetchData])
-
   const handleSave = async () => {
-    setSaving(true)
     try {
-      await antiEvasionApi.updateConfig(config)
+      await saveConfig(config)
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } catch (_) {}
-    finally { setSaving(false) }
   }
 
   const handleResolve = async (id) => {
-    await antiEvasionApi.resolveIncident(id)
-    setIncidents((prev) => prev.map((i) => i.id === id ? { ...i, status: 'resolved' } : i))
+    await resolveIncident(id)
   }
 
   const severityBadge = (s) => {
@@ -110,7 +69,7 @@ export default function AntiEvasionPage() {
   ]
 
   return (
-    <DashboardLayout title="Anti-Evasion & Anti-Spam" onRefresh={fetchData}>
+    <DashboardLayout title="Anti-Evasion & Anti-Spam" onRefresh={refresh}>
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">
         {[
           { label: 'Open Incidents', value: incidents.filter((i) => i.status !== 'resolved').length, color: 'text-red-400' },

@@ -9,7 +9,21 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-03-30
+
 ### Added
+- `backend/alembic/versions/0004_device_match_groups.py`: adds `devices.match_key`, `devices.match_version`, strict same-machine backfill, and `visitors(site_id, device_id, ip)` lookup index
+- `backend/app/services/device_identity.py`: strict cross-browser device grouping helpers (`webgl_hash + screen + timezone + normalized language`) and grouped Devices response shaping
+- `GET /api/v1/devices/groups` — grouped device listing for the Devices page; keeps exact fingerprints as child rows under strict same-machine clusters
+- `GET /api/v1/devices/{id}` — exact fingerprint detail endpoint for the Devices modal
+- `frontend/src/components/ui/DeviceGroupsTable.jsx`: expandable grouped Devices table with child fingerprint actions and shield block/unblock flow
+- `backend/app/core/redis.py` + `backend/app/services/sessions.py`: Redis-backed admin session store with JWT `sid` enforcement, session listing, single-session revoke, and user-wide revoke on block/delete
+- `backend/alembic/versions/0003_audit_logs.py`: adds `audit_logs` table and indexes
+- `GET /api/v1/audit/logs` — paginated, filterable audit endpoint
+- `frontend/src/pages/AuditPage.jsx`: dedicated Audit page with search, action filter, target filter, and pagination
+- `frontend/src/hooks/`: added `useOverview`, `useVisitors`, `useUsers`, `useUserSessions`, `useDevices`, `useBlocking`, `useAntiEvasion`, `useSettings`, `useSites`, `useAuditLogs`
+- `backend/app/services/sanitize.py`: centralized `bleach`-backed sanitization helpers for stored user-supplied text
+- `backend/app/services/anti_evasion.py`: async in-process anti-evasion checks for pageviews/events/identify flows
 - `DELETE /api/v1/devices/{id}` — permanently deletes a device; nullifies `events.device_id` and `incidents.device_id` (plain-string columns, no DB FK); linked visitors auto-unlinked via DB FK `ondelete=SET NULL`
 - `DELETE /api/v1/visitors/{id}` — permanently deletes a visitor and all their events; linked device is preserved but unlinked via DB FK `ondelete=SET NULL`
 - `frontend/src/pages/DevicesPage.jsx`: Delete button (trash icon) per row + confirmation modal with impact warning
@@ -29,6 +43,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - `frontend/src/services/api.js`: added `devicesApi.visitors(id)`
 
 ### Changed
+- `backend/app/api/routes/track.py`: pageviews now resolve/create the device before visitor upsert, flush before event creation, preserve separate visitors per `site_id + device_id + ip`, and populate exact device browser/OS/type metadata
+- `backend/app/api/routes/devices.py`: exact device responses now expose `match_key` / `match_version`; grouped device summaries aggregate strict same-machine fingerprints without changing exact block/link/delete semantics
+- `frontend/src/pages/DevicesPage.jsx`: Devices tab now defaults to grouped same-machine clusters with expandable child fingerprints instead of a flat fingerprint-only table
+- `backend/app/core/security.py`: protected requests now validate both JWT and Redis session presence; `sid` is attached to login tokens and touched on authenticated requests
+- `backend/app/api/routes/auth.py`: login now creates Redis sessions and audit entries; logout revokes only the current session and writes audit history
+- mutating backend admin routes now emit audit entries instead of silently changing state
+- tracker routes now dispatch async anti-evasion checks after commit and persist sanitized event payload strings
+- frontend dashboard pages now fetch through hooks instead of calling `services/api.js` directly for overview/visitors/users/devices/blocking/anti-evasion/settings/integration/audit domains
 - SkyNet admin authentication is **native JWT only** — Keycloak is no longer used or intended for SkyNet dashboard login
 - `backend/app/api/routes/stats.py`: overview and realtime endpoints now properly aggregate metrics from Event and Incident tables with distinct visitor counts, summed blocked attempts, device tracking
 - `frontend/src/pages/OverviewPage.jsx`: real-time refresh interval reduced from 30s to 10s, overview auto-refreshes every 60s for better metric synchronization

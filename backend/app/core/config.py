@@ -3,7 +3,7 @@ from typing import List
 
 
 class Settings(BaseSettings):
-    APP_VERSION: str = "1.0.1"
+    APP_VERSION: str = "1.1.0"
     APP_SECRET_KEY: str = "dev_secret_change_me"
     APP_DEBUG: bool = True
     APP_BASE_URL: str = "http://localhost:8000"

@@ -5,3 +5,4 @@ from .blocking import BlockingRule, BlockedIP
 from .incident import Incident
 from .site import Site
 from .event import Event
+from .audit_log import AuditLog

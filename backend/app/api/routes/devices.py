@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, text
 from ...core.database import get_db
@@ -6,17 +6,35 @@ from ...core.security import get_current_user
 from ...models.user import User
 from ...models.device import Device
 from ...models.visitor import Visitor
-from ...schemas.device import LinkRequest
+from ...schemas.device import DeviceGroupListResponse, DeviceListResponse, DeviceOut, LinkRequest
+from ...services.audit import log_action, request_ip
+from ...services.device_identity import group_devices, isoformat
 
 router = APIRouter(prefix="/devices", tags=["devices"])
 
 
-def _iso(dt):
-    """Return ISO 8601 string with timezone offset, or None."""
-    return dt.isoformat() if dt else None
+def _device_filter(search: str):
+    if not search:
+        return None
+    q = f"%{search}%"
+    return or_(
+        Device.fingerprint.ilike(q),
+        Device.browser.ilike(q),
+        Device.os.ilike(q),
+        Device.match_key.ilike(q),
+    )
 
 
-@router.get("")
+def _visitor_count_sq():
+    return (
+        select(func.count(Visitor.id))
+        .where(Visitor.device_id == Device.id)
+        .correlate(Device)
+        .scalar_subquery()
+    )
+
+
+@router.get("", response_model=DeviceListResponse)
 async def list_devices(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, le=100),
@@ -24,19 +42,12 @@ async def list_devices(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    # Correlated subquery: count distinct visitors per device fingerprint
-    vc_sq = (
-        select(func.count(Visitor.id))
-        .where(Visitor.device_id == Device.id)
-        .correlate(Device)
-        .scalar_subquery()
-    )
+    vc_sq = _visitor_count_sq()
 
     cq = select(func.count()).select_from(Device)
     q = select(Device, vc_sq.label("vc"))
-    if search:
-        s = f"%{search}%"
-        flt = or_(Device.fingerprint.ilike(s), Device.browser.ilike(s), Device.os.ilike(s))
+    flt = _device_filter(search)
+    if flt is not None:
         q = q.where(flt)
         cq = cq.where(flt)
 
@@ -52,6 +63,8 @@ async def list_devices(
             {
                 "id": d.id,
                 "fingerprint": d.fingerprint,
+                "match_key": d.match_key,
+                "match_version": d.match_version,
                 "type": d.type,
                 "browser": d.browser,
                 "os": d.os,
@@ -64,11 +77,69 @@ async def list_devices(
                 "status": d.status,
                 "linked_user": d.linked_user,
                 "visitor_count": vc or 0,
-                "first_seen": _iso(d.first_seen),
-                "last_seen": _iso(d.last_seen),
+                "first_seen": isoformat(d.first_seen),
+                "last_seen": isoformat(d.last_seen),
             }
             for d, vc in rows
         ],
+    }
+
+
+@router.get("/groups", response_model=DeviceGroupListResponse)
+async def list_device_groups(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, le=100),
+    search: str = Query(""),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    q = select(Device, _visitor_count_sq().label("vc"))
+    flt = _device_filter(search)
+    if flt is not None:
+        q = q.where(flt)
+    result = await db.execute(q.order_by(Device.last_seen.desc()))
+    groups = group_devices(result.all())
+    start = (page - 1) * page_size
+    end = start + page_size
+    return {
+        "total": len(groups),
+        "items": groups[start:end],
+    }
+
+
+@router.get("/{device_id}", response_model=DeviceOut)
+async def get_device(
+    device_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    vc_sq = _visitor_count_sq()
+    result = await db.execute(
+        select(Device, vc_sq.label("vc")).where(Device.id == device_id)
+    )
+    row = result.first()
+    if not row:
+        raise HTTPException(404, "Device not found")
+    device, visitor_count = row
+    return {
+        "id": device.id,
+        "fingerprint": device.fingerprint,
+        "match_key": device.match_key,
+        "match_version": device.match_version,
+        "type": device.type,
+        "browser": device.browser,
+        "os": device.os,
+        "screen_resolution": device.screen_resolution,
+        "language": device.language,
+        "timezone": device.timezone,
+        "canvas_hash": device.canvas_hash,
+        "webgl_hash": device.webgl_hash,
+        "risk_score": device.risk_score,
+        "status": device.status,
+        "linked_user": device.linked_user,
+        "visitor_count": visitor_count or 0,
+        "first_seen": isoformat(device.first_seen),
+        "last_seen": isoformat(device.last_seen),
     }
 
 
@@ -106,7 +177,7 @@ async def device_visitors(
                 "country_flag": v.country_flag,
                 "page_views": v.page_views,
                 "status": v.status,
-                "last_seen": _iso(v.last_seen),
+                "last_seen": isoformat(v.last_seen),
             }
             for v in visitors
         ]
@@ -117,13 +188,19 @@ async def device_visitors(
 async def link_device(
     device_id: str,
     body: LinkRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     d = await db.get(Device, device_id)
     if not d:
         raise HTTPException(404, "Device not found")
     d.linked_user = body.user_id
+    await db.execute(
+        text("UPDATE visitors SET linked_user = :user_id WHERE device_id = :device_id"),
+        {"user_id": body.user_id, "device_id": device_id},
+    )
+    log_action(db, action="LINK_DEVICE", actor_id=current.id, target_type="device", target_id=d.id, ip=request_ip(request), extra={"user_id": body.user_id})
     await db.commit()
     return {"message": "Linked"}
 
@@ -131,13 +208,16 @@ async def link_device(
 @router.delete("/{device_id}/link")
 async def unlink_device(
     device_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     d = await db.get(Device, device_id)
     if not d:
         raise HTTPException(404, "Device not found")
     d.linked_user = None
+    await db.execute(text("UPDATE visitors SET linked_user = NULL WHERE device_id = :device_id"), {"device_id": device_id})
+    log_action(db, action="UNLINK_DEVICE", actor_id=current.id, target_type="device", target_id=d.id, ip=request_ip(request))
     await db.commit()
     return {"message": "Unlinked"}
 
@@ -145,8 +225,9 @@ async def unlink_device(
 @router.post("/{device_id}/block")
 async def block_device(
     device_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     d = await db.get(Device, device_id)
     if not d:
@@ -156,6 +237,7 @@ async def block_device(
     result = await db.execute(select(Visitor).where(Visitor.device_id == device_id))
     for v in result.scalars().all():
         v.status = "blocked"
+    log_action(db, action="BLOCK_DEVICE", actor_id=current.id, target_type="device", target_id=d.id, ip=request_ip(request))
     await db.commit()
     return {"message": "Blocked"}
 
@@ -163,8 +245,9 @@ async def block_device(
 @router.delete("/{device_id}/block")
 async def unblock_device(
     device_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     d = await db.get(Device, device_id)
     if not d:
@@ -174,6 +257,7 @@ async def unblock_device(
     result = await db.execute(select(Visitor).where(Visitor.device_id == device_id))
     for v in result.scalars().all():
         v.status = "active"
+    log_action(db, action="UNBLOCK_DEVICE", actor_id=current.id, target_type="device", target_id=d.id, ip=request_ip(request))
     await db.commit()
     return {"message": "Unblocked"}
 
@@ -181,8 +265,9 @@ async def unblock_device(
 @router.delete("/{device_id}")
 async def delete_device(
     device_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current: User = Depends(get_current_user),
 ):
     d = await db.get(Device, device_id)
     if not d:
@@ -191,6 +276,7 @@ async def delete_device(
     await db.execute(text("UPDATE events SET device_id = NULL WHERE device_id = :id"), {"id": device_id})
     await db.execute(text("UPDATE incidents SET device_id = NULL WHERE device_id = :id"), {"id": device_id})
     # visitors.device_id → FK ondelete=SET NULL, handled by DB on delete
+    log_action(db, action="DELETE_DEVICE", actor_id=current.id, target_type="device", target_id=d.id, ip=request_ip(request))
     await db.delete(d)
     await db.commit()
     return {"message": "Deleted"}

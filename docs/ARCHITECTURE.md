@@ -1,7 +1,7 @@
 # SkyNet — Architecture
 
 > Living document. Update on every structural change.
-> Last updated: 2026-03-30 — v1.1.0-dev — GeoIP enrichment, HTTP security headers middleware, traffic heatmap, top_countries live data
+> Last updated: 2026-03-30 — v1.1.0 — Redis sessions, audit log pipeline, hooks layer, async anti-evasion checks, strict same-machine device grouping
 
 ---
 
@@ -87,11 +87,12 @@ FastAPI /track/pageview
   ├─ 5. Extract client IP (X-Forwarded-For / client.host)
   ├─ 6. Check BlockedIP table → if blocked: increment hits, return 403
   ├─ 7. Parse User-Agent (ua-parser)
-  ├─ 8. GeoIP lookup (MaxMind GeoLite2-City) → country, city, flag emoji (new visitors only)
-  ├─ 9. Upsert Visitor (by IP + site_id) — geo fields set on creation
-  ├─ 10. Upsert Device (by fingerprint) → calculate risk score
-  ├─ 11. Insert Event record
-  └─ 12. Dispatch async anti-evasion checks (background task)
+  ├─ 8. Upsert Device (by exact fingerprint) → enrich browser/OS/type metadata
+  ├─ 9. Compute strict same-machine `match_key` from WebGL + screen + timezone + language
+  ├─ 10. GeoIP lookup (MaxMind GeoLite2-City) → country, city, flag emoji (new visitors only)
+  ├─ 11. Upsert Visitor (by site_id + device_id + ip when fingerprint exists; fallback site_id + ip)
+  ├─ 12. Insert Event record with exact `device_id`
+  └─ 13. Dispatch async anti-evasion checks (background task)
 
 Anti-Evasion Service (async)
   │
@@ -101,14 +102,18 @@ Anti-Evasion Service (async)
   └─ 15. If anomaly detected → Insert Incident → optionally auto-block
 ```
 
-### 2. Dashboard Auth Flow (JWT — native only)
+### 2. Dashboard Auth Flow (JWT + Redis sessions — native only)
 ```
 Browser → POST /api/v1/auth/login (application/x-www-form-urlencoded)
           Body: username=admin@skynet.local&password=...
-FastAPI  → OAuth2PasswordRequestForm → validate credentials → issue JWT (24h)
+FastAPI  → OAuth2PasswordRequestForm → validate credentials
+         → create Redis session `session:{user_id}:{sid}`
+         → issue JWT (24h) with internal `sid`
 Browser  → Stores JWT in localStorage (key: skynet_token)
 Browser  → All dashboard API calls: Authorization: Bearer <token>
-FastAPI  → Decode JWT → fetch User from DB → inject as dependency
+FastAPI  → Decode JWT → require live Redis session → fetch User from DB → inject as dependency
+Logout   → delete current Redis session key
+Revoke   → admin deletes one `session:{user_id}:{session_id}` entry
 ```
 
 > Note: Keycloak is **not used** for SkyNet admin authentication. Keycloak is
@@ -145,6 +150,37 @@ Dashboard Admin → POST /api/v1/devices/{id}/link { user_id }
 tracker: SkyNet.identify("user-123") → POST /api/v1/track/identify
 FastAPI → Find Device by fingerprint → Set linked_user = user_id
 Dashboard → Device detail shows linked user + shared sessions
+```
+
+### 6. Same-Machine Grouping Flow
+```
+Tracker pageview
+  → exact Device row resolved by fingerprint
+  → backend computes `match_key` from stable signals
+  → GET /api/v1/devices/groups aggregates exact fingerprints by `match_key`
+  → Devices dashboard shows one parent cluster with child exact fingerprints
+  → block/link/delete actions still target the exact child fingerprint only
+```
+
+### 7. Audit Logging Flow
+```
+Dashboard mutation
+  → FastAPI route
+  → audit service helper
+  → INSERT audit_logs row
+  → commit
+
+Dashboard Audit page
+  → GET /api/v1/audit/logs
+  → paginated / filtered audit log response
+```
+
+### 8. Frontend Data Flow
+```
+Dashboard pages
+  → frontend/hooks/*
+  → frontend/services/api.js
+  → FastAPI routes
 ```
 
 ---
@@ -188,6 +224,8 @@ visitors
 devices
   id            UUID PK
   fingerprint   VARCHAR(128) UNIQUE INDEX
+  match_key     VARCHAR(80) INDEX nullable
+  match_version INTEGER nullable
   type          VARCHAR(50)  (desktop | mobile | tablet)
   browser       VARCHAR(100)
   os            VARCHAR(100)

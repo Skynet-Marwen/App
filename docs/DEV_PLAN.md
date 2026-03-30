@@ -5,14 +5,50 @@
 
 ---
 
-## Current Version: `1.0.1`
-## Phase: Hardening — P0 items next (see Backlog)
+## Current Version: `1.1.0`
+## Phase: Release shipped — move focus to v1.2 intelligence work and production validation
 
 ---
 
 ## In Progress
 
-*(nothing active — ready for next sprint)*
+- [ ] Validate Redis-backed session flows against live stack
+- [ ] Run Alembic `0003_audit_logs` in deployment environments
+- [ ] Run Alembic `0004_device_match_groups` in deployment environments
+- [ ] Add backend automated tests for sessions/audit/anti-evasion paths
+
+---
+
+## Done (Release 1.1.0 — 2026-03-30)
+
+- [x] 2026-03-30 — feat(devices): strict same-machine grouping for cross-browser fingerprints
+  - added `devices.match_key` / `match_version` via Alembic `0004`
+  - grouped Devices dashboard rows by strict stable tuple: WebGL + screen + timezone + normalized language
+  - preserved exact fingerprint block/link/delete actions under grouped parent rows
+  - pageview ingest now resolves exact devices before visitor upsert and preserves `site_id + device_id + ip`
+
+---
+
+## Done (Hardening Foundation — 2026-03-30)
+
+- [x] 2026-03-30 — feat(auth): Redis-backed admin session enforcement
+  - `backend/app/core/redis.py` and `backend/app/services/sessions.py` added
+  - JWT now carries internal `sid`; protected requests require both JWT validity and live Redis session state
+  - `POST /auth/logout`, `GET /users/{id}/sessions`, `DELETE /users/{id}/sessions/{session_id}` now operate on real session records
+- [x] 2026-03-30 — feat(audit): write-only audit log backend + dashboard page
+  - `audit_logs` table added via Alembic `0003`
+  - `GET /api/v1/audit/logs` added with pagination/filtering
+  - mutating admin routes now emit audit entries
+  - new `/audit` page added to frontend navigation
+- [x] 2026-03-30 — refactor(frontend): hooks layer extracted from dashboard pages
+  - added `useOverview`, `useVisitors`, `useUsers`, `useUserSessions`, `useDevices`, `useBlocking`, `useAntiEvasion`, `useSettings`, `useSites`, `useAuditLogs`
+  - pages now consume hooks instead of calling `services/api` directly for those domains
+- [x] 2026-03-30 — security(input): HTML stripping and string cleanup on stored user-supplied fields
+  - added `bleach`-backed sanitization helpers
+  - applied to user/site/blocking/settings/tracker payload inputs
+- [x] 2026-03-30 — feat(anti-evasion): async in-process checks after tracking writes
+  - pageview/event/identify routes now dispatch background anti-evasion checks
+  - implemented bot UA, missing canvas/webgl, IP rotation, cookie evasion, spam burst, multi-account checks
 
 ---
 
@@ -76,18 +112,18 @@
 ## Backlog — Priority Order
 
 ### P0 — Critical (blocks production use)
-- [x] ~~Alembic migration setup~~ — ✅ resolved v1.1.0-dev
+- [x] ~~Alembic migration setup~~ — ✅ resolved in v1.1.0
 - [x] ~~Rate limiting middleware~~ — ✅ resolved (slowapi, 2026-03-29)
 - [x] GeoIP enrichment — ✅ resolved 2026-03-30
 - [x] HTTP security headers — ✅ resolved 2026-03-30
-- [ ] Redis session store — implement real session tracking (currently returns `[]`)
-- [ ] Anti-evasion background tasks — wire up async checks after pageview
+- [x] Redis session store — ✅ real session tracking + revocation in Redis
+- [x] Anti-evasion background tasks — ✅ async in-process checks wired after tracking writes
 
 ### P1 — High (needed for full feature set)
 - [ ] Real-time WebSocket feed — live visitor stream on Overview page
 - [ ] Keycloak user sync background task — 15-min cron using APScheduler
-- [ ] Audit log table + endpoints — write-only, tracked per the LOGIC.md spec
-- [ ] Frontend `hooks/` layer — extract `useVisitors`, `useUsers`, etc. from pages
+- [x] Audit log table + endpoints — ✅ write-only backend + Audit page
+- [x] Frontend `hooks/` layer — ✅ data fetching extracted from pages
 - [ ] Chart data — real aggregation queries (currently mocked in stats routes)
 - [ ] GeoIP country → flag emoji mapping utility
 
@@ -142,7 +178,7 @@
 |------|-----------|--------|------------------|
 | Settings stored in-memory (not DB) | v1.0.0 | Lost on restart | v1.1.0 |
 | Anti-evasion config in-memory | v1.0.0 | Lost on restart | v1.1.0 |
-| ~~`create_all()` instead of Alembic~~ | ~~v1.0.0~~ | ~~No migration history~~ | ✅ resolved v1.1.0-dev |
+| ~~`create_all()` instead of Alembic~~ | ~~v1.0.0~~ | ~~No migration history~~ | ✅ resolved in v1.1.0 |
 | Inline Pydantic models in routes | v1.0.0 | Violates Phase 2 rules | v1.1.0 |
 | Stats charts return mock data | v1.0.0 | Dashboard shows no real data | v1.1.0 |
 | Sessions endpoint returns `[]` | v1.0.0 | No session management | v1.1.0 |

@@ -6,6 +6,7 @@ import os
 
 from app.core.config import settings
 from app.core.database import init_db
+from app.core.redis import close_redis, init_redis
 from app.api import api_router
 from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 from app.middleware.security_headers import SecurityHeadersMiddleware
@@ -15,9 +16,11 @@ from slowapi.errors import RateLimitExceeded
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    await init_redis()
     # Create default admin user if none exists
     await create_default_admin()
     yield
+    await close_redis()
 
 
 async def create_default_admin():
