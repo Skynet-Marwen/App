@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { devicesApi, usersApi } from '../services/api'
 
 export function useDevices() {
+  const location = useLocation()
   const [deviceGroups, setDeviceGroups] = useState([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('search') || '')
   const [loading, setLoading] = useState(true)
   const [usersList, setUsersList] = useState([])
 
@@ -24,6 +26,12 @@ export function useDevices() {
   }, [page, search])
 
   useEffect(() => { refresh() }, [refresh])
+
+  useEffect(() => {
+    const nextSearch = new URLSearchParams(location.search).get('search') || ''
+    setSearch(nextSearch)
+    setPage(1)
+  }, [location.search])
 
   const loadDeviceVisitors = useCallback(async (deviceId) => {
     const res = await devicesApi.visitors(deviceId)

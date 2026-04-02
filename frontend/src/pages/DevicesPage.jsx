@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link2, Search, Shield, Trash2, Users } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
-import { Card, Badge, Button, Pagination, Modal, Select } from '../components/ui/index'
+import { Card, Badge, Button, Pagination, Modal, Select, PageToolbar } from '../components/ui/index'
 import DeviceGroupsTable from '../components/ui/DeviceGroupsTable'
 import { useDevices } from '../hooks/useDevices'
 
@@ -130,8 +130,8 @@ export default function DevicesPage() {
   return (
     <DashboardLayout title="Devices" onRefresh={refresh}>
       <Card>
-        <div className="flex items-center gap-3 mb-4">
-          <div className="flex-1 relative">
+        <PageToolbar>
+          <div className="relative w-full xl:max-w-[40rem]">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
             <input
               placeholder="Search by fingerprint, browser, OS, or match key..."
@@ -140,8 +140,10 @@ export default function DevicesPage() {
               className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500"
             />
           </div>
-          <span className="text-sm text-gray-500">{total.toLocaleString()} device groups</span>
-        </div>
+          <div className="flex flex-wrap items-center gap-3 xl:justify-end">
+            <span className="text-sm text-gray-500">{total.toLocaleString()} device groups</span>
+          </div>
+        </PageToolbar>
 
         <DeviceGroupsTable
           groups={deviceGroups}
@@ -158,7 +160,7 @@ export default function DevicesPage() {
       <Modal open={!!selected} onClose={() => { setSelected(null); setDeviceVisitors([]) }} title="Device Details" width="max-w-2xl">
         {selected && (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               {[
                 ['Fingerprint', selected.fingerprint],
                 ['Match Key', selected.match_key ?? '—'],
@@ -168,7 +170,12 @@ export default function DevicesPage() {
                 ['Screen', selected.screen_resolution],
                 ['Language', selected.language],
                 ['Timezone', selected.timezone],
+                ['Timezone Offset', selected.timezone_offset_minutes != null ? `${selected.timezone_offset_minutes} min` : '—'],
                 ['Visitors', selected.visitor_count],
+                ['Fingerprint Confidence', selected.fingerprint_confidence != null ? `${Math.round(selected.fingerprint_confidence * 100)}%` : '—'],
+                ['Stability Score', selected.stability_score != null ? `${Math.round(selected.stability_score * 100)}%` : '—'],
+                ['Composite Score', selected.composite_score != null ? `${Math.round(selected.composite_score * 100)}%` : '—'],
+                ['Clock Skew', selected.clock_skew_minutes != null ? `${selected.clock_skew_minutes} min` : '—'],
                 ['Status', selected.status],
                 ['First Seen', fmtDate(selected.first_seen)],
                 ['Last Seen', fmtDate(selected.last_seen)],
@@ -194,6 +201,13 @@ export default function DevicesPage() {
               </div>
             )}
 
+            {selected.composite_fingerprint && (
+              <div className="bg-gray-800 rounded-lg p-3">
+                <p className="text-xs text-gray-500 mb-0.5">Composite Fingerprint</p>
+                <p className="text-xs text-gray-300 font-mono break-all">{selected.composite_fingerprint}</p>
+              </div>
+            )}
+
             <div>
               <p className="text-xs text-gray-500 mb-2 flex items-center gap-1.5">
                 <Users size={12} /> Visitors on this fingerprint ({deviceVisitors.length})
@@ -203,13 +217,13 @@ export default function DevicesPage() {
               ) : (
                 <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
                   {deviceVisitors.map((visitor) => (
-                    <div key={visitor.id} className="bg-gray-800 rounded-lg px-3 py-2 flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-xs text-gray-300">
+                    <div key={visitor.id} className="flex flex-col gap-3 rounded-lg bg-gray-800 px-3 py-2 xl:flex-row xl:items-center xl:justify-between">
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-gray-300">
                         <code className="text-cyan-400">{visitor.ip}</code>
                         {visitor.country_flag && <span>{visitor.country_flag}</span>}
                         <span className="text-gray-500">{visitor.browser ?? '?'} / {visitor.os ?? '?'}</span>
                       </div>
-                      <div className="flex items-center gap-3 text-xs text-gray-500">
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
                         <span>{visitor.page_views ?? 0} pvs</span>
                         <span>{fmtDate(visitor.last_seen)}</span>
                         {visitor.status === 'blocked' ? (

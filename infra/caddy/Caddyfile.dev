@@ -1,0 +1,8 @@
+https://localhost {
+    tls internal
+    encode zstd gzip
+
+    @backend path /api/* /tracker/* /docs* /redoc* /openapi.json /health
+    reverse_proxy @backend backend:8000
+    reverse_proxy frontend:5173
+}

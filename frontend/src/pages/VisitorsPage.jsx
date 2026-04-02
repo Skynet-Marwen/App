@@ -1,62 +1,160 @@
-import { useState } from 'react'
-import { Eye, Search, Ban, Globe, Monitor, Clock, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { Ban, CheckSquare, Clock, Globe, Monitor, Square, Trash2 } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
-import { Card, Table, Badge, Button, Input, Pagination, Modal } from '../components/ui/index'
+import { Badge, Button, Card, Pagination, Table } from '../components/ui/index'
 import { useVisitors } from '../hooks/useVisitors'
-
+import { useVisitorFilterPresets } from '../hooks/useVisitorFilterPresets'
+import { buildVisitorsCsvRows, buildVisitorsSelectionExport, downloadCsvFile, downloadJsonFile } from '../services/visitorsExport'
+import VisitorsSelectionToolbar from './visitors/VisitorsSelectionToolbar'
+import VisitorFilterPresetsBar from './visitors/VisitorFilterPresetsBar'
+import VisitorsActionModals from './visitors/VisitorsActionModals'
+import VisitorDetailModal from './visitors/VisitorDetailModal'
 const statusBadge = (status) => {
   if (status === 'blocked') return <Badge variant="danger">Blocked</Badge>
   if (status === 'suspicious') return <Badge variant="warning">Suspicious</Badge>
   return <Badge variant="success">Active</Badge>
 }
-
+const parsePage = (value) => Math.max(1, Number(value || 1))
 export default function VisitorsPage() {
-  const {
-    visitors,
-    total,
-    page,
-    search,
-    loading,
-    setPage,
-    setSearch,
-    refresh,
-    blockVisitor,
-    unblockVisitor,
-    deleteVisitor,
-  } = useVisitors()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const page = parsePage(searchParams.get('page'))
+  const search = searchParams.get('search') || ''
+  const selectedPresetId = searchParams.get('preset') || '__manual__'
+  const [presetName, setPresetName] = useState('')
   const [selected, setSelected] = useState(null)
+  const [selectedIds, setSelectedIds] = useState(new Set())
   const [blockModal, setBlockModal] = useState(null)
   const [blockReason, setBlockReason] = useState('')
   const [blocking, setBlocking] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleting, setDeleting] = useState(false)
+  const { presets, savePreset, deletePreset } = useVisitorFilterPresets()
+  const {
+    visitors,
+    total,
+    loading,
+    refresh,
+    blockVisitor,
+    blockVisitors,
+    unblockVisitor,
+    deleteVisitor,
+    pageSize,
+  } = useVisitors({ page, search })
+  const selectedPreset = presets.find((preset) => preset.id === selectedPresetId) || null
+  const selectedVisitors = useMemo(() => visitors.filter((visitor) => selectedIds.has(visitor.id)), [selectedIds, visitors])
+  const selectedBlockableVisitors = useMemo(() => selectedVisitors.filter((visitor) => visitor.status !== 'blocked'), [selectedVisitors])
+  const selectedCount = selectedIds.size
+  const selectedBlockedCount = selectedVisitors.filter((visitor) => visitor.status === 'blocked').length
+  const allVisibleSelected = visitors.length > 0 && visitors.every((visitor) => selectedIds.has(visitor.id))
+  const visibleBlockedCount = visitors.filter((visitor) => visitor.status === 'blocked').length
+  const visibleActiveCount = visitors.filter((visitor) => visitor.status === 'active').length
+  const exportStamp = new Date().toISOString().replace(/[:.]/g, '-')
+  useEffect(() => { setSelectedIds(new Set()) }, [page, search])
+  const updateQuery = (patch = {}) => {
+    const next = new URLSearchParams(searchParams)
+    const resetPage = Object.prototype.hasOwnProperty.call(patch, 'search') || Object.prototype.hasOwnProperty.call(patch, 'preset')
 
+    Object.entries(patch).forEach(([key, value]) => {
+      if (value === null || value === undefined || value === '') next.delete(key)
+      else next.set(key, String(value))
+    })
+    if (resetPage) next.set('page', '1')
+    setSearchParams(next, { replace: true })
+  }
+  const setSearch = (value) => updateQuery({ search: value, preset: '' })
+  const setPage = (nextPage) => updateQuery({ page: nextPage })
+  const applyPreset = (preset) => updateQuery({ search: preset.filters.search || '', preset: preset.id })
+  const clearFilters = () => { setPresetName(''); updateQuery({ search: '', preset: '', page: '1' }) }
   const handleBlock = async () => {
     if (!blockModal) return
     setBlocking(true)
     try {
-      await blockVisitor(blockModal.id, blockReason)
+      if (blockModal.ids.length === 1) {
+        await blockVisitor(blockModal.ids[0], blockReason)
+      } else {
+        await blockVisitors(blockModal.ids, blockReason)
+      }
       setBlockModal(null)
       setBlockReason('')
-    } catch (_) {}
-    finally { setBlocking(false) }
+      setSelectedIds(new Set())
+    } catch {
+      // Keep the modal open state unchanged on failure.
+    } finally {
+      setBlocking(false)
+    }
   }
-
-  const handleUnblock = async (visitor) => {
-    await unblockVisitor(visitor.id)
-  }
-
+  const handleUnblock = async (visitor) => { await unblockVisitor(visitor.id) }
   const handleDelete = async () => {
     if (!deleteTarget) return
     setDeleting(true)
     try {
       await deleteVisitor(deleteTarget.id)
       setDeleteTarget(null)
-    } catch (_) {}
-    finally { setDeleting(false) }
+    } catch {
+      // Keep the confirmation modal open on failure.
+    } finally {
+      setDeleting(false)
+    }
   }
-
+  const toggleVisitor = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  const toggleVisibleVisitors = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (allVisibleSelected) {
+        visitors.forEach((visitor) => next.delete(visitor.id))
+      } else {
+        visitors.forEach((visitor) => next.add(visitor.id))
+      }
+      return next
+    })
+  }
+  const clearSelection = () => setSelectedIds(new Set())
+  const handleBulkBlock = () => {
+    if (!selectedBlockableVisitors.length) return
+    setBlockModal({
+      ids: selectedBlockableVisitors.map((visitor) => visitor.id),
+      label: `${selectedBlockableVisitors.length} selected visitor${selectedBlockableVisitors.length === 1 ? '' : 's'}`,
+      ips: selectedBlockableVisitors.map((visitor) => visitor.ip).filter(Boolean),
+    })
+    setBlockReason('')
+  }
+  const handleExportSelection = (format) => {
+    if (!selectedVisitors.length) return
+    const filename = `visitors-selection-${page}-${exportStamp}.${format === 'json' ? 'json' : 'csv'}`
+    const bundle = buildVisitorsSelectionExport(selectedVisitors, { page, search })
+    if (format === 'json') {
+      downloadJsonFile(filename, bundle)
+    } else {
+      downloadCsvFile(filename, buildVisitorsCsvRows(selectedVisitors), [
+        'id', 'ip', 'country', 'country_flag', 'city', 'isp', 'device_type',
+        'browser', 'os', 'page_views', 'status', 'first_seen', 'last_seen', 'user_agent', 'linked_user',
+      ])
+    }
+  }
   const columns = [
+    {
+      key: 'select',
+      label: '',
+      width: '56px',
+      render: (_, row) => (
+        <button
+          type="button"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-cyan-500/15 bg-black/30 text-cyan-300 transition hover:border-cyan-500/30 hover:bg-cyan-500/10"
+          onClick={(e) => { e.stopPropagation(); toggleVisitor(row.id) }}
+          aria-label={selectedIds.has(row.id) ? `Deselect ${row.ip}` : `Select ${row.ip}`}
+        >
+          {selectedIds.has(row.id) ? <CheckSquare size={16} /> : <Square size={16} />}
+        </button>
+      ),
+    },
     { key: 'ip', label: 'IP Address', render: (v) => <code className="text-cyan-400 text-xs">{v}</code> },
     { key: 'country', label: 'Country', render: (_, r) => (
       <span className="flex items-center gap-2 text-xs text-gray-300">
@@ -77,11 +175,13 @@ export default function VisitorsPage() {
     { key: 'page_views', label: 'Page Views', render: (v) => <span className="text-xs text-white font-medium">{v}</span> },
     { key: 'status', label: 'Status', render: (v) => statusBadge(v) },
     {
-      key: 'actions', label: '', width: '140px',
+      key: 'actions',
+      label: '',
+      width: '140px',
       render: (_, row) => (
         <div className="flex gap-1">
           {row.status !== 'blocked' ? (
-            <Button variant="danger" size="sm" icon={Ban} onClick={(e) => { e.stopPropagation(); setBlockModal(row) }}>
+            <Button variant="danger" size="sm" icon={Ban} onClick={(e) => { e.stopPropagation(); setBlockModal({ ids: [row.id], label: row.ip, ips: [row.ip] }) }}>
               Block
             </Button>
           ) : (
@@ -91,24 +191,64 @@ export default function VisitorsPage() {
           )}
           <Button variant="danger" size="sm" icon={Trash2} onClick={(e) => { e.stopPropagation(); setDeleteTarget(row) }} />
         </div>
-      )
+      ),
     },
   ]
 
   return (
     <DashboardLayout title="Visitors" onRefresh={refresh}>
       <Card>
-        <div className="flex items-center gap-3 mb-4">
-          <div className="flex-1 relative">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-            <input
-              placeholder="Search by IP, country, user agent..."
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500"
-            />
-          </div>
-          <span className="text-sm text-gray-500">{total.toLocaleString()} total</span>
+        <VisitorsSelectionToolbar
+          search={search}
+          setSearch={setSearch}
+          setPage={setPage}
+          visitorsCount={visitors.length}
+          selectedCount={selectedCount}
+          selectedBlockedCount={selectedBlockedCount}
+          visibleBlockedCount={visibleBlockedCount}
+          visibleActiveCount={visibleActiveCount}
+          allVisibleSelected={allVisibleSelected}
+          hasVisibleVisitors={visitors.length > 0}
+          selectedBlockableCount={selectedBlockableVisitors.length}
+          total={total}
+          onToggleVisible={toggleVisibleVisitors}
+          onClearSelection={clearSelection}
+          onBlockSelected={handleBulkBlock}
+          onExportCsv={() => handleExportSelection('csv')}
+          onExportJson={() => handleExportSelection('json')}
+          currentPresetName={selectedPreset ? selectedPreset.name : 'Manual view'}
+          savedPresetCount={presets.length}
+        />
+
+        <div className="mb-4">
+          <VisitorFilterPresetsBar
+            search={search}
+            presetName={presetName}
+            setPresetName={setPresetName}
+            presets={presets}
+            selectedPresetId={selectedPresetId}
+            setSelectedPresetId={(value) => {
+              if (value === '__manual__') {
+                clearFilters()
+                return
+              }
+              const preset = presets.find((item) => item.id === value)
+              if (preset) applyPreset(preset)
+            }}
+            onSavePreset={(name, filters) => {
+              const created = savePreset(name, filters)
+              if (created) {
+                setPresetName('')
+                updateQuery({ preset: created.id, search: created.filters.search || '' })
+              }
+            }}
+            onApplyPreset={applyPreset}
+            onDeletePreset={(presetId) => {
+              deletePreset(presetId)
+              if (selectedPresetId === presetId) clearFilters()
+            }}
+            onClear={clearFilters}
+          />
         </div>
 
         <Table
@@ -118,83 +258,23 @@ export default function VisitorsPage() {
           emptyMessage="No visitors found"
           onRowClick={setSelected}
         />
-        <Pagination page={page} total={total} pageSize={20} onChange={setPage} />
+        <Pagination page={page} total={total} pageSize={pageSize} onChange={setPage} />
       </Card>
 
-      {/* Visitor Detail Modal */}
-      <Modal open={!!selected} onClose={() => setSelected(null)} title="Visitor Details" width="max-w-2xl">
-        {selected && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              {[
-                ['IP Address', selected.ip],
-                ['Country', `${selected.country_flag} ${selected.country}`],
-                ['City', selected.city],
-                ['ISP', selected.isp],
-                ['Device', selected.device_type],
-                ['Browser', selected.browser],
-                ['OS', selected.os],
-                ['Page Views', selected.page_views],
-                ['First Seen', selected.first_seen],
-                ['Last Seen', selected.last_seen],
-              ].map(([label, value]) => (
-                <div key={label} className="bg-gray-800 rounded-lg p-3">
-                  <p className="text-xs text-gray-500 mb-0.5">{label}</p>
-                  <p className="text-sm text-white">{value || '—'}</p>
-                </div>
-              ))}
-            </div>
-            {selected.user_agent && (
-              <div className="bg-gray-800 rounded-lg p-3">
-                <p className="text-xs text-gray-500 mb-0.5">User Agent</p>
-                <p className="text-xs text-gray-300 font-mono break-all">{selected.user_agent}</p>
-              </div>
-            )}
-            {selected.linked_user && (
-              <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-lg p-3">
-                <p className="text-xs text-cyan-400 mb-0.5">Linked User</p>
-                <p className="text-sm text-white">{selected.linked_user}</p>
-              </div>
-            )}
-          </div>
-        )}
-      </Modal>
+      <VisitorsActionModals
+        blockModal={blockModal}
+        blockReason={blockReason}
+        setBlockReason={setBlockReason}
+        onCloseBlock={() => setBlockModal(null)}
+        onConfirmBlock={handleBlock}
+        blocking={blocking}
+        deleteTarget={deleteTarget}
+        onCloseDelete={() => setDeleteTarget(null)}
+        onConfirmDelete={handleDelete}
+        deleting={deleting}
+      />
 
-      {/* Delete Confirmation Modal */}
-      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete Visitor">
-        <div className="space-y-4">
-          <p className="text-sm text-gray-400">
-            Permanently delete visitor <code className="text-cyan-400">{deleteTarget?.ip}</code>?
-            <br />
-            <span className="text-red-400">All events for this visitor will be deleted. Linked device will be unlinked.</span>
-          </p>
-          <div className="flex gap-2 justify-end">
-            <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>
-            <Button variant="danger" loading={deleting} onClick={handleDelete} icon={Trash2}>Delete</Button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Block Modal */}
-      <Modal open={!!blockModal} onClose={() => setBlockModal(null)} title="Block Visitor">
-        <div className="space-y-4">
-          <p className="text-sm text-gray-400">
-            Block IP <code className="text-cyan-400">{blockModal?.ip}</code> from all tracked sites?
-          </p>
-          <Input
-            label="Reason (optional)"
-            placeholder="Spam, abuse, etc."
-            value={blockReason}
-            onChange={(e) => setBlockReason(e.target.value)}
-          />
-          <div className="flex gap-2 justify-end">
-            <Button variant="secondary" onClick={() => setBlockModal(null)}>Cancel</Button>
-            <Button variant="danger" loading={blocking} onClick={handleBlock} icon={Ban}>
-              Block
-            </Button>
-          </div>
-        </div>
-      </Modal>
+      <VisitorDetailModal visitor={selected} onClose={() => setSelected(null)} />
     </DashboardLayout>
   )
 }

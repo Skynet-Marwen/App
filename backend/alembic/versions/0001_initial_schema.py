@@ -11,6 +11,7 @@ is safe to run against a database that was bootstrapped by create_all().
 from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from sqlalchemy import inspect
 
 revision: str = "0001"
@@ -25,6 +26,8 @@ def _exists(conn, table: str) -> bool:
 
 def upgrade() -> None:
     conn = op.get_bind()
+    user_role_enum = postgresql.ENUM("admin", "moderator", "user", name="user_role", create_type=False)
+    user_status_enum = postgresql.ENUM("active", "blocked", "pending", name="user_status", create_type=False)
 
     # ── PostgreSQL enum types — no-op if already exist ──────────────────────
     conn.execute(sa.text(
@@ -46,12 +49,8 @@ def upgrade() -> None:
             sa.Column("email", sa.String(255), nullable=False),
             sa.Column("username", sa.String(100), nullable=False),
             sa.Column("hashed_password", sa.String(255), nullable=True),
-            sa.Column("role",
-                sa.Enum("admin", "moderator", "user", name="user_role", create_type=False),
-                nullable=False, server_default="user"),
-            sa.Column("status",
-                sa.Enum("active", "blocked", "pending", name="user_status", create_type=False),
-                nullable=False, server_default="active"),
+            sa.Column("role", user_role_enum, nullable=False, server_default="user"),
+            sa.Column("status", user_status_enum, nullable=False, server_default="active"),
             sa.Column("keycloak_id", sa.String(100), nullable=True),
             sa.Column("last_login", sa.DateTime(timezone=True), nullable=True),
             sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),

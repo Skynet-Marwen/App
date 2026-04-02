@@ -1,5 +1,7 @@
 # SkyNet — Contributing Guide
 
+> Last updated: 2026-04-02
+
 ---
 
 ## Before You Start
@@ -17,11 +19,13 @@
 # Prerequisites: Docker, Node 22+, Python 3.12+
 
 # Clone
-git clone https://github.com/your-org/skynet.git
+git clone https://github.com/Skynet-Marwen/App.git skynet
 cd skynet
 
 # Start dependencies only (DB + Redis)
 docker compose -f docker-compose.dev.yml up -d
+# Optional local IdP for identity-link testing
+docker compose --profile keycloak up -d keycloak
 
 # Backend
 cd backend
@@ -67,6 +71,9 @@ Before opening a PR, confirm:
 - [ ] No hardcoded secrets or localhost references
 - [ ] Build passes: `npm run build` (frontend), app starts without errors (backend)
 - [ ] `.env.example` updated if new env vars added
+- [ ] Docs distinguish shipped releases from unreleased branch work when versions do not yet match `APP_VERSION`
+- [ ] Settings/theme/shell UX changes reflected in `README.md`, `docs/ARCHITECTURE.md`, and `frontend/README.md`
+- [ ] Tracker/device-identity changes reflected in `docs/API.md`, `docs/LOGIC.md`, and `docs/SECURITY.md`
 
 ---
 

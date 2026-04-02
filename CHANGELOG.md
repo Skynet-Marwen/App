@@ -9,6 +9,137 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Fixed
+
+---
+
+## [1.6.0] - 2026-04-02
+
+### Added
+- Gateway analytics in `GET /api/v1/stats/overview`, including request volume, decision mix, bot pressure, challenge outcomes, and latency summaries for the reverse proxy
+- Gateway challenge pages for JavaScript proof-of-work, redirect handoff, and honeypot continue flows, including short-lived challenge bypass cookies
+- Bot detection pipeline expansions: crawler-signature matching, stronger headless heuristics, and click-farm behavior detection
+- Form-spam detections for hidden-field honeypots, submission velocity bursts, and repeated content signatures
+- DNSBL reputation checks with cached provider results and configurable challenge vs block policy
+- Composite fingerprint hashing/scoring plus device-level clock-skew detection (client offset vs GeoIP timezone) with migration `0016`
+- Explicit risk enforcement thresholds for auto-flag / auto-challenge / auto-block, including threshold anomaly flags and gateway-aligned score actions
+- Keycloak Admin API realm sync settings plus `POST /api/v1/identity/sync/keycloak` and `GET /api/v1/identity/sync/keycloak/status` for importing external users ahead of live app traffic
+- `GET /api/v1/system/bootstrap-status` and a first-run onboarding wizard for guiding site setup, IdP connection, starter-pack install, and gateway enablement
+- `GET /api/v1/themes/starter-packs` and `POST /api/v1/themes/starter-packs/{pack_id}/install` for curated marketplace-style theme installs
+- Reverse-proxy gateway MVP: `GET /api/v1/gateway/status` and `/api/v1/gateway/proxy/*` with allow / challenge / block decisions before forwarding to origin
+- Signed `_skynet_did` device continuity cookie with backend issuance/verification and tracker-side reuse across `check-access`, `device-context`, `pageview`, `event`, and `identify`
+- Device fingerprint foundation fields on `devices`: `device_cookie_id`, `fingerprint_version`, `fingerprint_confidence`, `stability_score`, and `fingerprint_snapshot`
+- Migration `0015_device_identity_foundation` for the new device-identity continuity and snapshot fields
+- Tracker navigator/timing entropy capture: `hardware_concurrency`, `device_memory`, `connection_type`, `touch_points`, `plugin_count`, `clock_resolution_ms`, `raf_mean_ms`, and `raf_jitter_score`
+- Backend device fingerprint assessment service computing confidence, stability, drift, and changed fields from successive tracker snapshots
+- `POST /api/v1/track/device-context` — resolves or creates the SKYNET device record from raw tracker signals and returns the real `devices.id` UUID for protected-app handoff
+- `tracker/skynet.js`: new browser helper APIs `SkyNet.getDeviceId()`, `SkyNet.getDeviceContext()`, `SkyNet.getFingerprint()`, and `SkyNet.onReady()`
+- `GET /api/v1/stats/overview` now includes `risk_leaderboard` — top risky external-user profiles for the current overview time window
+- Overview dashboard risk leaderboard card linking top risky identities directly into the Portal Users analyst workspace
+- Backend unit coverage for `identity_service`, `risk_engine`, and `jwks_validator`, including cache grace-period, trust-threshold, and multi-account detection scenarios
+- `runtime_config` persistence store plus migration `0014`, backing both general runtime settings and anti-evasion configuration
+- Backend unit coverage for settings persistence and backup/restore contracts in `backend/tests/test_settings_persistence.py`
+- `WS /api/v1/stats/realtime/ws` — authenticated websocket feed for the Overview realtime HUD
+- `POST /api/v1/track/activity` now detects impossible-travel jumps and raises `impossible_travel` anomaly flags with immediate risk recompute
+- Portal Users export actions for CSV/JSON table exports and per-user intelligence bundles
+- Backend container health check in `docker-compose.yml`, probing `/api/health`
+- `GET /api/v1/themes/{id}/export` — export a single theme as a marketplace-ready JSON package with optional embedded logo asset
+- `POST /api/v1/themes/import` — import or replace a packaged theme from JSON with safe default-theme handling
+- Activity-event retention pruning in the background runtime, driven by `event_retention_days`
+- Theme admin registry package panel plus role-surface presets for `layout.role_surfaces`
+- `GET /api/v1/search` — aggregated dashboard search across visitors, devices, and portal-user intelligence
+- Visitors saved filter presets and current-slice bulk selection actions for block/export
+- Settings feature-status summary cards derived from the shared capability map
+- Runtime `idp_providers` support for validating external JWTs against multiple JWKS-backed identity providers with issuer-based selection
+- Tracker behavior snapshots plus backend low-entropy interaction scoring, `behavior_drift` anomaly flags, and device-risk updates
+- Sliding-window anti-spam detection in Redis keyed by device/fingerprint context instead of a fixed per-minute counter
+- High-severity incident notifications over SMTP and signed webhook callbacks
+
+### Changed
+- Overview now includes a dedicated Gateway Dashboard widget instead of exposing proxy health only through Settings
+- Dynamic theme resolution now supports tenant host maps in addition to risk-band overrides for default-theme operators
+- `tracker/skynet.js` now captures `navigator.webdriver`, emits form-submission metadata, and follows challenge redirects returned by `/api/v1/track/check-access`
+- Anti-Evasion and Settings UI now expose live challenge, DNSBL, form-abuse, click-farm, and tenant-theme controls instead of roadmap placeholders
+- Theme resolution now supports dynamic risk-driven overrides for operators who follow the system default theme, while retaining per-user overrides
+- Devices and tracker device-context responses now surface composite fingerprint, composite score, and clock-skew metadata
+- Settings now expose gateway controls, Keycloak realm sync controls, dynamic theme policy, and explicit risk threshold tuning
+- Tracker/device-context documentation now reflects signed cookie continuity, richer entropy capture, and fingerprint confidence/stability metadata on the unreleased branch
+- Integration page snippets now show the built-in device UUID handoff flow for `/identity/link` and `/track/activity`
+- README, install, API, logic, architecture, roadmap, and dev-plan docs now reflect the shipped device-context helper instead of the previous app-specific workaround
+- `/api/v1/settings`, `/api/v1/anti-evasion/config`, SMTP/HTTPS config flows, startup env seeding, and backup restore now persist through the database instead of memory-only runtime state
+- Audit, Anti-Evasion, and Integration pages now use the newer desktop operator layout, summaries, and action hierarchy
+- Overview now prefers a live websocket source for realtime HUD stats and falls back to polling when the socket is unavailable
+- The dashboard sidebar now honors theme-defined role surface rules to hide or relabel navigation per operator role
+- Overview hotspot and investigation cards now drill into Visitors using URL-driven search state
+- Devices and Portal Users now honor incoming `?search=` query state so global search can land directly on filtered results
+- `GET /api/v1/visitors` now also accepts additive `country` and `status` filters for drill-down-safe filtering
+- `/api/v1/identity/link` and `/api/v1/track/activity` now validate against the configured external IdP set instead of assuming Keycloak only
+- Settings → Auth now manages multiple external JWT providers, and Settings → Notifications now reflects high-severity alert delivery as a live capability
+
+## [1.2.0] - 2026-04-02
+
+### Added
+- Theme engine backend registry with per-theme `colors`, `layout`, `widgets`, `branding`, `is_default`, and `is_active`
+- `GET /api/v1/themes`, `POST /api/v1/themes`, `PUT /api/v1/themes/{id}`, `DELETE /api/v1/themes/{id}`
+- `POST /api/v1/themes/set-default` — promote a single active theme as the default for newly created accounts
+- `GET /api/v1/user/theme` and `POST /api/v1/user/theme` — resolve and persist per-user theme selection across devices
+- `POST /api/v1/themes/{id}/logo`, `DELETE /api/v1/themes/{id}/logo`, and `GET /api/v1/themes/{id}/logo` for admin-managed branding assets
+- Granular theme shell variables for body, header, nav, footer, panel, widget metadata, and branding logo/text/title/tagline
+- Settings IA reorganization into 9 domains with a sticky category navigator and roadmap cards for partially shipped / planned controls
+- Shared desktop UX primitives: centered content frame, `PageToolbar`, `SegmentedTabs`, improved table spacing, and more resilient modal/action wrapping
+- HTTPS deployment settings: `APP_HTTPS_MODE`, `APP_HTTPS_PROVIDER`, `APP_TRUST_PROXY_HEADERS`, `APP_HSTS_ENABLED`
+- Settings → HTTPS & Access tab for public URL, edge mode, proxy trust, and HSTS configuration
+- Settings → HTTPS & Access now includes certificate strategy selection, self-signed certificate generation, Let's Encrypt HTTP/DNS configuration fields, and PEM upload status/actions
+- `GET /api/v1/settings/https/status` — returns self-signed and uploaded certificate store status
+- `POST /api/v1/settings/https/self-signed` — generates a self-signed certificate with OpenSSL and stores it under `backend/data/certs/self-signed`
+- `POST /api/v1/settings/https/upload` — accepts PEM certificate/key uploads and stores them under `backend/data/certs/uploaded`
+- `docker-compose.https.yml` + `infra/caddy/Caddyfile` for public HTTPS edge termination with Caddy
+- `docker-compose.tunnel.yml` for Cloudflare Tunnel deployments where inbound ports are unavailable
+- `docker-compose.dev-https.yml` + `infra/caddy/Caddyfile.dev` for secure-context local development
+- `POST /api/v1/identity/link` — links an authenticated Keycloak end-user (JWT sub) to a SKYNET device fingerprint; returns trust level, risk score, and active flags
+- `POST /api/v1/track/activity` — records a structured activity event for an authenticated external user (Keycloak Bearer token required)
+- `GET  /api/v1/identity/{uid}/profile` — full intelligence profile for an external user
+- `GET  /api/v1/identity/{uid}/devices` — list of device-identity links for a user
+- `GET  /api/v1/identity/{uid}/risk-history` — time-series risk score snapshots
+- `GET  /api/v1/identity/{uid}/activity` — paginated user activity timeline
+- `GET  /api/v1/identity/{uid}/flags` — open anomaly flags for a user
+- `PUT  /api/v1/identity/{uid}/flags/{fid}` — acknowledge / resolve / mark false-positive a flag
+- `POST /api/v1/identity/{uid}/enhanced-audit` — enable deep logging for high-risk users (admin only)
+- `GET  /api/v1/risk/users` — list all profiled external users sorted by risk score, with filters
+- `POST /api/v1/risk/{uid}/recompute` — manually trigger risk recomputation for a user
+- DB migrations 0005–0011: drop `users.keycloak_id`; add `identity_links`, `user_profiles`, `risk_events`, `activity_events`, `anomaly_flags`; extend `devices` with identity columns
+- `backend/app/services/jwks_validator.py` — async JWKS key fetching with in-process cache and 10-min grace period when IdP is unreachable
+- `backend/app/services/identity_service.py` — identity link upsert, multi-account detection, device ownership tracking
+- `backend/app/services/risk_engine.py` — user-level composite risk scoring with device aggregation, anomaly modifiers, spike auto-flagging, and trust level derivation
+- `KEYCLOAK_JWKS_URL`, `KEYCLOAK_ISSUER`, `KEYCLOAK_AUDIENCE`, `KEYCLOAK_CACHE_TTL_SEC` env vars (bootstrap for runtime settings)
+- Project documentation refreshed for the shipped `1.2.0` identity-platform release, including optional local Keycloak, GeoIP provider switching, SMTP settings, and current integration caveats
+
+### Changed
+- Settings navigation now uses domain-based sections instead of the previous flat tab row
+- Theme editor now supports advanced branding and shell-surface controls instead of relying on raw JSON alone
+- Uploaded theme logos are now resolved through `/api/v1/themes/{id}/logo?v=<timestamp>` during theme serialization for safer routing and cache-busting
+- Dashboard shell now keeps header, navigation, and footer fixed while `main` is the dedicated scroll region
+- Main dashboard pages now use desktop-friendly toolbars, wrapped actions, segmented menus, and centered max-width content
+- Integration snippets now prefer the configured public base URL instead of the dashboard's current origin
+- `Strict-Transport-Security` is only sent when the request host matches the configured HTTPS public host
+- Settings → Auth: Keycloak card now configures JWT validation for external end-users, not operator SSO. Fields changed to `JWKS URL`, `Issuer`, `Audience`.
+- `users` model/schema: removed `keycloak_id` — SKYNET operators are never Keycloak users
+- `devices` model: added `owner_user_id`, `shared_user_count`, `last_known_platform`
+- `AuthOperatorsPanel`: removed "SSO / Local" column — all operators are local
+- Local Keycloak remains optional in `docker-compose.yml` behind `--profile keycloak`; SKYNET can also validate tokens from an external JWKS-capable OIDC provider
+
+### Removed
+- Keycloak SSO for SKYNET operator login (`keycloak_server_url`, `keycloak_realm`, `keycloak_client_id`, `keycloak_client_secret_enc` settings keys removed)
+
+### Fixed
+- Uploaded `.png` theme logos failing to render through the dashboard after save
+- Oversized settings/theme modals clipping content instead of using full viewport height with an internal scroll region
+- Desktop shell overflow issues where menus, action rows, and large content cards could run off-screen or feel cramped on wide displays
+
 ## [1.1.0] - 2026-03-30
 
 ### Added

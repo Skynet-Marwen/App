@@ -38,8 +38,20 @@ export function useUsers() {
     await refresh()
   }, [refresh])
 
+  const updateUser = useCallback(async (id, data) => {
+    const res = await usersApi.update(id, data)
+    await refresh()
+    return res
+  }, [refresh])
+
+  const deleteUser = useCallback(async (id) => {
+    await usersApi.delete(id)
+    await refresh()
+  }, [refresh])
+
   const resetPassword = useCallback(async (id) => {
-    await usersApi.resetPassword(id)
+    const res = await usersApi.resetPassword(id)
+    return res.data
   }, [])
 
   return {
@@ -52,6 +64,8 @@ export function useUsers() {
     setSearch,
     refresh,
     createUser,
+    updateUser,
+    deleteUser,
     blockUser,
     unblockUser,
     resetPassword,

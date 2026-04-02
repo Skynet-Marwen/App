@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, text
@@ -8,7 +10,7 @@ from ...models.device import Device
 from ...models.visitor import Visitor
 from ...schemas.device import DeviceGroupListResponse, DeviceListResponse, DeviceOut, LinkRequest
 from ...services.audit import log_action, request_ip
-from ...services.device_identity import group_devices, isoformat
+from ...services.device_identity import RECENT_IP_WINDOW_DAYS, group_devices, isoformat
 
 router = APIRouter(prefix="/devices", tags=["devices"])
 
@@ -73,6 +75,12 @@ async def list_devices(
                 "timezone": d.timezone,
                 "canvas_hash": d.canvas_hash,
                 "webgl_hash": d.webgl_hash,
+                "fingerprint_confidence": d.fingerprint_confidence,
+                "stability_score": d.stability_score,
+                "composite_fingerprint": d.composite_fingerprint,
+                "composite_score": d.composite_score,
+                "timezone_offset_minutes": d.timezone_offset_minutes,
+                "clock_skew_minutes": d.clock_skew_minutes,
                 "risk_score": d.risk_score,
                 "status": d.status,
                 "linked_user": d.linked_user,
@@ -98,7 +106,28 @@ async def list_device_groups(
     if flt is not None:
         q = q.where(flt)
     result = await db.execute(q.order_by(Device.last_seen.desc()))
-    groups = group_devices(result.all())
+    rows = result.all()
+    recent_visitors_by_device: dict[str, list[dict[str, object]]] = {}
+    device_ids = [device.id for device, _visitor_count in rows]
+    if device_ids:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=RECENT_IP_WINDOW_DAYS)
+        visitor_result = await db.execute(
+            select(Visitor.device_id, Visitor.ip, Visitor.last_seen, Visitor.os)
+            .where(Visitor.device_id.in_(device_ids))
+            .where(Visitor.last_seen >= cutoff)
+            .where(Visitor.ip.is_not(None))
+        )
+        for device_id, ip, last_seen, os_name in visitor_result.all():
+            if not device_id:
+                continue
+            recent_visitors_by_device.setdefault(device_id, []).append(
+                {
+                    "ip": ip,
+                    "last_seen": last_seen,
+                    "os": os_name,
+                }
+            )
+    groups = group_devices(rows, recent_visitors_by_device)
     start = (page - 1) * page_size
     end = start + page_size
     return {
@@ -134,6 +163,12 @@ async def get_device(
         "timezone": device.timezone,
         "canvas_hash": device.canvas_hash,
         "webgl_hash": device.webgl_hash,
+        "fingerprint_confidence": device.fingerprint_confidence,
+        "stability_score": device.stability_score,
+        "composite_fingerprint": device.composite_fingerprint,
+        "composite_score": device.composite_score,
+        "timezone_offset_minutes": device.timezone_offset_minutes,
+        "clock_skew_minutes": device.clock_skew_minutes,
         "risk_score": device.risk_score,
         "status": device.status,
         "linked_user": device.linked_user,

@@ -67,4 +67,6 @@ async def me(request: Request, current_user: User = Depends(get_current_user)):
         "username": current_user.username,
         "role": current_user.role,
         "status": current_user.status,
+        "theme_id": current_user.theme_id,
+        "theme_source": current_user.theme_source,
     }

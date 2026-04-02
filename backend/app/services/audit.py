@@ -2,13 +2,13 @@ import json
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..models.audit_log import AuditLog
+from ..core.ip_utils import get_client_ip
 
 
 def request_ip(request: Request | None) -> str | None:
     if request is None:
         return None
-    forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-    return forwarded or (request.client.host if request.client else None)
+    return get_client_ip(request)
 
 
 def parse_extra(extra_data: str | None) -> dict | None:

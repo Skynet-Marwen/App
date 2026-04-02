@@ -17,3 +17,4 @@ geoip2==4.8.0
 user-agents==2.2.0
 slowapi==0.1.9
 bleach==6.2.0
+aiosmtplib==3.0.1

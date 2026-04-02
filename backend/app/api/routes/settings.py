@@ -6,38 +6,82 @@ from ...models.user import User
 from ...models.block_page_config import BlockPageConfig
 from ...services.audit import log_action, request_ip
 from ...services.sanitize import clean_optional_text, clean_text, clean_url
+from ...services.runtime_config import (
+    load_runtime_settings,
+    runtime_settings,
+    update_runtime_settings,
+)
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
-# In-memory settings (persist to DB/file in production)
-_settings = {
-    "instance_name": "SkyNet",
-    "base_url": "http://localhost:8000",
-    "timezone": "UTC",
-    "realtime_enabled": True,
-    "auto_block_tor_vpn": False,
-    "require_auth": False,
-    "visitor_retention_days": 90,
-    "event_retention_days": 90,
-    "incident_retention_days": 365,
-    "anonymize_ips": False,
-    "webhook_url": "",
-    "webhook_secret": "",
-    "webhook_events": {},
-}
+_settings = runtime_settings()
+
+_MASKED = "••••••••"
+
+
+def _clean_idp_provider(raw: dict) -> dict | None:
+    if not isinstance(raw, dict):
+        return None
+    name = clean_text(str(raw.get("name", "")))
+    if not name:
+        return None
+    return {
+        "name": name,
+        "enabled": bool(raw.get("enabled", True)),
+        "jwks_url": clean_url(raw.get("jwks_url")) or "",
+        "issuer": clean_url(raw.get("issuer")) or "",
+        "audience": clean_optional_text(raw.get("audience")) or "",
+        "cache_ttl_sec": int(raw.get("cache_ttl_sec") or raw.get("cache_ttl") or 300),
+    }
 
 @router.get("")
-async def get_settings(_: User = Depends(get_current_user)):
-    return _settings
+async def get_settings(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    await load_runtime_settings(db)
+    _enc = {
+        "smtp_password_enc",
+        "https_letsencrypt_dns_api_token_enc",
+        "keycloak_sync_client_secret_enc",
+        "keycloak_sync_password_enc",
+    }
+    result = {k: v for k, v in _settings.items() if k not in _enc}
+    result["smtp_password"] = _MASKED if _settings.get("smtp_password_enc") else ""
+    result["https_letsencrypt_dns_api_token"] = _MASKED if _settings.get("https_letsencrypt_dns_api_token_enc") else ""
+    result["keycloak_sync_client_secret"] = _MASKED if _settings.get("keycloak_sync_client_secret_enc") else ""
+    result["keycloak_sync_password"] = _MASKED if _settings.get("keycloak_sync_password_enc") else ""
+    return result
 
 
 @router.put("")
 async def update_settings(data: dict, request: Request, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
+    from ...services.email import encrypt_password
     cleaned = {}
     try:
         for key, value in data.items():
+            if key == "https_letsencrypt_dns_api_token":
+                if value == _MASKED:
+                    continue
+                cleaned["https_letsencrypt_dns_api_token_enc"] = encrypt_password(value) if value else ""
+                continue
+            if key in {"keycloak_sync_client_secret", "keycloak_sync_password"}:
+                if value == _MASKED:
+                    continue
+                cleaned[f"{key}_enc"] = encrypt_password(value) if value else ""
+                continue
+            if key == "idp_providers" and isinstance(value, list):
+                cleaned[key] = [provider for provider in (_clean_idp_provider(item) for item in value) if provider]
+                continue
             if isinstance(value, str):
-                if key in {"base_url", "webhook_url"}:
+                if key in {
+                    "base_url",
+                    "webhook_url",
+                    "keycloak_jwks_url",
+                    "keycloak_issuer",
+                    "keycloak_sync_base_url",
+                    "gateway_target_origin",
+                }:
                     cleaned[key] = clean_url(value) or ""
                 else:
                     cleaned[key] = clean_text(value)
@@ -45,10 +89,10 @@ async def update_settings(data: dict, request: Request, db: AsyncSession = Depen
                 cleaned[key] = value
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    _settings.update(cleaned)
+    await update_runtime_settings(db, cleaned)
     log_action(db, action="CONFIG_CHANGE", actor_id=current.id, target_type="settings", target_id="general", ip=request_ip(request), extra={"updated_keys": sorted(cleaned.keys())})
     await db.commit()
-    return _settings
+    return await get_settings(db, current)
 
 
 @router.get("/block-page")

@@ -1,51 +1,64 @@
 # SkyNet — Architecture
 
 > Living document. Update on every structural change.
-> Last updated: 2026-03-30 — v1.1.0 — Redis sessions, audit log pipeline, hooks layer, async anti-evasion checks, strict same-machine device grouping
+> Last updated: 2026-04-02 — runtime app version `1.6.0`
 
 ---
 
 ## System Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        EXTERNAL WORLD                           │
-│                                                                 │
-│   Any Website / App                Mobile App / Backend         │
-│   <script src="skynet.js">         REST API calls               │
-└──────────────┬──────────────────────────────┬───────────────────┘
-               │ HTTP (tracker events)         │ HTTP (check/identify)
-               ▼                               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     NGINX (port 80/443)                         │
-│           Reverse proxy + SPA static file serving               │
-└──────┬──────────────────────────────────────┬───────────────────┘
-       │ /api/*  /tracker/*                   │ /* (frontend)
-       ▼                                      ▼
-┌──────────────────┐                ┌────────────────────┐
-│  FastAPI Backend │                │  React Dashboard   │
-│  (port 8000)     │                │  (Vite / Nginx)    │
-│                  │                │                    │
-│  ┌────────────┐  │                │  pages/            │
-│  │   routes/  │  │   JWT Auth     │  components/       │
-│  │  schemas/  │  │◄──────────────►│  hooks/            │
-│  │  services/ │  │                │  services/         │
-│  │   models/  │  │                │  store/ (Zustand)  │
-│  └────────────┘  │                └────────────────────┘
-│        │         │
-│        ▼         │
-│  ┌───────────┐   │     ┌──────────────┐
-│  │PostgreSQL │   │     │    Redis      │
-│  │(port 5432)│   │     │  (port 6379) │
-│  └───────────┘   │     │  sessions    │
-│                  │     │  rate limits │
-│  ┌───────────┐   │     │  realtime    │
-│  │ Keycloak  │   │     └──────────────┘
-│  │(port 8080)│   │
-│  │ (optional)│   │
-│  └───────────┘   │
-└──────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                        PROTECTED APPLICATIONS                         │
+│                                                                      │
+│   Web App (skynet.js)     Mobile App       Backend Service           │
+│   POST /track/pageview    POST /identity   POST /track/activity      │
+└──────────┬────────────────────────┬────────────────────┬─────────────┘
+           │ X-SkyNet-Key           │ Bearer <external JWT> │ Bearer <external JWT>
+           ▼                        ▼                    ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│              EDGE HTTPS (Caddy / Nginx / Tunnel / LB)                │
+│       Public TLS, hostname routing, optional tunnel termination       │
+└───────┬──────────────────────────────────────────────┬───────────────┘
+        │ /api/*  /tracker/*  /docs                     │ /* (frontend)
+        ▼                                              ▼
+┌───────────────────────┐                  ┌─────────────────────────┐
+│   FastAPI Backend     │                  │   React Dashboard       │
+│   (port 8000)         │                  │   (Vite / Nginx)        │
+│                       │                  │                         │
+│  ┌─────────────────┐  │   SKYNET JWT     │  pages/                 │
+│  │ Identity Routes │  │◄────────────────►│  components/            │
+│  │ Risk Routes     │  │                  │  hooks/                 │
+│  │ Track Routes    │  │                  │  services/              │
+│  │ Gateway Routes  │  │                  │  overview widgets       │
+│  │ Theme Routes    │  │                  │  theme store / engine   │
+│  │ Admin Routes    │  │                  │  store/ (Zustand)       │
+│  └────────┬────────┘  │                  └─────────────────────────┘
+│           │           │
+│  ┌────────▼────────┐  │     ┌──────────────────┐
+│  │ Services        │  │     │     Redis         │
+│  │ identity_service│  │     │  (port 6379)      │
+│  │ risk_engine     │  │     │  operator sessions│
+│  │ jwks_validator  │  │     │  rate limits      │
+│  │ anti_evasion    │  │     └──────────────────┘
+│  │ gateway_analytics│ │
+│  │ theme_service   │  │
+│  └────────┬────────┘  │
+│           │           │     ┌──────────────────┐
+│  ┌────────▼────────┐  │     │ OIDC / JWKS IdP   │
+│  │  PostgreSQL     │◄─┼─────│  (Keycloak opt.)  │
+│  │  (port 5432)    │  │JWKS │  end-user IdP     │
+│  └─────────────────┘  │ val.│  (NOT for ops)    │
+└───────────────────────┘     └──────────────────┘
 ```
+
+**Identity boundary:**
+- An external OIDC/JWKS provider issues JWT tokens to end-users of *protected applications*.
+- SKYNET validates those tokens via JWKS — it never proxies login.
+- SKYNET operator login is always local (username + bcrypt + JWT).
+- External IdP outage does not affect operator access.
+- The local Keycloak container is optional and profile-gated in `docker-compose.yml`; external OIDC/JWKS providers are valid too.
+- The public `APP_BASE_URL` may be HTTPS even when backend/frontend containers talk plain HTTP internally.
 
 ---
 
@@ -63,144 +76,242 @@
 | UI Components | `frontend/src/components/ui/` | Rendering, props, layout only | State, API calls |
 | Hooks | `frontend/src/hooks/` | Data fetching, derived state | DOM manipulation |
 | Services | `frontend/src/services/` | Axios call definitions | Business logic, UI state |
-| Store | `frontend/src/store/` | Global state shape | API calls |
+| Store | `frontend/src/store/` | Global state shape + theme resolution state | API calls |
 
 ---
 
 ## Data Flows
 
-### 1. Visitor Tracking Flow (Public — no auth)
+### 1. Visitor Tracking Flow (Public — X-SkyNet-Key)
 ```
 Browser
   │
   ├─ 1. Loads skynet.js (served by FastAPI /tracker/ static)
-  ├─ 2. Collects signals: canvas hash, WebGL hash, screen, timezone,
-  │      language, UA, session ID
+  ├─ 2. Collects signals: canvas hash, WebGL hash, screen, timezone, language, UA,
+  │      signed device cookie, navigator entropy, timing entropy
   └─ 3. POST /api/v1/track/pageview
            Header: X-SkyNet-Key: <site_api_key>
-           Body: { page_url, referrer, fingerprint, canvas_hash,
-                   webgl_hash, screen, language, timezone }
 
 FastAPI /track/pageview
-  │
-  ├─ 4. Validate X-SkyNet-Key → resolve Site record
-  ├─ 5. Extract client IP (X-Forwarded-For / client.host)
-  ├─ 6. Check BlockedIP table → if blocked: increment hits, return 403
-  ├─ 7. Parse User-Agent (ua-parser)
-  ├─ 8. Upsert Device (by exact fingerprint) → enrich browser/OS/type metadata
-  ├─ 9. Compute strict same-machine `match_key` from WebGL + screen + timezone + language
-  ├─ 10. GeoIP lookup (MaxMind GeoLite2-City) → country, city, flag emoji (new visitors only)
-  ├─ 11. Upsert Visitor (by site_id + device_id + ip when fingerprint exists; fallback site_id + ip)
-  ├─ 12. Insert Event record with exact `device_id`
-  └─ 13. Dispatch async anti-evasion checks (background task)
-
-Anti-Evasion Service (async)
-  │
-  ├─ 12. VPN / Tor / Proxy check (IP reputation DB)
-  ├─ 13. Timezone vs GeoIP mismatch
-  ├─ 14. Headless browser signals check
-  └─ 15. If anomaly detected → Insert Incident → optionally auto-block
+  ├─ 4. Validate X-SkyNet-Key → resolve Site
+  ├─ 5. Check BlockedIP → if blocked: increment hits, return 403
+  ├─ 6. Parse UA → browser / os / device_type
+  ├─ 7. Upsert Device (by signed cookie or exact fingerprint) → enrich metadata + match_key
+  ├─ 8. Compute fingerprint confidence + stability snapshot
+  ├─ 9. GeoIP lookup (`ip-api` or local `.mmdb`) → country, city, flag emoji (new visitors only)
+  ├─ 10. Upsert Visitor (site_id + device_id + ip)
+  ├─ 11. Insert Event record
+  └─ 12. Dispatch async anti-evasion checks (background)
 ```
 
-### 2. Dashboard Auth Flow (JWT + Redis sessions — native only)
+### 2. Identity Linking Flow (External IdP JWT)
 ```
-Browser → POST /api/v1/auth/login (application/x-www-form-urlencoded)
+Protected App
+  │
+  ├─ 1. User authenticates in protected app → external IdP issues JWT
+  ├─ 2. Browser tracker resolves SKYNET device UUID via SkyNet.getDeviceId()
+  │      (internally: POST /api/v1/track/device-context)
+  └─ 3. POST /api/v1/identity/link
+           Authorization: Bearer <external_jwt>
+           Body: { fingerprint_id, platform, site_id }
+
+FastAPI /identity/link
+  ├─ 4. jwks_validator: fetch JWKS (cached 5 min) → validate signature/expiry/issuer
+  ├─ 5. Extract: sub, email, name, session_state
+  ├─ 6. upsert_profile: create/update UserProfile for sub
+  ├─ 7. link_device: create/update IdentityLink (sub ↔ fingerprint_id)
+  ├─ 8. detect_multi_account: flag if device already linked to different sub
+  ├─ 9. risk_engine.recompute: aggregate device scores + modifiers → new risk score
+  ├─ 10. Insert RiskEvent snapshot; update UserProfile.current_risk_score + trust_level
+  └─ 11. Return { user_id, trust_level, risk_score, flags[] }
+
+Protected app acts on response:
+  trust_level = "trusted" | "normal" → allow
+  trust_level = "suspicious"         → challenge / additional verification
+  trust_level = "blocked"            → deny
+```
+
+### 2b. Tracker Device Context Helper
+```
+Browser
+  │
+  ├─ 1. tracker/skynet.js builds raw fingerprint + browser metadata
+  ├─ 2. POST /api/v1/track/device-context   (Site API key auth)
+  │      Body: { fingerprint, canvas_hash, webgl_hash, screen, language, timezone, session_id,
+  │              device_cookie, fingerprint_traits, page_url }
+  │
+FastAPI /track/device-context
+  ├─ 3. Validate site API key
+  ├─ 4. Resolve Device by signed cookie or raw fingerprint
+  ├─ 5. Update browser / OS / screen / timezone metadata
+  ├─ 6. Compute confidence + stability snapshot
+  └─ 7. Return { device_id, risk_score, status, linked_user, device_cookie,
+                 fingerprint_confidence, stability_score }
+
+Tracker
+  └─ 8. Cache device context locally, write `_skynet_did`, and expose:
+         SkyNet.getDeviceId()
+         SkyNet.getDeviceContext()
+         SkyNet.getFingerprint()
+```
+
+### 3. Activity Tracking Flow (External IdP JWT)
+```
+Protected App → POST /api/v1/track/activity
+  Authorization: Bearer <external_jwt>
+  Body: { event_type, platform, fingerprint_id, page_url, properties, session_id }
+
+FastAPI /track/activity
+  ├─ 1. Validate JWT → extract sub
+  ├─ 2. Check UserProfile.trust_level == "blocked" → 200 { blocked: true }
+  ├─ 3. Insert ActivityEvent
+  └─ 4. If enhanced_audit: store full device snapshot in properties
+```
+
+### 4. Risk Recomputation Flow
+```
+Trigger: new IdentityLink | new AnomalyFlag | manual POST /risk/{uid}/recompute
+
+risk_engine.recompute(external_user_id, trigger_type)
+  ├─ 1. Load all IdentityLinks for user → device_id list
+  ├─ 2. Load Devices → raw device risk_scores (0–100, normalize to 0–1)
+  ├─ 3. base = max(scores)*0.6 + avg(scores)*0.4
+  ├─ 4. Apply modifiers:
+  │      shared_device (>1 user on same device)  +0.20
+  │      new_device (link < 24h old)             +0.10
+  │      impossible_travel flag open             +0.30
+  │      multi_account flag open                 +0.25
+  │      behavior_drift flag open                +0.15
+  │      tor/vpn (device.risk_score >= 100)      +0.40
+  ├─ 5. new_score = clamp(base + modifier, 0.0, 1.0)
+  ├─ 6. trust_level = trusted(<0.20) | normal(0.20-0.50) | suspicious(0.50-0.75) | blocked(>0.75)
+  ├─ 7. Insert RiskEvent { score, delta, trigger_type, trigger_detail }
+  ├─ 8. Update UserProfile.current_risk_score + trust_level
+  └─ 9. If delta >= 0.20 (spike): auto-create AnomalyFlag { flag_type: "risk_spike" }
+```
+
+### 5. SKYNET Operator Auth Flow (Local — never Keycloak)
+```
+Browser → POST /api/v1/auth/login
           Body: username=admin@skynet.local&password=...
-FastAPI  → OAuth2PasswordRequestForm → validate credentials
-         → create Redis session `session:{user_id}:{sid}`
-         → issue JWT (24h) with internal `sid`
-Browser  → Stores JWT in localStorage (key: skynet_token)
-Browser  → All dashboard API calls: Authorization: Bearer <token>
-FastAPI  → Decode JWT → require live Redis session → fetch User from DB → inject as dependency
-Logout   → delete current Redis session key
-Revoke   → admin deletes one `session:{user_id}:{session_id}` entry
+FastAPI  → bcrypt verify → create Redis session → issue SKYNET JWT (HS256)
+Browser  → stores JWT in localStorage (key: skynet_token)
+All dashboard API calls: Authorization: Bearer <skynet_jwt>
+FastAPI  → decode JWT → require live Redis session → inject User dependency
 ```
 
-> Note: Keycloak is **not used** for SkyNet admin authentication. Keycloak is
-> targeted as a security enforcement layer for *tracked websites* (v1.5.0 roadmap).
-
-### 3. Security Headers Flow
+### 6. JWKS Validation (Internal Service)
 ```
-Request → SecurityHeadersMiddleware (outermost)
-  → CORSMiddleware
-  → slowapi limiter
-  → route handler
-  ← response ← SecurityHeadersMiddleware injects security headers
-```
-Headers set: `X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`,
-`Referrer-Policy`, `Permissions-Policy`, `Content-Security-Policy`, `Strict-Transport-Security`.
-
-### 4. Rate Limiting Flow
-```
-Request → slowapi limiter (app.state.limiter)
-  ├─ Limit not exceeded → pass through to route handler
-  └─ Limit exceeded     → RateLimitExceeded exception
-                            → typed 429 response { "detail": "Rate limit exceeded" }
+On first /identity/link or /track/activity request:
+  1. jwks_validator resolves a provider from idp_providers (or legacy keycloak_* bootstrap settings)
+  2. Fetch JWKS from provider jwks_url and cache keys in-process for cache_ttl_sec (default: 300s)
+  3. JWT validated: signature + expiry + issuer + optional audience
+  4. If provider unreachable + cache < 600s old: use cached keys (grace period)
+  5. If provider unreachable + no valid cache: HTTP 503 IDP_UNAVAILABLE
+  6. SKYNET operator routes are NEVER affected by external IdP availability
 ```
 
-Limits applied (see `docs/SECURITY.md` for the full table):
-- `/api/v1/track/*` — 200 req/min per IP
-- `/api/v1/auth/login` — 10 req/min per IP
-- All other `/api/v1/*` — 300 req/min per authenticated user
-
-### 5. Device Linking Flow
-```
-Dashboard Admin → POST /api/v1/devices/{id}/link { user_id }
-  OR
-tracker: SkyNet.identify("user-123") → POST /api/v1/track/identify
-FastAPI → Find Device by fingerprint → Set linked_user = user_id
-Dashboard → Device detail shows linked user + shared sessions
-```
-
-### 6. Same-Machine Grouping Flow
+### 7. Same-Machine Device Grouping
 ```
 Tracker pageview
   → exact Device row resolved by fingerprint
-  → backend computes `match_key` from stable signals
-  → GET /api/v1/devices/groups aggregates exact fingerprints by `match_key`
-  → Devices dashboard shows one parent cluster with child exact fingerprints
-  → block/link/delete actions still target the exact child fingerprint only
+  → match_key computed from screen + timezone + normalized language
+  → GET /api/v1/devices/groups aggregates by match_key
+  → Devices dashboard: one parent cluster + child exact fingerprints
+  → block/link/delete still target exact child fingerprint only
 ```
 
-### 7. Audit Logging Flow
+### 8. Audit Logging
 ```
-Dashboard mutation
+Any dashboard mutation
   → FastAPI route
-  → audit service helper
-  → INSERT audit_logs row
-  → commit
-
-Dashboard Audit page
-  → GET /api/v1/audit/logs
-  → paginated / filtered audit log response
+  → services/audit.log_action(actor_id, action, target_type, target_id, ip, extra)
+  → INSERT audit_logs (write-only — no DELETE/UPDATE endpoint)
 ```
 
-### 8. Frontend Data Flow
+### 9. Gateway Proxy + Analytics Flow
 ```
-Dashboard pages
-  → frontend/hooks/*
-  → frontend/services/api.js
-  → FastAPI routes
+Client
+  └─ 1. Request /api/v1/gateway/proxy/*
+
+FastAPI /gateway/proxy/*
+  ├─ 2. Evaluate blocked IP, blocked device, external-user risk, and DNSBL status
+  ├─ 3. Decide allow | challenge | block
+  ├─ 4. For challenge: issue token and serve JS proof-of-work, redirect handoff, or honeypot flow
+  ├─ 5. For allow: proxy upstream response and measure request latency
+  └─ 6. Persist gateway analytics events for Overview aggregation
+
+FastAPI /stats/overview
+  ├─ 7. Aggregate gateway request volume, decision mix, top reasons, challenge outcomes, avg latency, and p95 latency
+  └─ 8. Return `gateway_dashboard` for the operator Overview widget
+```
+
+### 10. Theme Resolution Flow
+```
+Browser login / app bootstrap
+  └─ 1. GET /api/v1/user/theme
+
+FastAPI /user/theme
+  ├─ 2. ensure_default_theme() creates or repairs the system default if needed
+  ├─ 3. resolve_user_theme() loads the user's theme_id + theme_source
+  ├─ 4. If selected theme is missing/inactive/corrupt → fallback to default and rewrite user theme state
+  ├─ 5. serialize_theme() rewrites uploaded branding logos to /api/v1/themes/{id}/logo?v=<updated_at>
+  └─ 6. Return resolved theme + available theme list + fallback metadata
+
+Frontend theme engine
+  ├─ 7. apply CSS variables
+  ├─ 8. apply shell layout metadata (body/header/nav/footer/panel)
+  ├─ 9. apply optional role-based shell surface rules from layout.role_surfaces
+  ├─ 10. update branding/title/logo surfaces
+  └─ 11. allow instant runtime switching without reload
+```
+
+### 10b. Theme Package Flow
+```
+Admin theme registry
+  └─ 1. GET /api/v1/themes/{id}/export or POST /api/v1/themes/import
+
+FastAPI theme package route
+  ├─ 2. validate admin access
+  ├─ 3. theme_packages.export_theme_package() or import_theme_package()
+  ├─ 4. embed or restore optional logo payloads through theme_assets
+  └─ 5. return a typed package/import response
+```
+
+### 9c. Activity Retention Flow
+```
+Runtime settings
+  └─ 1. event_retention_days stored in runtime_config
+
+STIE maintenance loop
+  ├─ 2. read runtime_settings()
+  ├─ 3. prune_activity_events() deletes expired activity_events rows
+  └─ 4. log pruning counts when rows are removed
 ```
 
 ---
 
 ## Database Schema
 
-### Core Tables
+### SKYNET Operator Tables
 
 ```
 users
-  id            UUID PK
-  email         VARCHAR(255) UNIQUE
-  username      VARCHAR(100) UNIQUE
-  hashed_password VARCHAR(255) nullable (null = Keycloak-only)
-  role          ENUM(admin, moderator, user)
-  status        ENUM(active, blocked, pending)
-  keycloak_id   VARCHAR(100) nullable
-  last_login    TIMESTAMPTZ
-  created_at    TIMESTAMPTZ
+  id              UUID PK
+  email           VARCHAR(255) UNIQUE
+  username        VARCHAR(100) UNIQUE
+  hashed_password VARCHAR(255)
+  role            ENUM(admin, moderator, user)
+  status          ENUM(active, blocked, pending)
+  theme_id        VARCHAR(100) FK → themes.id nullable
+  theme_source    VARCHAR(20)  ← default | user
+  last_login      TIMESTAMPTZ
+  created_at      TIMESTAMPTZ
+```
 
+### Tracking Tables
+
+```
 visitors
   id            UUID PK
   ip            VARCHAR(45) INDEX
@@ -213,7 +324,7 @@ visitors
   browser       VARCHAR(100)
   os            VARCHAR(100)
   user_agent    TEXT
-  status        VARCHAR(20) INDEX  (active | blocked | suspicious)
+  status        VARCHAR(20) INDEX
   page_views    INTEGER
   site_id       UUID FK → sites
   linked_user   UUID FK → users
@@ -222,78 +333,204 @@ visitors
   last_seen     TIMESTAMPTZ
 
 devices
-  id            UUID PK
-  fingerprint   VARCHAR(128) UNIQUE INDEX
-  match_key     VARCHAR(80) INDEX nullable
-  match_version INTEGER nullable
-  type          VARCHAR(50)  (desktop | mobile | tablet)
-  browser       VARCHAR(100)
-  os            VARCHAR(100)
-  screen_resolution VARCHAR(20)
-  language      VARCHAR(20)
-  timezone      VARCHAR(50)
-  canvas_hash   VARCHAR(64)
-  webgl_hash    VARCHAR(64)
-  audio_hash    VARCHAR(64)
-  font_list     TEXT
-  risk_score    INTEGER  (0-100)
-  status        VARCHAR(20) INDEX
-  linked_user   UUID FK → users
-  first_seen    TIMESTAMPTZ
-  last_seen     TIMESTAMPTZ
+  id                  UUID PK
+  fingerprint         VARCHAR(128) UNIQUE INDEX
+  device_cookie_id    VARCHAR(64) UNIQUE INDEX nullable
+  match_key           VARCHAR(80) INDEX nullable
+  match_version       INTEGER nullable
+  fingerprint_version INTEGER DEFAULT 1
+  fingerprint_confidence FLOAT DEFAULT 0.0
+  stability_score     FLOAT DEFAULT 1.0
+  fingerprint_snapshot TEXT nullable
+  type                VARCHAR(50)
+  browser             VARCHAR(100)
+  os                  VARCHAR(100)
+  screen_resolution   VARCHAR(20)
+  language            VARCHAR(20)
+  timezone            VARCHAR(50)
+  canvas_hash         VARCHAR(64)
+  webgl_hash          VARCHAR(64)
+  audio_hash          VARCHAR(64)
+  font_list           TEXT
+  risk_score          INTEGER (0–100)
+  status              VARCHAR(20) INDEX
+  linked_user         UUID FK → users (SKYNET operator link — legacy)
+  owner_user_id       VARCHAR(255) nullable  ← external IdP sub of primary external user
+  shared_user_count   INTEGER DEFAULT 0      ← >0 = fraud signal
+  last_known_platform VARCHAR(20) nullable
+  first_seen          TIMESTAMPTZ
+  last_seen           TIMESTAMPTZ
+
+themes
+  id            VARCHAR(100) PK
+  name          VARCHAR(255) UNIQUE
+  colors        JSON
+  layout        JSON
+  widgets       JSON
+  branding      JSON nullable
+  is_default    BOOLEAN
+  is_active     BOOLEAN
+  created_at    TIMESTAMPTZ
+  updated_at    TIMESTAMPTZ
 
 sites
-  id            UUID PK
-  name          VARCHAR(200)
-  url           VARCHAR(500)
-  description   TEXT
-  api_key       VARCHAR(64) UNIQUE INDEX
-  active        BOOLEAN
-  created_at    TIMESTAMPTZ
+  id          UUID PK
+  name        VARCHAR(200)
+  url         VARCHAR(500)
+  description TEXT
+  api_key     VARCHAR(64) UNIQUE INDEX
+  active      BOOLEAN
+  created_at  TIMESTAMPTZ
 
 events
-  id            UUID PK
-  site_id       UUID FK → sites INDEX
-  visitor_id    UUID INDEX
-  user_id       UUID
-  device_id     UUID
-  event_type    VARCHAR(100) INDEX  (pageview | click | identify | custom)
-  page_url      VARCHAR(2048)
-  referrer      VARCHAR(2048)
-  properties    TEXT (JSON)
-  ip            VARCHAR(45)
-  created_at    TIMESTAMPTZ INDEX
+  id          UUID PK
+  site_id     UUID FK → sites INDEX
+  visitor_id  UUID INDEX
+  user_id     UUID
+  device_id   UUID
+  event_type  VARCHAR(100) INDEX
+  page_url    VARCHAR(2048)
+  referrer    VARCHAR(2048)
+  properties  TEXT (JSON)
+  ip          VARCHAR(45)
+  created_at  TIMESTAMPTZ INDEX
+```
 
+### Identity Intelligence Tables
+
+```
+identity_links
+  id               UUID PK
+  external_user_id VARCHAR(255) NOT NULL INDEX   ← external IdP sub
+  id_provider      VARCHAR(50) DEFAULT 'keycloak'
+  fingerprint_id   UUID FK → devices SET NULL INDEX
+  visitor_id       UUID FK → visitors SET NULL
+  platform         VARCHAR(20)                   ← web | mobile | api
+  ip               VARCHAR(45)
+  linked_at        TIMESTAMPTZ
+  last_seen_at     TIMESTAMPTZ
+  UNIQUE (external_user_id, fingerprint_id)
+
+user_profiles
+  id                 UUID PK
+  external_user_id   VARCHAR(255) UNIQUE INDEX   ← external IdP sub
+  email              VARCHAR(255)
+  display_name       VARCHAR(255)
+  current_risk_score FLOAT INDEX     ← 0.0 – 1.0
+  trust_level        VARCHAR(20) INDEX ← trusted | normal | suspicious | blocked
+  total_devices      INTEGER
+  total_sessions     INTEGER
+  first_seen         TIMESTAMPTZ
+  last_seen          TIMESTAMPTZ
+  last_ip            VARCHAR(45)
+  last_country       VARCHAR(2)
+  enhanced_audit     BOOLEAN DEFAULT false
+  profile_data       TEXT (JSON, extensible)
+
+risk_events
+  id               UUID PK
+  external_user_id VARCHAR(255) NOT NULL
+  score            FLOAT
+  delta            FLOAT
+  trigger_type     VARCHAR(50)   ← login | new_device | manual | risk_spike | geo_anomaly
+  trigger_detail   TEXT (JSON)
+  created_at       TIMESTAMPTZ
+  INDEX (external_user_id, created_at)
+
+activity_events
+  id               UUID PK
+  external_user_id VARCHAR(255) NOT NULL
+  event_type       VARCHAR(50) INDEX  ← login | pageview | api_call | logout | custom
+  platform         VARCHAR(20)
+  site_id          UUID FK → sites SET NULL
+  fingerprint_id   UUID FK → devices SET NULL
+  ip               VARCHAR(45)
+  country          VARCHAR(2)
+  page_url         VARCHAR(2048)
+  properties       TEXT (JSON)
+  session_id       VARCHAR(255) INDEX   ← external IdP session identifier
+  created_at       TIMESTAMPTZ
+  INDEX (external_user_id, created_at)
+
+anomaly_flags
+  id                 UUID PK
+  external_user_id   VARCHAR(255) NOT NULL INDEX
+  flag_type          VARCHAR(50)  ← new_device | geo_jump | multi_account |
+                                     impossible_travel | headless | risk_spike
+  severity           VARCHAR(20)  ← low | medium | high | critical
+  status             VARCHAR(20) INDEX ← open | acknowledged | resolved | false_positive
+  related_device_id  UUID nullable
+  related_visitor_id UUID nullable
+  evidence           TEXT (JSON)
+  detected_at        TIMESTAMPTZ INDEX
+  resolved_at        TIMESTAMPTZ nullable
+```
+
+### Security / Blocking Tables
+
+```
 blocking_rules
-  id            UUID PK
-  type          VARCHAR(30)  (ip | country | device | user_agent | asn)
-  value         VARCHAR(500)
-  reason        VARCHAR(500)
-  action        VARCHAR(20)  (block | challenge | rate_limit)
-  hits          INTEGER
-  created_at    TIMESTAMPTZ
+  id         UUID PK
+  type       VARCHAR(30)   ← ip | country | device | user_agent | asn
+  value      VARCHAR(500)
+  reason     VARCHAR(500)
+  action     VARCHAR(20)   ← block | challenge | rate_limit
+  hits       INTEGER
+  created_at TIMESTAMPTZ
 
 blocked_ips
-  ip            VARCHAR(50) PK
-  country       VARCHAR(100)
-  country_flag  VARCHAR(10)
-  reason        VARCHAR(500)
-  hits          INTEGER
-  blocked_at    TIMESTAMPTZ
+  ip           VARCHAR(50) PK
+  country      VARCHAR(100)
+  country_flag VARCHAR(10)
+  reason       VARCHAR(500)
+  hits         INTEGER
+  blocked_at   TIMESTAMPTZ
 
 incidents
-  id            UUID PK
-  type          VARCHAR(100)
-  description   TEXT
-  ip            VARCHAR(45)
-  device_id     UUID
-  user_id       UUID
-  severity      VARCHAR(20)  (low | medium | high | critical)
-  status        VARCHAR(20)  (open | resolved)
-  extra_data    TEXT (JSON)   -- column name in DB: "metadata"
-  detected_at   TIMESTAMPTZ
-  resolved_at   TIMESTAMPTZ
+  id          UUID PK
+  type        VARCHAR(100)
+  description TEXT
+  ip          VARCHAR(45)
+  device_id   UUID
+  user_id     UUID
+  severity    VARCHAR(20)
+  status      VARCHAR(20)
+  extra_data  TEXT (JSON)
+  detected_at TIMESTAMPTZ
+  resolved_at TIMESTAMPTZ
+
+audit_logs
+  id          UUID PK
+  actor_id    UUID INDEX
+  action      VARCHAR(100) INDEX
+  target_type VARCHAR(100) INDEX
+  target_id   VARCHAR(255) INDEX
+  ip          VARCHAR(45) INDEX
+  extra       TEXT (JSON)
+  created_at  TIMESTAMPTZ INDEX
 ```
+
+---
+
+## Migration History
+
+| ID | Description |
+|----|-------------|
+| 0001 | Initial schema (users, sites, devices, visitors, events, blocking, incidents) |
+| 0002 | Block page config singleton |
+| 0003 | Audit logs table |
+| 0004 | Device match grouping (match_key, match_version) |
+| 0005 | Drop users.keycloak_id (operators use local auth only) |
+| 0006 | identity_links table |
+| 0007 | user_profiles table |
+| 0008 | risk_events table |
+| 0009 | activity_events table |
+| 0010 | anomaly_flags table |
+| 0011 | Extend devices (owner_user_id, shared_user_count, last_known_platform) |
+| 0012 | User theme assignments |
+| 0013 | STIE / security center foundation |
+| 0014 | Runtime config persistence store |
+| 0015 | Device identity foundation (signed cookie + fingerprint stability fields) |
 
 ---
 
@@ -304,28 +541,18 @@ incidents
 | Service | Image | Port | Purpose |
 |---------|-------|------|---------|
 | `backend` | python:3.12-slim | 8000 | FastAPI application |
-| `frontend` | node:20 → nginx:alpine | 3000 | React dashboard (built bundle) |
+| `frontend` | node:20 → nginx:alpine | 3000 | React dashboard |
 | `db` | postgres:16-alpine | 5432 | Primary data store |
 | `redis` | redis:7-alpine | 6379 | Sessions, rate limits, cache |
-| `keycloak` | keycloak:24.0 | 8080 | SSO (optional `--profile keycloak`) |
+| `keycloak` | keycloak:24.0 | 8080 | External IdP for end-users (`--profile keycloak` or point to any OIDC provider) |
 
 ### Development (`docker-compose.dev.yml`)
 
-| Service | Image | Port | Purpose |
-|---------|-------|------|---------|
-| `backend` | python:3.12-slim | 8000 | FastAPI + uvicorn `--reload` (live Python reload) |
-| `frontend` | node:20-alpine | 5173 | Vite dev server with HMR (no-refresh code updates) |
-| `db` | postgres:16-alpine | 5432 | Same as production |
-| `redis` | redis:7-alpine | 6379 | Same as production |
-| `adminer` | adminer | 8888 | DB GUI (optional `--profile tools`) |
-| `redisinsight` | redis/redisinsight | 5540 | Redis GUI (optional `--profile tools`) |
-
-**HMR configuration:** `VITE_HMR_HOST` must be set to the server's LAN IP in `docker-compose.dev.yml` for WebSocket HMR to work across machines.
-
-**Volumes:**
-- `postgres_data` / `postgres_dev_data` — persistent DB storage
-- `redis_data` / `redis_dev_data` — persistent Redis AOF
-- `./backend:/app` (dev only) — live code mount for uvicorn reload
-- `./frontend:/app` (dev only) — live code mount for Vite HMR
-
-**Networks:** All services share the default bridge network. No service exposes a port except those listed above.
+| Service | Port | Purpose |
+|---------|------|---------|
+| `backend` | 8000 | FastAPI + uvicorn `--reload` |
+| `frontend` | 5173 | Vite dev server with HMR |
+| `db` | 5432 | PostgreSQL |
+| `redis` | 6379 | Redis |
+| `adminer` | 8888 | DB GUI (`--profile tools`) |
+| `redisinsight` | 5540 | Redis GUI (`--profile tools`) |

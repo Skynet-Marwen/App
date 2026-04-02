@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useState } from 'react'
 import { visitorsApi } from '../services/api'
 
-export function useVisitors() {
+const DEFAULT_PAGE_SIZE = 20
+
+export function useVisitors({ page = 1, search = '' } = {}) {
   const [visitors, setVisitors] = useState([])
   const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
-  const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await visitorsApi.list({ page, search, page_size: 20 })
-      setVisitors(res.data.items)
-      setTotal(res.data.total)
-    } catch (_) {
+      const res = await visitorsApi.list({ page, search, page_size: DEFAULT_PAGE_SIZE })
+      setVisitors(Array.isArray(res.data.items) ? res.data.items : [])
+      setTotal(Number(res.data.total) || 0)
+    } catch {
+      // Visitors list failures are handled by leaving the current table empty.
     } finally {
       setLoading(false)
     }
@@ -24,6 +25,14 @@ export function useVisitors() {
 
   const blockVisitor = useCallback(async (id, reason) => {
     await visitorsApi.block(id, reason)
+    await refresh()
+  }, [refresh])
+
+  const blockVisitors = useCallback(async (ids, reason) => {
+    const uniqueIds = [...new Set((ids || []).filter(Boolean))]
+    for (const id of uniqueIds) {
+      await visitorsApi.block(id, reason)
+    }
     await refresh()
   }, [refresh])
 
@@ -40,14 +49,12 @@ export function useVisitors() {
   return {
     visitors,
     total,
-    page,
-    search,
     loading,
-    setPage,
-    setSearch,
     refresh,
     blockVisitor,
+    blockVisitors,
     unblockVisitor,
     deleteVisitor,
+    pageSize: DEFAULT_PAGE_SIZE,
   }
 }

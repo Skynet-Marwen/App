@@ -1,53 +1,26 @@
 """
-GeoIP lookup service — wraps geoip2 reader with lazy init and silent failure.
-Database: GeoLite2-City.mmdb (path from settings.GEOIP_DB_PATH).
-If the database file is absent the lookup returns an empty dict — never raises.
+GeoIP lookup dispatcher.
+Routes to the active provider stored in runtime settings:
+  "ip-api"  — ip-api.com, free, Redis-cached 24 h (default)
+  "local"   — local .mmdb file (offline, no rate limit)
+  "none"    — disabled
 """
-import geoip2.database
-import geoip2.errors
-from .config import settings
 
-_reader: geoip2.database.Reader | None = None
-_load_attempted = False
+from ..services.runtime_config import runtime_settings
 
 
-def _get_reader() -> geoip2.database.Reader | None:
-    global _reader, _load_attempted
-    if _load_attempted:
-        return _reader
-    _load_attempted = True
-    try:
-        _reader = geoip2.database.Reader(settings.GEOIP_DB_PATH)
-    except Exception:
-        _reader = None
-    return _reader
+def _provider() -> str:
+    _settings = runtime_settings()
+    return _settings.get("geoip_provider", "ip-api")
 
 
-def _flag(code: str) -> str:
-    """Convert ISO-3166-1 alpha-2 country code to flag emoji."""
-    if not code or len(code) != 2:
-        return ""
-    code = code.upper()
-    return chr(0x1F1E6 + ord(code[0]) - 65) + chr(0x1F1E6 + ord(code[1]) - 65)
-
-
-def lookup(ip: str) -> dict:
-    """
-    Return geo fields for an IP.
-    Keys: country, country_code, country_flag, city.
-    Returns empty dict on any failure (missing DB, private IP, unknown IP).
-    """
-    reader = _get_reader()
-    if reader is None:
+async def lookup(ip: str) -> dict:
+    """Return geo fields for an IP. Never raises — returns {} on any failure."""
+    p = _provider()
+    if p == "none":
         return {}
-    try:
-        record = reader.city(ip)
-        code = record.country.iso_code or ""
-        return {
-            "country":      record.country.name or "",
-            "country_code": code,
-            "country_flag": _flag(code),
-            "city":         record.city.name or "",
-        }
-    except Exception:
-        return {}
+    if p == "local":
+        from ..services.geoip_providers import lookup_local
+        return lookup_local(ip)
+    from ..services.geoip_providers import lookup_ipapi
+    return await lookup_ipapi(ip)

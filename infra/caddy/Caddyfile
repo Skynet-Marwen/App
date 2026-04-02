@@ -1,0 +1,8 @@
+{$SKYNET_PUBLIC_HOSTNAME} {
+    encode zstd gzip
+    tls {$SKYNET_TLS_EMAIL}
+
+    @backend path /api/* /tracker/* /docs* /redoc* /openapi.json /health
+    reverse_proxy @backend backend:8000
+    reverse_proxy frontend:80
+}

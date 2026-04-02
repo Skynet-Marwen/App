@@ -41,6 +41,17 @@ const browserSummary = (devices) => {
   return `${labels.slice(0, 2).join(' + ')} +${labels.length - 2}`
 }
 
+const groupBadgeVariant = (matchStrength) => {
+  if (matchStrength === 'strict') return 'info'
+  if (matchStrength === 'probable_mobile') return 'warning'
+  return 'default'
+}
+
+const evidenceSummary = (group) => {
+  if (!Array.isArray(group.match_evidence) || group.match_evidence.length === 0) return null
+  return group.match_evidence.join(' + ')
+}
+
 export default function DeviceGroupsTable({
   groups,
   loading,
@@ -74,8 +85,8 @@ export default function DeviceGroupsTable({
   }
 
   return (
-    <div className="overflow-x-auto">
-      <div className="rounded-xl border border-cyan-500/10 overflow-hidden min-w-[980px]">
+    <div className="overflow-x-auto overscroll-x-contain">
+      <div className="min-w-[1080px] overflow-hidden rounded-xl border border-cyan-500/10">
         <div className="grid grid-cols-[minmax(0,2.2fr)_100px_100px_160px_120px_140px_90px] gap-3 px-4 py-3 border-b border-cyan-500/10 text-[10px] font-mono text-gray-500 uppercase tracking-widest bg-black/40">
           <span>Device Cluster</span>
           <span>Prints</span>
@@ -105,8 +116,8 @@ export default function DeviceGroupsTable({
                         <span className="text-sm text-white font-medium truncate">
                           {browserSummary(group.devices)}
                         </span>
-                        <Badge variant={group.match_strength === 'strict' ? 'info' : 'default'}>
-                          {group.match_strength === 'strict' ? 'Same Machine' : 'Exact Only'}
+                        <Badge variant={groupBadgeVariant(group.match_strength)}>
+                          {group.match_label}
                         </Badge>
                       </div>
                       <div className="mt-1 flex items-center gap-2 text-xs text-gray-500 flex-wrap">
@@ -120,6 +131,11 @@ export default function DeviceGroupsTable({
                           …
                         </span>
                       </div>
+                      {evidenceSummary(group) && (
+                        <div className="mt-2 text-xs text-gray-500">
+                          {evidenceSummary(group)}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <span className="text-xs text-gray-300 self-center">{group.fingerprint_count}</span>
@@ -166,7 +182,7 @@ export default function DeviceGroupsTable({
                               <Badge variant="success">Active</Badge>
                             )}
                           </div>
-                          <div className="flex items-center justify-end gap-1 flex-wrap">
+                          <div className="flex items-center justify-end gap-1.5 flex-wrap">
                             <Button variant="secondary" size="sm" icon={Eye} onClick={() => onViewDevice(device)}>
                               View
                             </Button>

@@ -6,23 +6,23 @@ export { Alert, EmptyState, Spinner } from './extras'
 export function Card({ children, className = '' }) {
   return (
     <div className={`relative overflow-hidden rounded-xl border border-cyan-500/10 animate-border-breathe ${className}`}
-      style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(10px)' }}>
+      style={{ background: 'var(--theme-panel-bg)', borderColor: 'var(--theme-panel-border)', boxShadow: '0 0 24px var(--theme-panel-glow)', backdropFilter: 'blur(10px)' }}>
       <div className="absolute inset-0 pointer-events-none rounded-xl"
         style={{ backgroundImage: 'repeating-linear-gradient(0deg,rgba(255,255,255,0.018) 0px,rgba(255,255,255,0.018) 1px,transparent 1px,transparent 4px)' }} />
       <span className="absolute top-0 left-0 w-3 h-3 border-t border-l border-cyan-500/40 z-10 pointer-events-none" />
       <span className="absolute top-0 right-0 w-3 h-3 border-t border-r border-cyan-500/40 z-10 pointer-events-none" />
       <span className="absolute bottom-0 left-0 w-3 h-3 border-b border-l border-cyan-500/40 z-10 pointer-events-none" />
       <span className="absolute bottom-0 right-0 w-3 h-3 border-b border-r border-cyan-500/40 z-10 pointer-events-none" />
-      <div className="p-5 relative z-[1]">{children}</div>
+      <div className="relative z-[1] p-4 sm:p-5 xl:p-6">{children}</div>
     </div>
   )
 }
 
 export function CardHeader({ children, action }) {
   return (
-    <div className="flex items-center justify-between mb-4">
-      <div>{children}</div>
-      {action && <div>{action}</div>}
+    <div className="flex flex-col gap-3 mb-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="min-w-0">{children}</div>
+      {action && <div className="flex max-w-full flex-wrap items-center gap-2 lg:flex-shrink-0 lg:justify-end">{action}</div>}
     </div>
   )
 }
@@ -125,7 +125,7 @@ export function Button({ children, variant = 'primary', size = 'md', className =
   const sizes = { sm: 'px-3 py-1.5 text-xs', md: 'px-4 py-2 text-sm', lg: 'px-5 py-2.5 text-base' }
   return (
     <button
-      className={`inline-flex items-center gap-2 rounded-lg font-medium transition disabled:opacity-40 disabled:cursor-not-allowed ${btnVariants[variant]} ${sizes[size]} ${className}`}
+      className={`inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg font-medium transition disabled:opacity-40 disabled:cursor-not-allowed ${btnVariants[variant]} ${sizes[size]} ${className}`}
       disabled={loading || props.disabled}
       {...props}
     >
@@ -149,12 +149,12 @@ export function Table({ columns, data, loading, emptyMessage = 'No data found', 
     )
   }
   return (
-    <div className="overflow-x-auto rounded-xl border border-cyan-500/10">
-      <table className="w-full text-sm">
+    <div className="overflow-x-auto overscroll-x-contain rounded-xl border border-cyan-500/10">
+      <table className="min-w-full text-sm">
         <thead>
-          <tr className="border-b border-cyan-500/10" style={{ background: 'rgba(0,0,0,0.4)' }}>
+          <tr className="border-b border-cyan-500/10" style={{ background: 'var(--theme-panel-soft)', borderColor: 'var(--theme-panel-border)' }}>
             {columns.map((col) => (
-              <th key={col.key} className="px-4 py-3 text-left text-[10px] font-mono font-medium text-gray-500 uppercase tracking-widest"
+              <th key={col.key} className="px-4 py-3 text-left text-[10px] font-mono font-medium text-gray-500 uppercase tracking-widest xl:px-5"
                 style={col.width ? { width: col.width } : {}}>
                 {col.label}
               </th>
@@ -163,14 +163,14 @@ export function Table({ columns, data, loading, emptyMessage = 'No data found', 
         </thead>
         <tbody>
           {data.length === 0 ? (
-            <tr><td colSpan={columns.length} className="px-4 py-10 text-center text-gray-600 font-mono text-xs">
+            <tr><td colSpan={columns.length} className="px-4 py-10 text-center text-gray-600 font-mono text-xs xl:px-5">
               {emptyMessage}
             </td></tr>
           ) : data.map((row, i) => (
             <tr key={row.id ?? i} onClick={() => onRowClick?.(row)}
               className={`border-b border-cyan-500/5 transition ${onRowClick ? 'cursor-pointer hover:bg-cyan-500/4' : ''}`}>
               {columns.map((col) => (
-                <td key={col.key} className="px-4 py-3 text-gray-300">
+                <td key={col.key} className="px-4 py-3 align-top text-gray-300 xl:px-5">
                   {col.render ? col.render(row[col.key], row) : row[col.key]}
                 </td>
               ))}
@@ -187,11 +187,11 @@ export function Pagination({ page, total, pageSize = 20, onChange }) {
   const totalPages = Math.ceil(total / pageSize)
   if (totalPages <= 1) return null
   return (
-    <div className="flex items-center justify-between mt-4">
+    <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <p className="text-xs text-gray-600 font-mono">
         {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} / {total}
       </p>
-      <div className="flex gap-1">
+      <div className="flex flex-wrap gap-1">
         <Button variant="secondary" size="sm" disabled={page === 1} onClick={() => onChange(page - 1)}>Prev</Button>
         <Button variant="secondary" size="sm" disabled={page === totalPages} onClick={() => onChange(page + 1)}>Next</Button>
       </div>
@@ -199,25 +199,72 @@ export function Pagination({ page, total, pageSize = 20, onChange }) {
   )
 }
 
+export function PageToolbar({ children, className = '' }) {
+  return (
+    <div className={`mb-5 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between ${className}`}>
+      {children}
+    </div>
+  )
+}
+
+export function SegmentedTabs({ items, value, onChange, className = '' }) {
+  return (
+    <div className={`inline-flex max-w-full flex-wrap gap-1 rounded-xl border border-cyan-500/10 bg-black/35 p-1 ${className}`}>
+      {items.map((item) => (
+        <button
+          key={item.value}
+          type="button"
+          onClick={() => onChange(item.value)}
+          className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
+            value === item.value
+              ? 'border border-cyan-500/40 bg-cyan-500/15 text-cyan-300'
+              : 'border border-transparent text-gray-400 hover:bg-cyan-500/5 hover:text-gray-200'
+          }`}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 // ─── Modal ────────────────────────────────────────────────────────────────────
-export function Modal({ open, onClose, title, children, width = 'max-w-lg' }) {
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  width = 'max-w-lg',
+  panelClassName = '',
+  bodyClassName = '',
+  fullHeight = false,
+}) {
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
-      <div className={`relative w-full ${width} shadow-2xl rounded-2xl border border-cyan-500/15`}
-        style={{ background: 'rgba(4,4,4,0.96)', backdropFilter: 'blur(16px)' }}>
-        <span className="absolute top-0 left-0 w-4 h-4 border-t border-l border-cyan-500/50 rounded-tl-2xl" />
-        <span className="absolute top-0 right-0 w-4 h-4 border-t border-r border-cyan-500/50 rounded-tr-2xl" />
-        <span className="absolute bottom-0 left-0 w-4 h-4 border-b border-l border-cyan-500/50 rounded-bl-2xl" />
-        <span className="absolute bottom-0 right-0 w-4 h-4 border-b border-r border-cyan-500/50 rounded-br-2xl" />
-        <div className="flex items-center justify-between px-6 py-4 border-b border-cyan-500/10">
-          <h2 className="text-sm font-mono font-semibold text-cyan-400 uppercase tracking-widest">{title}</h2>
-          <button onClick={onClose} className="p-1 rounded hover:bg-cyan-500/10 text-gray-500 hover:text-cyan-400 transition">
-            <X size={16} />
-          </button>
+    <div className="fixed inset-0 z-50 overflow-y-auto p-3 sm:p-4 lg:p-6">
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className={`relative min-h-full flex justify-center ${fullHeight ? 'items-stretch' : 'items-center'}`}>
+        <div
+          className={`relative w-full ${width} flex flex-col overflow-hidden rounded-2xl border border-cyan-500/15 shadow-2xl ${fullHeight ? 'h-[calc(100dvh-1.5rem)] sm:h-[calc(100dvh-2rem)] lg:h-[calc(100dvh-3rem)]' : 'max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)]'} ${panelClassName}`}
+          style={{ background: 'var(--theme-panel)', borderColor: 'var(--theme-panel-border)', boxShadow: '0 0 32px var(--theme-panel-glow)', backdropFilter: 'blur(16px)' }}
+        >
+          <span className="absolute top-0 left-0 w-4 h-4 border-t border-l border-cyan-500/50 rounded-tl-2xl" />
+          <span className="absolute top-0 right-0 w-4 h-4 border-t border-r border-cyan-500/50 rounded-tr-2xl" />
+          <span className="absolute bottom-0 left-0 w-4 h-4 border-b border-l border-cyan-500/50 rounded-bl-2xl" />
+          <span className="absolute bottom-0 right-0 w-4 h-4 border-b border-r border-cyan-500/50 rounded-br-2xl" />
+          <div
+            className="sticky top-0 z-10 flex items-center justify-between gap-4 px-4 py-4 sm:px-6 border-b border-cyan-500/10"
+            style={{ background: 'var(--theme-panel)', borderColor: 'var(--theme-panel-border)' }}
+          >
+            <h2 className="min-w-0 truncate text-sm font-mono font-semibold text-cyan-400 uppercase tracking-widest">{title}</h2>
+            <button onClick={onClose} className="p-1 rounded hover:bg-cyan-500/10 text-gray-500 hover:text-cyan-400 transition flex-shrink-0">
+              <X size={16} />
+            </button>
+          </div>
+          <div className={`min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-4 sm:px-6 sm:pb-6 ${bodyClassName}`}>
+            {children}
+          </div>
         </div>
-        <div className="p-6">{children}</div>
       </div>
     </div>
   )

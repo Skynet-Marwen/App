@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Activity, Lock, Mail } from 'lucide-react'
+import { Activity, Lock } from 'lucide-react'
 import { useAuthStore } from '../store/useAppStore'
+import { useThemeStore } from '../store/themeStore'
 import { Input, Button, Alert } from '../components/ui/index'
 
 export default function LoginPage() {
@@ -9,6 +10,7 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const { login } = useAuthStore()
+  const loadThemeContext = useThemeStore((state) => state.loadThemeContext)
   const navigate = useNavigate()
 
   const handleSubmit = async (e) => {
@@ -17,6 +19,7 @@ export default function LoginPage() {
     setLoading(true)
     try {
       await login({ username: form.email, password: form.password })
+      await loadThemeContext().catch(() => {})
       navigate('/')
     } catch (err) {
       const detail = err.response?.data?.detail

@@ -7,6 +7,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
+from app.core.deployment import should_send_hsts
+
 
 # Content-Security-Policy
 # - dashboard: React SPA served by nginx (same origin)
@@ -32,10 +34,9 @@ _HEADERS: dict[str, str] = {
     "Referrer-Policy":           "strict-origin-when-cross-origin",
     "Permissions-Policy":        "geolocation=(), microphone=(), camera=()",
     "Content-Security-Policy":   _CSP,
-    # HSTS: 1 year, include subdomains.
-    # Only effective over HTTPS; harmless over HTTP (ignored by browsers).
-    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
 }
+
+_HSTS = "max-age=31536000; includeSubDomains"
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -43,4 +44,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         for header, value in _HEADERS.items():
             response.headers[header] = value
+        if should_send_hsts(request):
+            response.headers["Strict-Transport-Security"] = _HSTS
+        elif "strict-transport-security" in response.headers:
+            del response.headers["Strict-Transport-Security"]
         return response

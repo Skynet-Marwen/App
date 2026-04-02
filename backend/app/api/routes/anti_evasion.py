@@ -5,7 +5,7 @@ from ...core.database import get_db
 from ...core.security import get_current_user
 from ...models.user import User
 from ...models.incident import Incident
-from ...services.anti_evasion_config import get_anti_evasion_config, update_anti_evasion_config
+from ...services.anti_evasion_config import load_anti_evasion_config, update_anti_evasion_config
 from ...services.audit import log_action
 from datetime import datetime, timezone
 
@@ -13,13 +13,16 @@ router = APIRouter(prefix="/anti-evasion", tags=["anti-evasion"])
 
 
 @router.get("/config")
-async def get_config(_: User = Depends(get_current_user)):
-    return get_anti_evasion_config()
+async def get_config(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    return await load_anti_evasion_config(db)
 
 
 @router.put("/config")
 async def update_config(data: dict, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
-    config = update_anti_evasion_config(data)
+    config = await update_anti_evasion_config(db, data)
     log_action(db, action="CONFIG_CHANGE", actor_id=current.id, target_type="anti_evasion", target_id="config", extra={"updated_keys": sorted(data.keys())})
     await db.commit()
     return config

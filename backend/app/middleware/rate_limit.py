@@ -10,12 +10,17 @@ Limits (per CLAUDE.md §8):
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
+from app.core.ip_utils import get_client_ip
+
+
+def _real_client_ip(request: Request) -> str:
+    return get_client_ip(request)
+
 
 limiter = Limiter(
-    key_func=get_remote_address,
+    key_func=_real_client_ip,
     default_limits=["300/minute"],
     storage_uri=settings.REDIS_URL,
 )

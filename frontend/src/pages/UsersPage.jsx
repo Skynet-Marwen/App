@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Search, UserPlus, Ban, Key, Trash2, LogOut, ShieldCheck } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
-import { Card, Table, Badge, Button, Input, Pagination, Modal, Select, Alert } from '../components/ui/index'
+import { Card, Table, Badge, Button, Input, Pagination, Modal, Select, Alert, PageToolbar } from '../components/ui/index'
 import { useUsers } from '../hooks/useUsers'
 import { useUserSessions } from '../hooks/useUserSessions'
 
@@ -114,8 +114,8 @@ export default function UsersPage() {
   return (
     <DashboardLayout title="Users" onRefresh={refresh}>
       <Card>
-        <div className="flex items-center gap-3 mb-4">
-          <div className="flex-1 relative">
+        <PageToolbar>
+          <div className="relative w-full xl:max-w-[34rem]">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
             <input
               placeholder="Search by email, username..."
@@ -124,8 +124,11 @@ export default function UsersPage() {
               className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500"
             />
           </div>
-          <Button icon={UserPlus} onClick={() => setCreateModal(true)}>New User</Button>
-        </div>
+          <div className="flex flex-wrap items-center gap-3 xl:justify-end">
+            <span className="text-sm text-gray-500">{total.toLocaleString()} total users</span>
+            <Button icon={UserPlus} onClick={() => setCreateModal(true)}>New User</Button>
+          </div>
+        </PageToolbar>
 
         <Table columns={columns} data={users} loading={loading} emptyMessage="No users found" onRowClick={openUser} />
         <Pagination page={page} total={total} pageSize={20} onChange={setPage} />
@@ -135,7 +138,7 @@ export default function UsersPage() {
       <Modal open={!!selected} onClose={() => setSelected(null)} title="User Details" width="max-w-2xl">
         {selected && (
           <div className="space-y-5">
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
               {[
                 ['Username', selected.username],
                 ['Email', selected.email],
@@ -146,7 +149,7 @@ export default function UsersPage() {
               ].map(([label, value]) => (
                 <div key={label} className="bg-gray-800 rounded-lg p-3">
                   <p className="text-xs text-gray-500 mb-0.5">{label}</p>
-                  <p className="text-sm text-white">{value}</p>
+                  <p className="text-sm text-white break-all">{value}</p>
                 </div>
               ))}
             </div>
@@ -159,7 +162,7 @@ export default function UsersPage() {
               ) : (
                 <div className="space-y-2">
                   {sessions.map((s) => (
-                    <div key={s.id} className="flex items-center justify-between bg-gray-800 rounded-lg px-3 py-2">
+                    <div key={s.id} className="flex flex-col gap-3 rounded-lg bg-gray-800 px-3 py-2 lg:flex-row lg:items-center lg:justify-between">
                       <div>
                         <p className="text-xs text-white">{s.ip} · {s.device}</p>
                         <p className="text-xs text-gray-500">{s.last_active}</p>

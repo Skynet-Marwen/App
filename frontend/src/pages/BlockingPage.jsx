@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Shield, Plus, Trash2, Search, Globe, Monitor, User } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
-import { Card, CardHeader, Table, Badge, Button, Input, Modal, Select, Alert, Pagination } from '../components/ui/index'
+import { Card, CardHeader, Table, Badge, Button, Input, Modal, Select, Alert, Pagination, PageToolbar, SegmentedTabs } from '../components/ui/index'
 import { useBlocking } from '../hooks/useBlocking'
 
 const RULE_TYPES = [
@@ -109,7 +109,7 @@ export default function BlockingPage() {
   return (
     <DashboardLayout title="Blocking" onRefresh={refresh}>
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         {[
           { label: 'Active Rules', value: rules.length, color: 'text-cyan-400' },
           { label: 'Blocked IPs', value: ipTotal, color: 'text-red-400' },
@@ -123,13 +123,15 @@ export default function BlockingPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-gray-900 border border-gray-800 rounded-xl p-1 mb-4 w-fit">
-        {['rules', 'ips'].map((t) => (
-          <button key={t} onClick={() => setTab(t)} className={`px-4 py-1.5 rounded-lg text-sm font-medium transition ${tab === t ? 'bg-cyan-500 text-white' : 'text-gray-400 hover:text-white'}`}>
-            {t === 'rules' ? 'Rules' : 'Blocked IPs'}
-          </button>
-        ))}
-      </div>
+      <SegmentedTabs
+        className="mb-4"
+        value={tab}
+        onChange={setTab}
+        items={[
+          { value: 'rules', label: 'Rules' },
+          { value: 'ips', label: 'Blocked IPs' },
+        ]}
+      />
 
       {tab === 'rules' && (
         <Card>
@@ -143,8 +145,8 @@ export default function BlockingPage() {
 
       {tab === 'ips' && (
         <Card>
-          <div className="flex items-center gap-3 mb-4">
-            <div className="flex-1 relative">
+          <PageToolbar>
+            <div className="relative w-full xl:max-w-[28rem]">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
               <input
                 placeholder="Search IP..."
@@ -153,8 +155,11 @@ export default function BlockingPage() {
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500"
               />
             </div>
-            <Button icon={Plus} onClick={() => setIpModal(true)}>Block IP</Button>
-          </div>
+            <div className="flex flex-wrap items-center gap-3 xl:justify-end">
+              <span className="text-sm text-gray-500">{ipTotal.toLocaleString()} blocked</span>
+              <Button icon={Plus} onClick={() => setIpModal(true)}>Block IP</Button>
+            </div>
+          </PageToolbar>
           <Table columns={ipColumns} data={ips} loading={loading} emptyMessage="No blocked IPs" />
           <Pagination page={ipPage} total={ipTotal} pageSize={20} onChange={setIpPage} />
         </Card>

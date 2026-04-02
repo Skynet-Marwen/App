@@ -1,0 +1,17 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - frontend
+      - backend
+    ports:
+      - "8443:443"
+    volumes:
+      - ./infra/caddy/Caddyfile.dev:/etc/caddy/Caddyfile:ro
+      - caddy_dev_data:/data
+      - caddy_dev_config:/config
+
+volumes:
+  caddy_dev_data:
+  caddy_dev_config:

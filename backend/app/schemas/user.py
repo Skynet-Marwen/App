@@ -21,10 +21,17 @@ class CreateUserRequest(BaseModel):
 
 
 class UpdateUserRequest(BaseModel):
+    email: Optional[EmailStr] = None
+    username: Optional[str] = None
     role: Optional[str] = None
     status: Optional[str] = None
 
-    @field_validator("role", "status")
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: Optional[EmailStr]) -> Optional[str]:
+        return clean_text(str(value)).lower() if value else None
+
+    @field_validator("username", "role", "status")
     @classmethod
     def clean_optional_fields(cls, value: Optional[str]) -> Optional[str]:
         return clean_optional_text(value)
@@ -36,7 +43,6 @@ class UserOut(BaseModel):
     username: str
     role: str
     status: str
-    keycloak_id: Optional[str] = None
     last_login: Optional[str] = None
     created_at: str
     devices_count: int = 0

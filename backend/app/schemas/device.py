@@ -19,6 +19,12 @@ class DeviceOut(BaseModel):
     timezone: Optional[str] = None
     canvas_hash: Optional[str] = None
     webgl_hash: Optional[str] = None
+    fingerprint_confidence: float = 0.0
+    stability_score: float = 1.0
+    composite_fingerprint: Optional[str] = None
+    composite_score: float = 0.0
+    timezone_offset_minutes: Optional[int] = None
+    clock_skew_minutes: Optional[int] = None
     risk_score: int = 0
     status: str
     linked_user: Optional[str] = None
@@ -49,6 +55,8 @@ class DeviceGroupOut(BaseModel):
     group_id: str
     match_key: Optional[str] = None
     match_strength: str
+    match_label: str
+    match_evidence: List[str]
     fingerprint_count: int
     visitor_count: int
     status: str

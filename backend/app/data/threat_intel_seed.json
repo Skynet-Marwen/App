@@ -1,0 +1,57 @@
+[
+  {
+    "id": "CVE-2024-6387",
+    "source": "local",
+    "severity": 8.1,
+    "severity_label": "high",
+    "affected_software": ["openssh", "ssh"],
+    "description": "OpenSSH regreSSHion race condition that can permit remote code execution on affected sshd builds.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2024-6387"
+    ]
+  },
+  {
+    "id": "CVE-2024-3400",
+    "source": "local",
+    "severity": 10.0,
+    "severity_label": "critical",
+    "affected_software": ["pan-os", "globalprotect"],
+    "description": "Command injection in PAN-OS GlobalProtect gateway and portal handling.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2024-3400"
+    ]
+  },
+  {
+    "id": "CVE-2023-50164",
+    "source": "local",
+    "severity": 9.8,
+    "severity_label": "critical",
+    "affected_software": ["apache struts", "struts"],
+    "description": "Path traversal and file upload issue in Apache Struts enabling remote code execution in vulnerable deployments.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2023-50164"
+    ]
+  },
+  {
+    "id": "CVE-2024-4577",
+    "source": "local",
+    "severity": 9.8,
+    "severity_label": "critical",
+    "affected_software": ["php", "php-cgi"],
+    "description": "Argument injection in PHP-CGI on Windows that can lead to remote code execution.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2024-4577"
+    ]
+  },
+  {
+    "id": "CVE-2023-46604",
+    "source": "local",
+    "severity": 10.0,
+    "severity_label": "critical",
+    "affected_software": ["apache activemq", "activemq"],
+    "description": "Deserialization vulnerability in Apache ActiveMQ OpenWire protocol handling.",
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2023-46604"
+    ]
+  }
+]

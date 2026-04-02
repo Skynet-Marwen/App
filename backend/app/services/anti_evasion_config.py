@@ -1,32 +1,20 @@
-DEFAULT_ANTI_EVASION_CONFIG = {
-    "vpn_detection": True,
-    "tor_detection": True,
-    "proxy_detection": True,
-    "datacenter_detection": True,
-    "headless_browser_detection": True,
-    "bot_detection": True,
-    "canvas_fingerprint": True,
-    "webgl_fingerprint": True,
-    "font_fingerprint": True,
-    "audio_fingerprint": True,
-    "timezone_mismatch": True,
-    "language_mismatch": True,
-    "cookie_evasion": True,
-    "ip_rotation_detection": True,
-    "spam_rate_threshold": 10,
-    "max_accounts_per_device": 3,
-    "max_accounts_per_ip": 5,
-}
+from sqlalchemy.ext.asyncio import AsyncSession
 
-_anti_evasion_config = dict(DEFAULT_ANTI_EVASION_CONFIG)
+from .runtime_config import (
+    DEFAULT_ANTI_EVASION_CONFIG,
+    anti_evasion_settings_snapshot,
+    load_anti_evasion_config as load_anti_evasion_config_from_store,
+    update_anti_evasion_settings,
+)
 
 
 def get_anti_evasion_config() -> dict:
-    return dict(_anti_evasion_config)
+    return anti_evasion_settings_snapshot()
 
 
-def update_anti_evasion_config(data: dict) -> dict:
-    for key, value in data.items():
-        if key in DEFAULT_ANTI_EVASION_CONFIG:
-            _anti_evasion_config[key] = value
-    return get_anti_evasion_config()
+async def load_anti_evasion_config(db: AsyncSession) -> dict:
+    return await load_anti_evasion_config_from_store(db)
+
+
+async def update_anti_evasion_config(db: AsyncSession, data: dict) -> dict:
+    return await update_anti_evasion_settings(db, data)

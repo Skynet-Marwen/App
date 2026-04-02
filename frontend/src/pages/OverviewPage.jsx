@@ -1,21 +1,39 @@
 import { Eye, Users, Monitor, Shield, AlertTriangle, Activity } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import DashboardLayout from '../components/layout/DashboardLayout'
-import { StatCard, Card, CardHeader } from '../components/ui/index'
+import { Badge, StatCard, Card } from '../components/ui/index'
 import { TrafficHeatmap } from '../components/ui/TrafficHeatmap'
-import { WorldGlobe } from '../components/ui/WorldGlobe'
-import { CombatLog } from '../components/ui/CombatLog'
+import ThreatHotspotsCard from '../components/overview/ThreatHotspotsCard'
+import EnforcementPressureCard from '../components/overview/EnforcementPressureCard'
+import GatewayOperationsCard from '../components/overview/GatewayOperationsCard'
+import PriorityInvestigationsCard from '../components/overview/PriorityInvestigationsCard'
+import RiskLeaderboardCard from '../components/overview/RiskLeaderboardCard'
 import { useOverview } from '../hooks/useOverview'
 import { useUIStore } from '../store/useAppStore'
+import { useThemeStore } from '../store/themeStore'
+import { themeHasWidget } from '../services/themeEngine'
 
 export default function OverviewPage() {
   const { statsRange } = useUIStore()
-  const { overview, realtime, loading, refresh } = useOverview(statsRange)
+  const navigate = useNavigate()
+  const currentTheme = useThemeStore((state) => state.currentTheme)
+  const { overview, realtime, loading, realtimeSource, refresh } = useOverview(statsRange)
+  const showWidget = (widgetId) => themeHasWidget(currentTheme, widgetId)
+  const realtimeBadge = realtimeSource === 'websocket'
+    ? <Badge variant="success">Live socket</Badge>
+    : <Badge variant="warning">Polling fallback</Badge>
+  const openVisitorsSearch = (search) => {
+    const query = new URLSearchParams()
+    if (search) query.set('search', search)
+    navigate(`/visitors${query.toString() ? `?${query.toString()}` : ''}`)
+  }
 
   return (
     <DashboardLayout title="Overview" showRange onRefresh={refresh}>
 
       {/* Realtime HUD banner */}
-      <div className="flex items-center gap-4 mb-6 px-5 py-3 rounded-xl border border-cyan-500/15 animate-border-breathe"
+      {showWidget('realtime-banner') && (
+      <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-cyan-500/15 px-4 py-3 xl:px-5 animate-border-breathe"
         style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(10px)' }}>
         <span className="w-2 h-2 bg-green-400 rounded-full animate-hud-dot flex-shrink-0" style={{ color: '#4ade80' }} />
         <span className="text-xs font-mono text-gray-400">
@@ -32,11 +50,14 @@ export default function OverviewPage() {
         <div className="ml-auto flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
           <span className="text-[10px] font-mono text-cyan-500/50 tracking-widest">LIVE</span>
+          {realtimeBadge}
         </div>
       </div>
+      )}
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 mb-6">
+      {showWidget('stat-cards') && (
+      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         <StatCard label="Total Visitors" rawValue={overview?.total_visitors} value={overview?.total_visitors?.toLocaleString() ?? '—'} change={overview?.visitors_change} icon={Eye} color="cyan" loading={loading} />
         <StatCard label="Unique Users"   rawValue={overview?.unique_users}    value={overview?.unique_users?.toLocaleString() ?? '—'}    change={overview?.users_change}    icon={Users} color="blue" loading={loading} />
         <StatCard label="Devices"        rawValue={overview?.total_devices}   value={overview?.total_devices?.toLocaleString() ?? '—'}   icon={Monitor} color="purple" loading={loading} />
@@ -44,11 +65,13 @@ export default function OverviewPage() {
         <StatCard label="Evasion"        rawValue={overview?.evasion_attempts} value={overview?.evasion_attempts?.toLocaleString() ?? '—'} icon={AlertTriangle} color="yellow" loading={loading} />
         <StatCard label="Spam"           rawValue={overview?.spam_detected}   value={overview?.spam_detected?.toLocaleString() ?? '—'}   icon={Activity} color="green" loading={loading} />
       </div>
+      )}
 
       {/* Charts row */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-4">
 
         {/* Traffic — Heatmap */}
+        {showWidget('traffic-heatmap') && (
         <Card className="xl:col-span-2 !p-0">
           <div className="p-5 pb-3">
             <p className="text-xs font-mono font-medium text-cyan-400 uppercase tracking-widest">Traffic Intensity</p>
@@ -58,54 +81,47 @@ export default function OverviewPage() {
             <TrafficHeatmap data={overview?.traffic_heatmap} range={statsRange} />
           </div>
         </Card>
+        )}
 
-        {/* Globe */}
-        <Card>
-          <CardHeader>
-            <p className="text-xs font-mono font-medium text-cyan-400 uppercase tracking-widest">Global Threat Map</p>
-          </CardHeader>
-          <WorldGlobe countries={overview?.top_countries ?? []} />
-        </Card>
+        {showWidget('threat-hotspots') && (
+        <ThreatHotspotsCard
+          hotspots={overview?.threat_hotspots ?? []}
+          fallbackCountries={overview?.top_countries ?? []}
+          onCountryClick={(item) => openVisitorsSearch(item?.country || item?.top_reason || '')}
+        />
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-4">
+        {showWidget('enforcement-pressure') && (
+        <EnforcementPressureCard
+          pressure={overview?.enforcement_pressure}
+          fallbackChart={overview?.blocking_chart ?? []}
+          loading={loading}
+        />
+        )}
+        {showWidget('gateway-operations') && (
+        <GatewayOperationsCard
+          gateway={overview?.gateway_dashboard}
+          loading={loading}
+        />
+        )}
       </div>
 
       {/* Bottom row */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        {/* Blocking activity */}
-        <Card>
-          <CardHeader>
-            <p className="text-xs font-mono font-medium text-cyan-400 uppercase tracking-widest">Blocking Activity</p>
-            <p className="text-[10px] font-mono text-gray-600">By incident type</p>
-          </CardHeader>
-          <div className="space-y-2">
-            {(overview?.blocking_chart ?? []).map((b, i) => {
-              const maxCount = Math.max(...(overview?.blocking_chart ?? []).map(x => x.count), 1)
-              return (
-                <div key={i} className="flex items-center gap-3">
-                  <span className="text-[10px] font-mono text-gray-500 w-28 truncate flex-shrink-0">{b.reason}</span>
-                  <div className="flex-1 h-5 bg-black/50 rounded border border-red-500/10 overflow-hidden">
-                    <div className="h-full rounded transition-all"
-                      style={{ width: `${(b.count / maxCount) * 100}%`, background: 'rgba(239,68,68,0.6)', boxShadow: '0 0 6px rgba(239,68,68,0.4)' }} />
-                  </div>
-                  <span className="text-[10px] font-mono text-red-400 w-8 text-right">{b.count}</span>
-                </div>
-              )
-            })}
-            {!loading && !(overview?.blocking_chart?.length) && (
-              <p className="text-xs font-mono text-gray-700 text-center py-4">// NO DATA</p>
-            )}
-          </div>
-        </Card>
-
-        {/* Combat log */}
-        <Card>
-          <CardHeader>
-            <p className="text-xs font-mono font-medium text-cyan-400 uppercase tracking-widest">Incident Log</p>
-            <span className="text-[10px] font-mono text-gray-700 border border-cyan-500/15 px-2 py-0.5 rounded">
-              {(overview?.recent_incidents ?? []).length} entries
-            </span>
-          </CardHeader>
-          <CombatLog incidents={overview?.recent_incidents ?? []} />
-        </Card>
+        {showWidget('risk-leaderboard') && (
+        <RiskLeaderboardCard
+          leaders={overview?.risk_leaderboard ?? []}
+        />
+        )}
+        {showWidget('priority-investigations') && (
+        <PriorityInvestigationsCard
+          investigations={overview?.priority_investigations ?? []}
+          fallbackIncidents={overview?.recent_incidents ?? []}
+          onInspect={(item) => openVisitorsSearch(item?.target_label || item?.title || '')}
+        />
+        )}
       </div>
     </DashboardLayout>
   )

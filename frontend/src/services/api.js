@@ -108,6 +108,11 @@ export const integrationApi = {
 // --- System ---
 export const systemApi = {
   info: () => api.get('/system/info'),
+  bootstrapStatus: () => api.get('/system/bootstrap-status'),
+}
+
+export const searchApi = {
+  query: (params) => api.get('/search', { params }),
 }
 
 // --- Settings ---
@@ -116,6 +121,98 @@ export const settingsApi = {
   update: (data) => api.put('/settings', data),
   getBlockPage: () => api.get('/settings/block-page'),
   updateBlockPage: (data) => api.put('/settings/block-page', data),
+  listBackups: () => api.get('/settings/backups'),
+  createBackup: (data) => api.post('/settings/backups', data),
+  downloadBackup: (filename) => api.get(`/settings/backups/${filename}/download`, { responseType: 'blob' }),
+  restoreBackup: (filename, data) => api.post(`/settings/backups/${filename}/restore`, data),
+  restoreUploadedBackup: ({ file, mode, services, password }) => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('mode', mode)
+    form.append('services', services.join(','))
+    form.append('password', password || '')
+    return api.post('/settings/backups/restore-upload', form)
+  },
+  getHttpsStatus: () => api.get('/settings/https/status'),
+  uploadHttpsCertificate: ({ certificate, privateKey, chain }) => {
+    const form = new FormData()
+    form.append('certificate', certificate)
+    form.append('private_key', privateKey)
+    if (chain) form.append('chain', chain)
+    return api.post('/settings/https/upload', form)
+  },
+  generateSelfSignedCertificate: (data) => api.post('/settings/https/self-signed', data),
+  // GeoIP
+  geoipStatus: () => api.get('/settings/geoip/status'),
+  uploadMmdb: (file) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post('/settings/geoip/upload', form)
+  },
+  // SMTP
+  updateSmtp: (data) => api.put('/settings/smtp', data),
+  testSmtp: (data) => api.post('/settings/smtp/test', data),
+}
+
+// --- Themes ---
+export const themesApi = {
+  list: () => api.get('/themes'),
+  create: (data) => api.post('/themes', data),
+  update: (id, data) => api.put(`/themes/${id}`, data),
+  delete: (id) => api.delete(`/themes/${id}`),
+  setDefault: ({ theme_id }) => api.post('/themes/set-default', { theme_id }),
+  starterPacks: () => api.get('/themes/starter-packs'),
+  installStarterPack: (packId, data = {}) => api.post(`/themes/starter-packs/${packId}/install`, data),
+  exportPackage: (id) => api.get(`/themes/${id}/export`, { responseType: 'blob' }),
+  importPackage: ({ file, replaceExisting = false }) => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('replace_existing', String(replaceExisting))
+    return api.post('/themes/import', form)
+  },
+  uploadLogo: (id, file) => {
+    const form = new FormData()
+    form.append('logo', file)
+    return api.post(`/themes/${id}/logo`, form)
+  },
+  removeLogo: (id) => api.delete(`/themes/${id}/logo`),
+}
+
+export const userThemeApi = {
+  get: () => api.get('/user/theme'),
+  set: (data) => api.post('/user/theme', data),
+}
+
+// --- Identity Intelligence ---
+export const riskApi = {
+  listUsers: (params) => api.get('/risk/users', { params }),
+  recompute: (externalUserId) => api.post(`/risk/${externalUserId}/recompute`),
+}
+
+export const identityApi = {
+  profile: (externalUserId) => api.get(`/identity/${externalUserId}/profile`),
+  devices: (externalUserId) => api.get(`/identity/${externalUserId}/devices`),
+  riskHistory: (externalUserId, params) => api.get(`/identity/${externalUserId}/risk-history`, { params }),
+  activity: (externalUserId, params) => api.get(`/identity/${externalUserId}/activity`, { params }),
+  flags: (externalUserId) => api.get(`/identity/${externalUserId}/flags`),
+  updateFlag: (externalUserId, flagId, data) => api.put(`/identity/${externalUserId}/flags/${flagId}`, data),
+  setEnhancedAudit: (externalUserId, data) => api.post(`/identity/${externalUserId}/enhanced-audit`, data),
+  keycloakSyncStatus: () => api.get('/identity/sync/keycloak/status'),
+  syncKeycloakUsers: () => api.post('/identity/sync/keycloak'),
+}
+
+export const gatewayApi = {
+  status: () => api.get('/gateway/status'),
+}
+
+// --- Security Center ---
+export const securityApi = {
+  status: () => api.get('/security/status'),
+  findings: () => api.get('/security/findings'),
+  recommendations: () => api.get('/security/recommendations'),
+  scan: (data) => api.post('/security/scan', data),
+  ignoreFinding: (id) => api.post(`/security/findings/${id}/ignore`),
+  applyRecommendation: (id) => api.post(`/security/recommendations/${id}/apply`),
 }
 
 // --- Audit ---

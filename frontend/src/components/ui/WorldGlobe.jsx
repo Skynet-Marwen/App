@@ -1,100 +1,157 @@
-// Wireframe holographic globe — pure SVG, no dependencies
-// Country positions are approximate (orthographic projection, centered ~15°E)
+import { useEffect, useMemo, useRef } from 'react'
+import createGlobe from 'cobe'
 
-const KNOWN_POSITIONS = {
-  USA:       { cx: 42,  cy: 60,  color: '#ef4444' },
-  Canada:    { cx: 50,  cy: 46,  color: '#06b6d4' },
-  Brazil:    { cx: 78,  cy: 100, color: '#06b6d4' },
-  Germany:   { cx: 118, cy: 50,  color: '#ef4444' },
-  France:    { cx: 112, cy: 54,  color: '#06b6d4' },
-  UK:        { cx: 108, cy: 47,  color: '#06b6d4' },
-  Russia:    { cx: 155, cy: 40,  color: '#ef4444' },
-  China:     { cx: 165, cy: 58,  color: '#f59e0b' },
-  India:     { cx: 152, cy: 70,  color: '#06b6d4' },
-  Japan:     { cx: 178, cy: 55,  color: '#06b6d4' },
-  Australia: { cx: 172, cy: 110, color: '#06b6d4' },
+const COUNTRY_LOCATIONS = {
+  USA: { lat: 37.0902, lon: -95.7129, color: [0.94, 0.27, 0.27] },
+  Canada: { lat: 56.1304, lon: -106.3468, color: [0.13, 0.83, 0.93] },
+  Brazil: { lat: -14.235, lon: -51.9253, color: [0.13, 0.83, 0.93] },
+  Germany: { lat: 51.1657, lon: 10.4515, color: [0.94, 0.27, 0.27] },
+  France: { lat: 46.2276, lon: 2.2137, color: [0.13, 0.83, 0.93] },
+  UK: { lat: 55.3781, lon: -3.436, color: [0.13, 0.83, 0.93] },
+  Russia: { lat: 61.524, lon: 105.3188, color: [0.96, 0.62, 0.16] },
+  China: { lat: 35.8617, lon: 104.1954, color: [0.94, 0.27, 0.27] },
+  India: { lat: 20.5937, lon: 78.9629, color: [0.13, 0.83, 0.93] },
+  Japan: { lat: 36.2048, lon: 138.2529, color: [0.13, 0.83, 0.93] },
+  Australia: { lat: -25.2744, lon: 133.7751, color: [0.13, 0.83, 0.93] },
 }
 
-export function WorldGlobe({ countries = [] }) {
-  // Merge live API data over defaults
-  const dots = Object.entries(KNOWN_POSITIONS).map(([name, pos]) => {
-    const live = countries.find(c => c.country === name)
-    return { name, ...pos, active: !!live, count: live?.count ?? 0 }
-  })
+const clampPercent = (value) => {
+  const numeric = Number(value) || 0
+  return Math.max(0, Math.min(100, numeric))
+}
+
+export function WorldGlobe({ countries = [], showList = true }) {
+  const canvasRef = useRef(null)
+  const shellRef = useRef(null)
+
+  const markers = useMemo(() => {
+    return countries
+      .map((country) => {
+        const base = COUNTRY_LOCATIONS[country.country]
+        if (!base) return null
+
+        return {
+          location: [base.lat, base.lon],
+          size: 0.06 + clampPercent(country.percent) / 1800,
+          color: base.color,
+        }
+      })
+      .filter(Boolean)
+  }, [countries])
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    const shell = shellRef.current
+    if (!canvas || !shell) return undefined
+
+    let width = 0
+    let phi = 0.45
+    let globe = null
+    let frameId = 0
+
+    const build = () => {
+      const nextWidth = Math.max(shell.clientWidth, 320)
+      if (Math.abs(nextWidth - width) < 2 && globe) return
+
+      width = nextWidth
+      if (globe) globe.destroy()
+
+      globe = createGlobe(canvas, {
+        devicePixelRatio: Math.min(window.devicePixelRatio || 1, 2),
+        width: width * 2,
+        height: width * 2,
+        phi,
+        theta: 0.2,
+        dark: 0.18,
+        diffuse: 1.8,
+        scale: 1.02,
+        mapSamples: 30000,
+        mapBrightness: 14,
+        mapBaseBrightness: 0.12,
+        baseColor: [0.16, 0.68, 0.82],
+        markerColor: [0.13, 0.83, 0.93],
+        glowColor: [0.1, 0.76, 0.88],
+        offset: [0, 0],
+        markers,
+        markerElevation: 0.04,
+        opacity: 0.96,
+      })
+    }
+
+    build()
+
+    const animate = () => {
+      phi += 0.0035
+      globe?.update({ phi })
+      frameId = window.requestAnimationFrame(animate)
+    }
+
+    frameId = window.requestAnimationFrame(animate)
+
+    const observer = new ResizeObserver(() => build())
+    observer.observe(shell)
+
+    return () => {
+      observer.disconnect()
+      window.cancelAnimationFrame(frameId)
+      if (globe) globe.destroy()
+    }
+  }, [markers])
 
   return (
     <div className="w-full">
-      <svg viewBox="0 0 210 160" className="w-full" style={{ filter: 'drop-shadow(0 0 8px rgba(6,182,212,0.18))' }}>
-        <defs>
-          <clipPath id="globe-clip">
-            <circle cx="105" cy="80" r="68" />
-          </clipPath>
-          <radialGradient id="globe-bg" cx="40%" cy="35%">
-            <stop offset="0%" stopColor="rgba(6,182,212,0.06)" />
-            <stop offset="100%" stopColor="rgba(0,0,0,0)" />
-          </radialGradient>
-        </defs>
+      <div
+        ref={shellRef}
+        className="relative isolate mx-auto aspect-square w-full max-w-[360px] overflow-hidden rounded-[1.4rem] border border-cyan-500/10 bg-black/45 shadow-[0_0_36px_rgba(6,182,212,0.12)]"
+      >
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{ background: 'radial-gradient(circle at 50% 42%, rgba(34,211,238,0.08), transparent 48%)' }}
+        />
+        <div
+          className="pointer-events-none absolute inset-0 opacity-40"
+          style={{ backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.04) 0, transparent 2px)', backgroundSize: '100% 8px' }}
+        />
+        <div
+          className="pointer-events-none absolute inset-y-0 left-1/2 w-24 -translate-x-1/2 blur-2xl"
+          style={{ background: 'linear-gradient(180deg, transparent, rgba(34,211,238,0.08), transparent)' }}
+        />
 
-        {/* Globe fill */}
-        <circle cx="105" cy="80" r="68" fill="url(#globe-bg)" />
+        <div className="pointer-events-none absolute left-4 top-4 z-[2] rounded-full border border-cyan-500/15 bg-black/45 px-3 py-1">
+          <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-cyan-300">Geo Threat Mesh</p>
+        </div>
 
-        {/* Grid lines clipped to globe */}
-        <g clipPath="url(#globe-clip)" stroke="rgba(6,182,212,0.18)" fill="none" strokeWidth="0.6">
-          {/* Latitude lines */}
-          <ellipse cx="105" cy="56" rx="57" ry="7" />
-          <ellipse cx="105" cy="68" rx="66" ry="4.5" />
-          <ellipse cx="105" cy="80" rx="68" ry="2.5" />
-          <ellipse cx="105" cy="92" rx="66" ry="4.5" />
-          <ellipse cx="105" cy="104" rx="57" ry="7" />
-          {/* Longitude lines */}
-          <line x1="105" y1="12" x2="105" y2="148" strokeWidth="0.5" />
-          <ellipse cx="105" cy="80" rx="28" ry="68" />
-          <ellipse cx="105" cy="80" rx="55" ry="68" />
-        </g>
+        <canvas
+          ref={canvasRef}
+          className="relative z-[1] block h-full w-full"
+          style={{ width: '100%', height: '100%' }}
+          aria-hidden="true"
+        />
+      </div>
 
-        {/* Outer ring */}
-        <circle cx="105" cy="80" r="68" stroke="rgba(6,182,212,0.45)" fill="none" strokeWidth="0.8" />
-
-        {/* Sweep line (animated) */}
-        <g clipPath="url(#globe-clip)">
-          <line x1="105" y1="12" x2="105" y2="148"
-            stroke="rgba(6,182,212,0.5)" strokeWidth="1"
-            className="animate-hud-sweep"
-            style={{ transformOrigin: '105px 80px', animation: 'radar-spin 8s linear infinite' }} />
-        </g>
-
-        {/* Country dots */}
-        {dots.map((d) => (
-          <g key={d.name}>
-            {d.active && (
-              <circle cx={d.cx} cy={d.cy} r="5" fill={d.color} fillOpacity="0.15"
-                className="animate-hud-dot" style={{ color: d.color }} />
-            )}
-            <circle cx={d.cx} cy={d.cy} r="2.2" fill={d.color}
-              style={{ filter: `drop-shadow(0 0 4px ${d.color})` }} />
-          </g>
-        ))}
-      </svg>
-
-      {/* Country list */}
-      <div className="mt-3 space-y-1.5">
-        {countries.length > 0 ? countries.slice(0, 5).map((c) => (
-          <div key={c.country} className="flex items-center gap-2">
-            <span className="text-sm">{c.flag}</span>
-            <div className="flex-1 min-w-0">
-              <div className="flex justify-between mb-0.5">
-                <span className="text-xs font-mono text-gray-400 truncate">{c.country}</span>
-                <span className="text-xs font-mono text-gray-600">{c.percent}%</span>
-              </div>
-              <div className="h-1 bg-black/60 rounded-full overflow-hidden border border-cyan-500/10">
-                <div className="h-full bg-cyan-500 rounded-full" style={{ width: `${c.percent}%`, boxShadow: '0 0 6px rgba(6,182,212,0.6)' }} />
+      {showList && (
+        <div className="mt-3 space-y-1.5">
+          {countries.length > 0 ? countries.slice(0, 5).map((country) => (
+            <div key={country.country} className="flex items-center gap-2">
+              <span className="text-sm">{country.flag}</span>
+              <div className="min-w-0 flex-1">
+                <div className="mb-0.5 flex justify-between">
+                  <span className="truncate text-xs font-mono text-gray-400">{country.country}</span>
+                  <span className="text-xs font-mono text-gray-600">{country.percent}%</span>
+                </div>
+                <div className="h-1 overflow-hidden rounded-full border border-cyan-500/10 bg-black/60">
+                  <div
+                    className="h-full rounded-full bg-cyan-500"
+                    style={{ width: `${country.percent}%`, boxShadow: '0 0 6px rgba(6,182,212,0.6)' }}
+                  />
+                </div>
               </div>
             </div>
-          </div>
-        )) : (
-          <p className="text-xs font-mono text-gray-700 text-center pt-2">// AWAITING GEO DATA</p>
-        )}
-      </div>
+          )) : (
+            <p className="pt-2 text-center text-xs font-mono text-gray-700">// AWAITING GEO DATA</p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

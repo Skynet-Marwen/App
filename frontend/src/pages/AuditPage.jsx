@@ -1,6 +1,6 @@
-import { Search } from 'lucide-react'
+import { Activity, FilterX, Search } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
-import { Card, CardHeader, Pagination, Select, Table } from '../components/ui/index'
+import { Badge, Button, Card, CardHeader, Pagination, PageToolbar, Select, StatCard, Table } from '../components/ui/index'
 import { useAuditLogs } from '../hooks/useAuditLogs'
 
 const ACTION_OPTIONS = [
@@ -49,6 +49,18 @@ export default function AuditPage() {
     refresh,
   } = useAuditLogs()
 
+  const hasFilters = Boolean(search || action || targetType)
+  const uniqueActions = new Set(items.map((item) => item.action).filter(Boolean)).size
+  const uniqueTargets = new Set(items.map((item) => item.target_type).filter(Boolean)).size
+  const configChanges = items.filter((item) => item.action === 'CONFIG_CHANGE').length
+
+  const clearFilters = () => {
+    setSearch('')
+    setAction('')
+    setTargetType('')
+    setPage(1)
+  }
+
   const columns = [
     { key: 'actor_label', label: 'Actor', render: (value, row) => <span className="text-xs text-white">{value || row.actor_id || 'System'}</span> },
     { key: 'action', label: 'Action', render: (value) => <span className="text-xs text-cyan-400 font-mono">{value}</span> },
@@ -60,27 +72,59 @@ export default function AuditPage() {
 
   return (
     <DashboardLayout title="Audit Log" onRefresh={refresh}>
+      <PageToolbar>
+        <div className="space-y-2">
+          <p className="text-[10px] font-mono uppercase tracking-[0.28em] text-cyan-400/80">Operational History</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white">Audit trail</h1>
+            <Badge variant={hasFilters ? 'warning' : 'default'}>{hasFilters ? 'Filtered view' : 'Live view'}</Badge>
+          </div>
+          <p className="max-w-3xl text-sm text-gray-400">
+            Write-only history across admin actions. Use filters to isolate settings changes, incident handling, and security-sensitive events.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {hasFilters && <Button variant="secondary" size="sm" icon={FilterX} onClick={clearFilters}>Clear filters</Button>}
+        </div>
+      </PageToolbar>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Matching records" value={total.toLocaleString()} rawValue={total} icon={Activity} color="cyan" loading={loading} />
+        <StatCard label="Loaded rows" value={items.length.toLocaleString()} rawValue={items.length} icon={Activity} color="blue" loading={loading} />
+        <StatCard label="Unique actions" value={uniqueActions.toLocaleString()} rawValue={uniqueActions} icon={Activity} color="green" loading={loading} />
+        <StatCard label="Config changes" value={configChanges.toLocaleString()} rawValue={configChanges} icon={Activity} color="yellow" loading={loading} />
+      </div>
+
       <Card>
-        <CardHeader>
-          <p className="text-sm font-medium text-white">Audit Trail</p>
-          <p className="text-xs text-gray-500">Write-only operational history across admin actions</p>
+        <CardHeader
+          action={hasFilters ? <Button variant="secondary" size="sm" onClick={clearFilters}>Reset filters</Button> : null}
+        >
+          <p className="text-sm font-medium text-white">Filter events</p>
+          <p className="text-xs text-gray-500">
+            {uniqueTargets > 0 ? `${uniqueTargets} target type${uniqueTargets === 1 ? '' : 's'} in view` : 'No target types in view yet'}
+          </p>
         </CardHeader>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-4">
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.2fr_0.9fr_0.9fr_auto]">
           <div className="relative">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
             <input
               placeholder="Search actor, target, IP..."
               value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500"
+              className="w-full rounded-lg border border-cyan-500/15 bg-black/60 py-2 pl-9 pr-3 text-sm text-white placeholder-gray-500 focus:border-cyan-500/60 focus:outline-none"
             />
           </div>
           <Select value={action} onChange={(e) => { setAction(e.target.value); setPage(1) }} options={ACTION_OPTIONS} />
           <Select value={targetType} onChange={(e) => { setTargetType(e.target.value); setPage(1) }} options={TARGET_OPTIONS} />
+          <div className="flex items-end">
+            <Button variant="secondary" className="w-full xl:w-auto" onClick={refresh}>Refresh</Button>
+          </div>
         </div>
 
-        <Table columns={columns} data={items} loading={loading} emptyMessage="No audit events found" />
+        <div className="mt-4 overflow-hidden rounded-xl border border-cyan-500/10">
+          <Table columns={columns} data={items} loading={loading} emptyMessage="No audit events found" />
+        </div>
         <Pagination page={page} total={total} pageSize={20} onChange={setPage} />
       </Card>
     </DashboardLayout>

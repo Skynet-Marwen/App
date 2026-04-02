@@ -17,6 +17,8 @@ async def list_visitors(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, le=100),
     search: str = Query(""),
+    country: str = Query(""),
+    status: str = Query(""),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
@@ -25,8 +27,17 @@ async def list_visitors(
 
     if search:
         q = f"%{search}%"
-        query = query.where(or_(Visitor.ip.ilike(q), Visitor.country.ilike(q), Visitor.browser.ilike(q)))
-        count_query = count_query.where(or_(Visitor.ip.ilike(q), Visitor.country.ilike(q), Visitor.browser.ilike(q)))
+        filters = or_(Visitor.ip.ilike(q), Visitor.country.ilike(q), Visitor.browser.ilike(q), Visitor.os.ilike(q))
+        query = query.where(filters)
+        count_query = count_query.where(filters)
+
+    if country:
+        query = query.where(Visitor.country == country)
+        count_query = count_query.where(Visitor.country == country)
+
+    if status:
+        query = query.where(Visitor.status == status)
+        count_query = count_query.where(Visitor.status == status)
 
     total = await db.scalar(count_query) or 0
     result = await db.execute(query.order_by(Visitor.last_seen.desc()).offset((page - 1) * page_size).limit(page_size))

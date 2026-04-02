@@ -1,6 +1,7 @@
 # SkyNet — Roadmap
 
-> This roadmap is intentionally opinionated. Priorities can shift — update this file when they do.
+> This roadmap is intentionally opinionated. Priorities can shift — update when they do.
+> Items may move to done on the unreleased branch before a formal release is cut.
 
 ---
 
@@ -13,7 +14,7 @@ Core scaffold. Functional dashboard. Embeddable tracker. Docker deployment.
 - Blocking engine (IP, country, device, user-agent, ASN)
 - Anti-evasion detection UI
 - Embeddable tracker script (skynet.js)
-- JWT auth with default admin (native login only — no external SSO)
+- JWT auth with default admin (native login only)
 - Docker Compose full-stack
 
 ---
@@ -21,162 +22,109 @@ Core scaffold. Functional dashboard. Embeddable tracker. Docker deployment.
 ## v1.1.0 — Hardening ✅ `2026-03-30`
 Make v1.0 production-ready. Close all technical debt.
 
-- [x] Alembic migrations (replace `create_all`) — ✅ 2026-03-30
-- [x] Rate limiting middleware (slowapi, Redis-backed) — ✅ 2026-03-30
-- [x] GeoIP enrichment (MaxMind GeoLite2) — ✅ 2026-03-30
-- [x] Pydantic schemas layer (extract from routes) — ✅ 2026-03-30
-- [x] Real chart aggregation queries — ✅ traffic heatmap + blocking chart live 2026-03-30
-- [x] HTTP security headers (CSP, HSTS, X-Frame-Options) — ✅ 2026-03-30
-- [x] Redis session store (real session management) — ✅ 2026-03-30
-- [x] Frontend hooks layer (`useVisitors`, `useUsers`, etc.) — ✅ 2026-03-30
-- [x] Audit log table + UI — ✅ 2026-03-30
-- [x] Input sanitization (strip HTML from user-supplied fields) — ✅ 2026-03-30
-- [x] Anti-evasion async background checks — ✅ 2026-03-30
-- [x] Strict same-machine device grouping across browsers — ✅ 2026-03-30
+- [x] Alembic migrations (replace `create_all`)
+- [x] Rate limiting middleware (slowapi, Redis-backed)
+- [x] GeoIP enrichment (provider abstraction + local `.mmdb` support)
+- [x] Pydantic schemas layer
+- [x] Real chart aggregation queries (traffic heatmap, blocking chart)
+- [x] HTTP security headers (CSP, HSTS, X-Frame-Options)
+- [x] Redis session store (real session management + revocation)
+- [x] Frontend hooks layer
+- [x] Audit log table + UI
+- [x] Input sanitization (bleach)
+- [x] Anti-evasion async background checks
+- [x] Strict same-machine device grouping
 
 ---
 
-## v1.2.0 — Intelligence `Target: Q3 2026`
-Make the detection smarter and more automated.
+## v1.2.0 — Identity Platform + Operator UX Foundations ✅ `2026-04-02`
+Transform SKYNET from device tracker into a user-centric security intelligence platform, while hardening the operator experience around theming, branding, and desktop usability.
+This release ships the identity-platform backend, theme engine, and desktop operator UX foundations; analyst-facing intelligence UI remains the next milestone.
 
-- [ ] Real-time WebSocket visitor feed on Overview
-- [ ] Behavioral bot detection (mouse entropy, click timing)
-- [ ] Tor/VPN IP list auto-update (daily background task)
-- [ ] Device risk score live recalculation on each pageview
-- [ ] Anti-spam sliding window (Redis-backed per device)
-- [ ] IP rotation detection (Redis sliding window)
-- [ ] Multi-account detection alerts
-
----
-
-## v1.5.0 — Keycloak Security Enforcement Layer `Target: Q2 2027`
-Use Keycloak as a **security enforcement layer for tracked websites** — not for SkyNet admin login.
-SkyNet monitors Keycloak events and acts on them: auto-block threats, sync users, enforce policies.
-
-> SkyNet admin authentication is **always native JWT only**. Keycloak is never used to log into SkyNet.
-
-### Keycloak Event Monitoring
-- [ ] Subscribe to Keycloak admin events via webhook (login failures, account lockouts, realm changes)
-- [ ] Map Keycloak events to SkyNet incident types (brute-force → severity=high, account takeover → severity=critical)
-- [ ] Auto-block IP in SkyNet when Keycloak reports N failed logins from that IP
-- [ ] Dashboard: Keycloak event stream panel on Anti-Evasion page
-
-### User Sync (Tracked Website Users)
-- [ ] Background task (APScheduler, 15-min interval): pull users from Keycloak realm into SkyNet `users` table
-- [ ] Map Keycloak roles → SkyNet `user.role` (configurable mapping per realm)
-- [ ] Detect and flag Keycloak users that appear on SkyNet's blocked device/IP list
-- [ ] API: `POST /api/v1/integration/keycloak/sync` — manual trigger for on-demand sync
-
-### Threat Correlation
-- [ ] Cross-reference Keycloak session tokens with SkyNet visitor fingerprints
-- [ ] Detect Keycloak authenticated users browsing with blocked/high-risk devices
-- [ ] Alert when a Keycloak user's session originates from a Tor/VPN IP
-- [ ] Auto-revoke Keycloak session via admin API when SkyNet auto-blocks a device
-
-### Configuration (Settings page — future tab)
-- [ ] Keycloak URL, realm, client credentials (stored encrypted in DB, not in-memory)
-- [ ] Per-rule toggles: auto-block on brute-force, auto-sync users, enforce roles, revoke sessions
-- [ ] Test connection button: validate Keycloak admin API credentials
+- [x] Remove Keycloak SSO for SKYNET operators — local auth only, always
+- [x] Keycloak as external IdP for end-users of protected applications
+- [x] `POST /identity/link` — link external IdP JWT to device fingerprint
+- [x] `POST /track/activity` — authenticated activity tracking
+- [x] `identity_links` — persistent user ↔ device mapping
+- [x] `user_profiles` — aggregated intelligence profile per external user
+- [x] `risk_events` — time-series risk score history
+- [x] `activity_events` — structured authenticated-user activity timeline
+- [x] `anomaly_flags` — multi-account, impossible travel, new device, risk spike
+- [x] `risk_engine` — composite user-level scoring (device scores + behavioral modifiers)
+- [x] `jwks_validator` — async JWKS validation with in-process cache + grace period
+- [x] Full `/identity/*` and `/risk/*` route groups
+- [x] Enhanced audit mode per user (admin-gated)
+- [x] Theme registry with admin-managed global themes
+- [x] Per-user theme selection + default theme assignment for new accounts
+- [x] Branding/logo upload with backend-served theme logo route
+- [x] Settings IA reorganized into 9 desktop-friendly domains
+- [x] Fixed-shell operator layout (header/nav/footer fixed, `main` scrollable)
+- [x] Local Keycloak profile documented as optional; external JWKS-capable OIDC providers remain valid
+- [x] Release/version bump from `1.1.0` to `1.2.0`
 
 ---
 
-## v1.6.0 — Active Anti-Bot / Anti-Spam Gateway `Target: Q3 2027`
-SkyNet evolves from **passive observer** to **active enforcement gateway** for tracked websites.
-Sites can route requests through SkyNet before they reach the origin server.
+## v1.3.0 — Intelligence UI `Target: Q2 2026`
+Build dashboard pages for the identity platform.
 
-### Gateway Mode
-- [ ] Reverse proxy mode: tracked site routes HTTP requests through SkyNet gateway
-- [ ] SkyNet evaluates every request: fingerprint, IP reputation, risk score, bot signals
-- [ ] Decision engine: ALLOW / CHALLENGE / BLOCK per request (sub-10ms target via Redis cache)
-- [ ] Challenge types: CAPTCHA redirect, JS proof-of-work, invisible honeypot, rate-gate
-- [ ] Block response: configurable (HTTP 403, silent redirect, tarpit/slow response)
-
-### Bot Detection Pipeline
-- [ ] Headless browser detection: missing browser APIs, navigator.webdriver, inconsistent timing
-- [ ] Crawler signature matching: known bot user-agent patterns + behavior fingerprints
-- [ ] Click farm detection: abnormally uniform mouse paths, zero entropy interactions
-- [ ] Form spam detection: honeypot fields, submission velocity, field fill timing analysis
-- [ ] API abuse detection: pattern matching on request sequences (scraping, credential stuffing)
-
-### Spam Prevention
-- [ ] Per-endpoint rate enforcement: configurable rules per URL pattern (e.g. `/contact` max 3/hour/IP)
-- [ ] Submission fingerprinting: hash form content → detect duplicate submissions across IPs
-- [ ] Email address reputation check: integrate disposable email provider blocklist
-- [ ] Phone number validation: international format + carrier lookup (pluggable provider)
-- [ ] DNSBL integration: check submitter IP against public spam/abuse databases
-
-### Dashboard & Reporting
-- [ ] Gateway traffic overview: total requests, allowed/challenged/blocked counts, bot %, latency
-- [ ] Real-time bot stream: live feed of bot detections with signals that triggered the block
-- [ ] Challenge analytics: CAPTCHA solve rate, proof-of-work pass rate, drop-off by challenge type
-- [ ] Spam campaign detection: cluster analysis of coordinated attacks (same subnet, same payload)
+- [x] External Users page — UserProfile table (risk score, trust level, device count, flags)
+- [x] User detail drawer — risk history chart, device list, activity timeline, anomaly flags
+- [x] Integration helper for exposing/exchanging SKYNET `devices.id` to protected apps before `/identity/link`
+- [x] Risk leaderboard widget on Overview page (top risky users)
+- [x] Anomaly flags management (acknowledge / resolve / false-positive from UI)
+- [x] Runtime settings and anti-evasion config persisted in the database
+- [x] Desktop UX pass for `Audit`, `Anti-Evasion`, and `Integration`
+- [x] Impossible travel detection (activity_events IP + country delta)
+- [x] Risk history line chart (time-series per user)
+- [x] Activity timeline component (structured events per user)
+- [x] Export (CSV/JSON) for identity and risk tables
+- [x] Real-time WebSocket visitor feed on Overview
+- [x] Activity event retention policy for authenticated-user timelines
+- [x] Theme package import/export for registry operations and marketplace-ready single-theme bundles
+- [x] Role-aware shell surfaces layered on top of the theme engine
 
 ---
 
-## v1.3.0 — Experience `Target: Q4 2026`
+## v1.4.0 — Deep Fingerprinting `Target: Q3 2026`
+Harden device identity and make risk scoring authoritative.
+
+- [x] Timing fingerprint (`performance.now()` resolution, rAF jitter)
+- [x] Navigator entropy (hardwareConcurrency, deviceMemory, connection type)
+- [x] Composite fingerprint score: weighted hash of all signals
+- [x] Fingerprint stability tracking across sessions (drift detection)
+- [x] HMAC-SHA256 signed device cookie (`skynet_did`)
+- [x] Clock skew detection (client TZ offset vs GeoIP)
+- [x] Behavioral entropy (mouse movement, scroll cadence, click timing)
+- [x] Risk score thresholds: auto-flag (>0.60), auto-challenge (>0.80), auto-block (>0.95)
+- [x] Anti-spam sliding window (Redis per device)
+- [x] Multi-IdP JWT validation (Keycloak + additional JWKS-backed providers)
+
+---
+
+## v1.5.0 — Experience `Target: Q4 2026`
 Make the dashboard pleasant to use at scale.
 
-- [ ] Chart drill-downs (click country → filter visitors)
-- [ ] Export (CSV, JSON) for all data tables
-- [ ] Saved filter presets
-- [ ] Dashboard onboarding wizard (first-run flow)
-- [ ] Email / webhook notifications on high-severity incidents
-- [ ] Bulk actions (block selected visitors, export selection)
-- [ ] Search across all entities (global search bar)
-- [ ] Dark/light theme toggle
+- [x] Chart drill-downs (click country → filter visitors)
+- [x] Saved filter presets
+- [x] Bulk actions (block selected, export selection)
+- [x] Global search bar (across all entities)
+- [x] Email / webhook notifications on high-severity incidents
+- [x] Dashboard onboarding wizard (first-run flow)
+- [x] Curated starter packs and theme marketplace flow
+- [x] Dynamic themes by risk level / tenant
 
 ---
 
-## v1.4.0 — Trust & Identity `Target: Q1 2027`
-Harden device identity, make risk scoring authoritative, lock down geo access.
+## v1.6.0 — Active Gateway ✅ `2026-04-02`
+SKYNET evolves from observer to active enforcement gateway.
 
-### Multi-Layer Browser Fingerprinting
-- [ ] **Canvas fingerprint** — already collected; add per-browser variance normalization
-- [ ] **WebGL fingerprint** — renderer + vendor string + precision floats
-- [ ] **Audio fingerprint** — OfflineAudioContext signal hash
-- [ ] **Font enumeration** — CSS `@font-face` probe list (300+ fonts)
-- [ ] **Timing fingerprint** — `performance.now()` resolution, requestAnimationFrame jitter
-- [ ] **Navigator entropy** — hardwareConcurrency, deviceMemory, connection type
-- [ ] Composite fingerprint score: weighted hash of all signals
-- [ ] Fingerprint stability tracking across sessions (drift detection)
-
-### Server-Side Risk Scoring
-- [ ] **Automation detection** — headless browser signals (missing plugins, navigator.webdriver, broken APIs)
-- [ ] **Clock skew detection** — compare client-reported timezone offset vs GeoIP expected offset
-- [ ] **VPN/proxy detection** — IP reputation DB (IPInfo or custom curated list, daily refresh)
-- [ ] **Rate limiting per device** — Redis sliding window: requests/min, pageviews/hour, sessions/day
-- [ ] **Behavioral entropy** — mouse movement, scroll cadence, click timing variance vs bots
-- [ ] Risk score composition: 0–100 from weighted signal contributions (documented in LOGIC.md)
-- [ ] Risk score thresholds: auto-flag (>60), auto-challenge (>80), auto-block (>95)
-
-### HMAC-SHA256 Signed Device Cookies
-- [ ] On first pageview: server issues a signed device token (`skynet_did` cookie)
-  - Payload: `{ device_id, fingerprint_hash, issued_at, site_id }`
-  - Signature: `HMAC-SHA256(payload, APP_SECRET_KEY)`
-- [ ] On every subsequent pageview: server verifies signature before trusting device_id
-- [ ] Tamper detection: mismatched fingerprint vs cookie → increment risk score + log incident
-- [ ] Cookie rotation: re-issue token every 30 days or on fingerprint drift
-- [ ] Fallback: if cookie absent/invalid, treat as new device (no silent trust)
-
-### Identity Engine — Smart Device Linking
-- [ ] **User parent graph**: one User → many Devices → many Sessions
-- [ ] **Auto-linking heuristics**: same IP + same fingerprint within 1h window → suggest link
-- [ ] **Cross-device detection**: same user_id seen on multiple fingerprints → merge into user profile
-- [ ] **Session continuity**: cookie-based session chaining across browser restarts
-- [ ] Dashboard: User detail page shows full device tree + session timeline
-- [ ] API: `GET /api/v1/users/{id}/devices` — all linked devices with risk scores
-- [ ] API: `POST /api/v1/devices/{id}/link` — manual admin link
-- [ ] API: `POST /api/v1/devices/{id}/unlink` — remove association
-
-### Geo-Based Access Control
-- [ ] **Country allowlist/blocklist** — already in blocking engine; promote to first-class ACL
-- [ ] **Region/state-level rules** — block by MaxMind subdivision (e.g. block specific US states)
-- [ ] **City-level rules** — granular block by city name or coordinates + radius
-- [ ] **ASN rules** — block by Autonomous System Number (e.g. block all AWS/GCP/Azure ASNs)
-- [ ] **ISP rules** — block by ISP name string match (e.g. block "Tor Project", "NordVPN")
-- [ ] Geo ACL rule priority order: IP > ASN > ISP > City > Region > Country
-- [ ] Dashboard: visual world map with block/allow overlays
-- [ ] Real-time geo rule evaluation on every pageview (cached in Redis, 5-min TTL)
+- [x] Reverse proxy mode: route requests through SKYNET before origin
+- [x] Decision engine: ALLOW / CHALLENGE / BLOCK per request (sub-10ms via Redis)
+- [x] Challenge types: CAPTCHA redirect, JS proof-of-work, honeypot
+- [x] Bot detection pipeline: headless signals, crawler signatures, click farm
+- [x] Form spam: honeypot fields, submission velocity, content deduplication
+- [x] DNSBL integration (submitter IP vs public abuse databases)
+- [x] Gateway dashboard: traffic overview, bot %, latency, challenge analytics
 
 ---
 
@@ -185,14 +133,14 @@ Support multiple organizations on one SkyNet instance.
 
 - [ ] Tenant isolation (organizations, members, roles)
 - [ ] Per-tenant site management
-- [ ] Per-tenant billing hooks (usage metering)
-- [ ] Admin super-panel (manage all tenants)
+- [ ] Per-tenant billing hooks
+- [ ] Admin super-panel
 - [ ] API v2 with tenant context
 
 ---
 
-## Out of Scope (intentionally)
+## Out of Scope
 
 - Built-in email provider (use webhooks → your own email service)
 - Mobile native app (PWA via the dashboard is sufficient)
-- Paid cloud hosting (this is a self-hosted-first project)
+- Paid cloud hosting (self-hosted-first project)

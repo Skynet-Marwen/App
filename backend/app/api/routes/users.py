@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
 from ...core.database import get_db
@@ -6,10 +6,16 @@ from ...core.security import get_current_user, hash_password
 from ...models.user import User
 from ...schemas.user import CreateUserRequest, UpdateUserRequest
 from ...services.audit import log_action, request_ip
+from ...services.theme_service import assign_default_theme_to_user
 from ...services.sessions import list_sessions, revoke_all_sessions, revoke_session
+from ...services.runtime_config import runtime_settings
+import secrets
+import string
 import uuid
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+_settings = runtime_settings()
 
 
 @router.get("")
@@ -39,7 +45,6 @@ async def list_users(
                 "username": u.username,
                 "role": u.role,
                 "status": u.status,
-                "keycloak_id": u.keycloak_id,
                 "last_login": u.last_login.strftime("%Y-%m-%d %H:%M") if u.last_login else None,
                 "created_at": u.created_at.strftime("%Y-%m-%d %H:%M"),
                 "devices_count": 0,
@@ -53,6 +58,7 @@ async def list_users(
 async def create_user(
     body: CreateUserRequest,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
@@ -67,16 +73,27 @@ async def create_user(
         role=body.role,
     )
     db.add(user)
+    await assign_default_theme_to_user(db, user)
     log_action(
-        db,
-        action="CREATE_USER",
-        actor_id=current.id,
-        target_type="user",
-        target_id=user.id,
-        ip=request_ip(request),
-        extra={"role": user.role},
+        db, action="CREATE_USER", actor_id=current.id,
+        target_type="user", target_id=user.id,
+        ip=request_ip(request), extra={"role": user.role},
     )
     await db.commit()
+
+    from ...services.email import send_welcome_email
+    if _settings.get("smtp_enabled") and user.email:
+        background_tasks.add_task(
+            send_welcome_email,
+            to=user.email,
+            username=user.username,
+            password=body.password,
+            role=user.role,
+            actor=current.username,
+            login_url=(_settings.get("base_url") or "").rstrip("/") + "/login",
+            instance_name=_settings.get("instance_name", "SkyNet"),
+        )
+
     return {"id": user.id, "message": "Created"}
 
 
@@ -100,6 +117,18 @@ async def update_user(
     if not u:
         raise HTTPException(404, "Not found")
     changes = {}
+    if body.email and body.email != u.email:
+        conflict = await db.scalar(select(User).where(User.email == body.email, User.id != user_id))
+        if conflict:
+            raise HTTPException(409, "Email already in use")
+        u.email = body.email
+        changes["email"] = body.email
+    if body.username and body.username != u.username:
+        conflict = await db.scalar(select(User).where(User.username == body.username, User.id != user_id))
+        if conflict:
+            raise HTTPException(409, "Username already in use")
+        u.username = body.username
+        changes["username"] = body.username
     if body.role:
         u.role = body.role
         changes["role"] = body.role
@@ -167,12 +196,37 @@ async def unblock_user(
 
 
 @router.post("/{user_id}/reset-password")
-async def reset_password(user_id: str, db: AsyncSession = Depends(get_db), _: User = Depends(get_current_user)):
+async def reset_password(
+    user_id: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
     u = await db.get(User, user_id)
     if not u:
         raise HTTPException(404, "Not found")
-    # TODO: send reset email or return temp password
-    return {"message": "Password reset email sent"}
+    alphabet = string.ascii_letters + string.digits
+    temp_pw = "".join(secrets.choice(alphabet) for _ in range(14))
+    u.hashed_password = hash_password(temp_pw)
+    log_action(
+        db, action="RESET_PASSWORD", actor_id=current.id,
+        target_type="user", target_id=u.id, ip=request_ip(request),
+    )
+    await db.commit()
+
+    from ...services.email import send_reset_email
+    if _settings.get("smtp_enabled") and u.email:
+        background_tasks.add_task(
+            send_reset_email,
+            to=u.email,
+            username=u.username,
+            temp_password=temp_pw,
+            login_url=(_settings.get("base_url") or "").rstrip("/") + "/login",
+            instance_name=_settings.get("instance_name", "SkyNet"),
+        )
+        return {"message": "Reset email sent"}
+    return {"message": "Password reset", "temp_password": temp_pw}
 
 
 @router.get("/{user_id}/sessions")

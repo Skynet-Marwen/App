@@ -1,16 +1,49 @@
-# React + Vite
+# SkyNet Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React 19 + Vite dashboard for the SkyNet operator console.
 
-Currently, two official plugins are available:
+## What Lives Here
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Route shell and navigation: `src/App.jsx`, `src/components/layout/`
+- Dashboard pages: `src/pages/`
+- Reusable UI primitives: `src/components/ui/`
+- Overview-specific cards: `src/components/overview/`
+- Data fetching hooks: `src/hooks/`
+- API client: `src/services/api.js`
+- Shared JSDoc shapes: `src/types/index.js`
 
-## React Compiler
+## Current Route Map
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- `/` — Overview
+- `/visitors` — visitor intelligence
+- `/users` — Portal Users intelligence workspace with risk, activity, devices, and anomaly details
+- `/devices` — exact and grouped device fingerprints
+- `/blocking` — rules + blocked IPs
+- `/anti-evasion` — anti-evasion settings and incidents
+- `/audit` — operator audit trail
+- `/integration` — site registration and tracker instructions
+- `/settings` — 9-domain settings workspace covering security, access, auth, theme engine, storage, integrations, notifications, blocking, and system/debug
 
-## Expanding the ESLint configuration
+## Local Development
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```bash
+npm install
+npm run dev
+```
+
+By default the frontend expects the backend API under `/api/v1`. In Docker dev mode, `docker-compose.dev.yml` injects `VITE_PROXY_TARGET=http://backend:8000`.
+
+## Build and Lint
+
+```bash
+npm run build
+npm run lint
+```
+
+## Notes
+
+- The app uses a single Axios client in `src/services/api.js` and attaches `skynet_token` from `localStorage`.
+- Theme logos are served by the backend via `/api/v1/themes/:id/logo`; frontend pages consume the resolved URL from the theme payload instead of relying on local static assets.
+- The dashboard shell is now fixed for desktop: header, sidebar, and footer stay in place while `main` is the scroll region.
+- Integration snippets now include the browser-side device UUID handoff helper used by `/identity/link` and `/track/activity`.
+- The current shipped backend version is `1.2.0`; the active unreleased branch also includes tracker/backend device-identity hardening (`_skynet_did`, fingerprint confidence, stability scoring).

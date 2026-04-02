@@ -1,109 +1,10 @@
-import { useState } from 'react'
-import { Plug, Plus, Trash2, RefreshCw, Copy, Code, CheckCircle, Globe } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Plug, Plus, Trash2, RefreshCw, Copy, Code, CheckCircle, Globe, Layers3 } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
-import { Card, Button, Input, Modal, Alert, Badge } from '../components/ui/index'
+import { Alert, Badge, Button, Card, Input, Modal, PageToolbar, SegmentedTabs, StatCard } from '../components/ui/index'
 import { useSites } from '../hooks/useSites'
-
-// ── Integration snippet generators ───────────────────────────────────────────
-const TABS = [
-  { id: 'html',      label: 'HTML Script' },
-  { id: 'gtm',       label: 'Google Tag Manager' },
-  { id: 'wordpress', label: 'WordPress' },
-  { id: 'python',    label: 'Python / Server' },
-  { id: 'rest',      label: 'REST API (curl)' },
-]
-
-const TAB_HINTS = {
-  html:      <>Paste before the <code className="text-cyan-400">&lt;/body&gt;</code> tag on every page you want to track.</>,
-  gtm:       <>In GTM: <strong>New Tag → Custom HTML</strong>, paste this, trigger on <strong>All Pages</strong>.</>,
-  wordpress: <>Add to <code className="text-cyan-400">functions.php</code> in your active theme, or use a code snippet plugin.</>,
-  python:    <>Server-side tracking from any Python backend. Requires <code className="text-cyan-400">pip install httpx</code>.</>,
-  rest:      <>Works from any language or platform. Send the <code className="text-cyan-400">X-SkyNet-Key</code> header with every request.</>,
-}
-
-function buildSnippets(apiKey, origin) {
-  return {
-    html: `<!-- SkyNet Tracker -->
-<script>window._skynet = { key: '${apiKey}' };</script>
-<script async src="${origin}/tracker/skynet.js"></script>
-
-<!-- Optional: identify users after login -->
-<!-- <script>SkyNet.identify('your-internal-user-id')</script> -->`,
-
-    gtm: `<!-- Custom HTML Tag — Google Tag Manager -->
-<script>
-  window._skynet = window._skynet || {};
-  window._skynet.key = '${apiKey}';
-  (function() {
-    var s = document.createElement('script');
-    s.async = true;
-    s.src = '${origin}/tracker/skynet.js';
-    document.head.appendChild(s);
-  })();
-</script>`,
-
-    wordpress: `<?php
-// functions.php — enqueue SkyNet tracker on all frontend pages
-function skynet_tracker_enqueue() {
-    ?>
-    <script>window._skynet = { key: '<?php echo esc_js('${apiKey}'); ?>' };</script>
-    <?php
-    wp_enqueue_script(
-        'skynet-tracker',
-        '${origin}/tracker/skynet.js',
-        [], null, true   // load in footer
-    );
-}
-add_action('wp_enqueue_scripts', 'skynet_tracker_enqueue');`,
-
-    python: `import httpx  # pip install httpx
-
-SKYNET_KEY = "${apiKey}"
-SKYNET_BASE = "${origin}/api/v1/track"
-HEADERS = {"X-SkyNet-Key": SKYNET_KEY, "Content-Type": "application/json"}
-
-# Track a server-side pageview
-httpx.post(f"{SKYNET_BASE}/pageview", headers=HEADERS, json={
-    "page_url": "https://yoursite.com/dashboard",
-    "referrer": "",
-})
-
-# Track a custom event
-httpx.post(f"{SKYNET_BASE}/event", headers=HEADERS, json={
-    "event_type": "purchase",
-    "page_url": "https://yoursite.com/checkout",
-    "properties": {"plan": "pro", "amount": 49.99},
-})
-
-# Identify a user (link session to your user ID)
-httpx.post(f"{SKYNET_BASE}/identify", headers=HEADERS, json={
-    "user_id": "usr_123",
-    "fingerprint": "<device_fingerprint>",
-})`,
-
-    rest: `# Track a pageview
-curl -X POST ${origin}/api/v1/track/pageview \\
-  -H "X-SkyNet-Key: ${apiKey}" \\
-  -H "Content-Type: application/json" \\
-  -d '{"page_url":"https://yoursite.com/page","referrer":""}'
-
-# Track a custom event
-curl -X POST ${origin}/api/v1/track/event \\
-  -H "X-SkyNet-Key: ${apiKey}" \\
-  -H "Content-Type: application/json" \\
-  -d '{"event_type":"signup","page_url":"https://yoursite.com","properties":{"plan":"free"}}'
-
-# Identify a user after login
-curl -X POST ${origin}/api/v1/track/identify \\
-  -H "X-SkyNet-Key: ${apiKey}" \\
-  -H "Content-Type: application/json" \\
-  -d '{"user_id":"usr_123","fingerprint":"<fp>"}'
-
-# Check if an IP is blocked (server-side gate)
-curl "${origin}/api/v1/track/check/ip?ip=1.2.3.4" \\
-  -H "X-SkyNet-Key: ${apiKey}"`,
-  }
-}
+import { settingsApi } from '../services/api'
+import { TAB_HINTS, TABS, buildSnippets } from './integration/snippets'
 
 // ── Page component ────────────────────────────────────────────────────────────
 export default function IntegrationPage() {
@@ -111,10 +12,31 @@ export default function IntegrationPage() {
   const [createModal, setCreateModal] = useState(false)
   const [integModal, setIntegModal] = useState(null)   // site object
   const [activeTab, setActiveTab] = useState('html')
+  const [publicOrigin, setPublicOrigin] = useState(window.location.origin)
   const [form, setForm] = useState({ name: '', url: '', description: '' })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState('')
+
+  const totals = sites.reduce((acc, site) => {
+    acc.visitors += site.stats?.visitors ?? 0
+    acc.events += site.stats?.events ?? 0
+    acc.blocked += site.stats?.blocked ?? 0
+    acc.active += site.active ? 1 : 0
+    return acc
+  }, { visitors: 0, events: 0, blocked: 0, active: 0 })
+
+  useEffect(() => {
+    let mounted = true
+    settingsApi.get()
+      .then((res) => {
+        const baseUrl = (res.data?.base_url || '').trim()
+        if (!mounted || !baseUrl) return
+        setPublicOrigin(baseUrl.replace(/\/+$/, ''))
+      })
+      .catch(() => {})
+    return () => { mounted = false }
+  }, [])
 
   const handleCreate = async () => {
     setError(''); setSubmitting(true)
@@ -130,22 +52,46 @@ export default function IntegrationPage() {
     setTimeout(() => setCopied(''), 2000)
   }
 
-  const snips = integModal ? buildSnippets(integModal.api_key, window.location.origin) : null
+  const snips = integModal ? buildSnippets(integModal.api_key, publicOrigin, integModal.id) : null
 
   return (
     <DashboardLayout title="Integration" onRefresh={refresh}>
+      <PageToolbar>
+        <div className="space-y-2">
+          <p className="text-[10px] font-mono uppercase tracking-[0.28em] text-cyan-400/80">Integration Hub</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white">Integration</h1>
+            <Badge variant="default">{sites.length} registered site{sites.length === 1 ? '' : 's'}</Badge>
+          </div>
+          <p className="max-w-3xl text-sm text-gray-400">
+            Register apps, copy the tracker snippet, and hand authenticated users into SKYNET without changing your API contracts.
+          </p>
+        </div>
+        <Button icon={Plus} onClick={() => setCreateModal(true)}>Add site</Button>
+      </PageToolbar>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Registered sites" value={sites.length.toLocaleString()} rawValue={sites.length} icon={Plug} color="cyan" loading={loading} />
+        <StatCard label="Active sites" value={totals.active.toLocaleString()} rawValue={totals.active} icon={CheckCircle} color="green" loading={loading} />
+        <StatCard label="Visitors tracked" value={totals.visitors.toLocaleString()} rawValue={totals.visitors} icon={Globe} color="blue" loading={loading} />
+        <StatCard label="Events recorded" value={totals.events.toLocaleString()} rawValue={totals.events} icon={Layers3} color="yellow" loading={loading} />
+      </div>
+
       <Alert type="info">
-        <p className="font-medium">Embed SkyNet in any website or app</p>
-        <p className="mt-0.5 text-xs opacity-80">Add a site, grab the integration snippet, or send events directly from your backend.</p>
+        <div className="space-y-1">
+          <p className="font-medium">Embed SkyNet in any website or app</p>
+          <p className="text-xs opacity-80">
+            Current public base URL: <code className="text-cyan-300">{publicOrigin}</code>. Use the built-in device UUID helper before calling `/identity/link`.
+          </p>
+        </div>
       </Alert>
 
       {/* Sites list */}
-      <div className="mt-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-medium text-white">Registered Sites / Apps ({sites.length})</h2>
-          <Button icon={Plus} onClick={() => setCreateModal(true)}>Add Site</Button>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-medium text-white">Registered sites and apps</h2>
+          <Button variant="secondary" size="sm" onClick={refresh}>Refresh list</Button>
         </div>
-
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {[...Array(3)].map((_, i) => <div key={i} className="h-40 bg-gray-900 border border-gray-800 rounded-xl animate-pulse" />)}
@@ -178,7 +124,7 @@ export default function IntegrationPage() {
 
                 <div className="grid grid-cols-3 gap-2 mb-3">
                   {[['Visitors', site.stats?.visitors ?? 0], ['Events', site.stats?.events ?? 0], ['Blocked', site.stats?.blocked ?? 0]].map(([label, val]) => (
-                    <div key={label} className="bg-gray-800 rounded-lg p-2 text-center">
+                    <div key={label} className="rounded-lg border border-cyan-500/10 bg-black/35 p-2 text-center">
                       <p className="text-xs text-gray-500">{label}</p>
                       <p className="text-sm font-medium text-white">{val.toLocaleString()}</p>
                     </div>
@@ -229,15 +175,7 @@ export default function IntegrationPage() {
       <Modal open={!!integModal} onClose={() => setIntegModal(null)} title={`Integrate — ${integModal?.name}`} width="max-w-2xl">
         {snips && (
           <div className="space-y-4">
-            {/* Tab bar */}
-            <div className="flex gap-1 bg-gray-900 rounded-lg p-1 flex-wrap">
-              {TABS.map(t => (
-                <button key={t.id} onClick={() => setActiveTab(t.id)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${activeTab === t.id ? 'bg-cyan-500 text-gray-900' : 'text-gray-400 hover:text-white'}`}>
-                  {t.label}
-                </button>
-              ))}
-            </div>
+            <SegmentedTabs items={TABS.map((tab) => ({ value: tab.id, label: tab.label }))} value={activeTab} onChange={setActiveTab} />
 
             {/* Hint */}
             <Alert type="info"><span className="text-xs">{TAB_HINTS[activeTab]}</span></Alert>

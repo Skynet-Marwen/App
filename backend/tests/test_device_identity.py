@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from app.services.device_identity import (
@@ -31,6 +31,17 @@ def make_device(**overrides):
         "linked_user": None,
         "first_seen": datetime(2026, 3, 30, 0, 0, tzinfo=timezone.utc),
         "last_seen": datetime(2026, 3, 30, 1, 0, tzinfo=timezone.utc),
+    }
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
+def make_visitor(**overrides):
+    base = {
+        "device_id": "device-1",
+        "ip": "10.0.0.1",
+        "last_seen": datetime(2026, 3, 30, 1, 0, tzinfo=timezone.utc),
+        "os": "Android 15",
     }
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -107,8 +118,218 @@ class DeviceIdentityTests(unittest.TestCase):
         exact_group = next(group for group in groups if group["match_strength"] == "exact")
         self.assertEqual(strict_group["fingerprint_count"], 2)
         self.assertEqual(strict_group["status"], "mixed")
+        self.assertEqual(strict_group["match_label"], "Same Device (Cross-Browser)")
+        self.assertEqual(strict_group["match_evidence"], ["matched screen + timezone + language"])
         self.assertEqual(exact_group["fingerprint_count"], 1)
         self.assertEqual(exact_group["match_key"], None)
+        self.assertEqual(exact_group["match_label"], "Exact Only")
+
+    def test_group_devices_adds_probable_mobile_group_for_same_phone_signals(self):
+        now = datetime(2026, 3, 30, 12, 0, tzinfo=timezone.utc)
+        firefox = make_device(
+            id="device-1",
+            fingerprint="fp-android-firefox",
+            type="mobile",
+            browser="Firefox Mobile 149.0",
+            os="Android 15",
+            screen_resolution="456x1013",
+            language="fr-FR",
+            timezone="Africa/Tunis",
+            webgl_hash=None,
+            match_key=None,
+        )
+        chrome = make_device(
+            id="device-2",
+            fingerprint="fp-android-chrome",
+            type="mobile",
+            browser="Chrome Mobile 146.0.0",
+            os="Android 10",
+            screen_resolution="412x915",
+            language="fr",
+            timezone="Africa/Tunis",
+            webgl_hash=None,
+            match_key=None,
+            last_seen=now - timedelta(hours=1),
+        )
+        visitors = {
+            "device-1": [make_visitor(device_id="device-1", ip="10.0.0.30", last_seen=now - timedelta(days=1), os="Android 15")],
+            "device-2": [make_visitor(device_id="device-2", ip="10.0.0.30", last_seen=now - timedelta(days=2), os="Android 10")],
+        }
+
+        groups = group_devices([(firefox, 2), (chrome, 3)], visitors, now=now)
+
+        self.assertEqual(len(groups), 1)
+        probable_group = groups[0]
+        self.assertEqual(probable_group["match_strength"], "probable_mobile")
+        self.assertEqual(probable_group["match_label"], "Same Phone (Probable)")
+        self.assertEqual(probable_group["fingerprint_count"], 2)
+        self.assertEqual(probable_group["visitor_count"], 5)
+        self.assertIn("shared recent IP", probable_group["match_evidence"])
+        self.assertIn("same timezone", probable_group["match_evidence"])
+        self.assertIn("same language", probable_group["match_evidence"])
+        self.assertIn("same mobile form factor", probable_group["match_evidence"])
+        self.assertIn("similar screen aspect", probable_group["match_evidence"])
+
+    def test_probable_mobile_requires_shared_recent_ip(self):
+        now = datetime(2026, 3, 30, 12, 0, tzinfo=timezone.utc)
+        left = make_device(
+            id="device-1",
+            fingerprint="fp-1",
+            type="mobile",
+            os="Android 15",
+            screen_resolution="456x1013",
+            language="fr-FR",
+            timezone="Africa/Tunis",
+            webgl_hash=None,
+            match_key=None,
+        )
+        right = make_device(
+            id="device-2",
+            fingerprint="fp-2",
+            type="mobile",
+            os="Android 14",
+            screen_resolution="412x915",
+            language="fr",
+            timezone="Africa/Tunis",
+            webgl_hash=None,
+            match_key=None,
+        )
+        visitors = {
+            "device-1": [make_visitor(device_id="device-1", ip="10.0.0.30", last_seen=now - timedelta(days=31))],
+            "device-2": [make_visitor(device_id="device-2", ip="10.0.0.30", last_seen=now - timedelta(days=1))],
+        }
+
+        groups = group_devices([(left, 1), (right, 1)], visitors, now=now)
+
+        self.assertEqual(len(groups), 2)
+        self.assertTrue(all(group["match_strength"] == "exact" for group in groups))
+
+    def test_probable_mobile_same_ip_but_low_score_stays_exact(self):
+        now = datetime(2026, 3, 30, 12, 0, tzinfo=timezone.utc)
+        left = make_device(
+            id="device-1",
+            fingerprint="fp-1",
+            type="mobile",
+            os="Android 15",
+            screen_resolution="360x800",
+            language="en-US",
+            timezone="Africa/Tunis",
+            webgl_hash=None,
+            match_key=None,
+        )
+        right = make_device(
+            id="device-2",
+            fingerprint="fp-2",
+            type="mobile",
+            os="Android 14",
+            screen_resolution="800x800",
+            language="fr-FR",
+            timezone="Europe/Paris",
+            webgl_hash=None,
+            match_key=None,
+        )
+        visitors = {
+            "device-1": [make_visitor(device_id="device-1", ip="10.0.0.30", last_seen=now - timedelta(days=1))],
+            "device-2": [make_visitor(device_id="device-2", ip="10.0.0.30", last_seen=now - timedelta(days=1))],
+        }
+
+        groups = group_devices([(left, 1), (right, 1)], visitors, now=now)
+
+        self.assertEqual(len(groups), 2)
+        self.assertTrue(all(group["match_strength"] == "exact" for group in groups))
+
+    def test_probable_mobile_never_groups_across_os_families(self):
+        now = datetime(2026, 3, 30, 12, 0, tzinfo=timezone.utc)
+        android = make_device(
+            id="device-1",
+            fingerprint="fp-1",
+            type="mobile",
+            os="Android 15",
+            screen_resolution="456x1013",
+            language="fr-FR",
+            timezone="Africa/Tunis",
+            webgl_hash=None,
+            match_key=None,
+        )
+        ios = make_device(
+            id="device-2",
+            fingerprint="fp-2",
+            type="mobile",
+            os="iOS 18.1",
+            screen_resolution="430x932",
+            language="fr-FR",
+            timezone="Africa/Tunis",
+            webgl_hash=None,
+            match_key=None,
+        )
+        visitors = {
+            "device-1": [make_visitor(device_id="device-1", ip="10.0.0.30", last_seen=now - timedelta(days=1), os="Android 15")],
+            "device-2": [make_visitor(device_id="device-2", ip="10.0.0.30", last_seen=now - timedelta(days=1), os="iOS 18.1")],
+        }
+
+        groups = group_devices([(android, 1), (ios, 1)], visitors, now=now)
+
+        self.assertEqual(len(groups), 2)
+        self.assertTrue(all(group["match_strength"] == "exact" for group in groups))
+
+    def test_probable_mobile_avoids_weak_transitive_chain_merges(self):
+        now = datetime(2026, 3, 30, 12, 0, tzinfo=timezone.utc)
+        device_a = make_device(
+            id="device-a",
+            fingerprint="fp-a",
+            type="mobile",
+            os="Android 15",
+            screen_resolution="456x1013",
+            language="en-US",
+            timezone="Africa/Tunis",
+            webgl_hash=None,
+            match_key=None,
+        )
+        device_b = make_device(
+            id="device-b",
+            fingerprint="fp-b",
+            type="mobile",
+            os="Android 15",
+            screen_resolution="412x915",
+            language="en-US",
+            timezone="Africa/Tunis",
+            webgl_hash=None,
+            match_key=None,
+            last_seen=now - timedelta(minutes=30),
+        )
+        device_c = make_device(
+            id="device-c",
+            fingerprint="fp-c",
+            type="mobile",
+            os="Android 15",
+            screen_resolution="360x800",
+            language="fr-FR",
+            timezone="Africa/Tunis",
+            webgl_hash=None,
+            match_key=None,
+            last_seen=now - timedelta(minutes=10),
+        )
+        visitors = {
+            "device-a": [make_visitor(device_id="device-a", ip="10.0.0.30", last_seen=now - timedelta(days=1))],
+            "device-b": [
+                make_visitor(device_id="device-b", ip="10.0.0.30", last_seen=now - timedelta(days=1)),
+                make_visitor(device_id="device-b", ip="10.0.0.31", last_seen=now - timedelta(days=2)),
+            ],
+            "device-c": [
+                make_visitor(device_id="device-c", ip="10.0.0.30", last_seen=now - timedelta(days=1)),
+                make_visitor(device_id="device-c", ip="10.0.0.31", last_seen=now - timedelta(days=2)),
+            ],
+        }
+
+        groups = group_devices([(device_a, 1), (device_b, 1), (device_c, 1)], visitors, now=now)
+
+        probable_groups = [group for group in groups if group["match_strength"] == "probable_mobile"]
+        exact_groups = [group for group in groups if group["match_strength"] == "exact"]
+        self.assertEqual(len(probable_groups), 1)
+        self.assertEqual(probable_groups[0]["fingerprint_count"], 2)
+        self.assertEqual({device["id"] for device in probable_groups[0]["devices"]}, {"device-a", "device-b"})
+        self.assertEqual(len(exact_groups), 1)
+        self.assertEqual(exact_groups[0]["devices"][0]["id"], "device-c")
 
 
 if __name__ == "__main__":

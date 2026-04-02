@@ -76,7 +76,9 @@
  * @typedef {Object} DeviceGroup
  * @property {string} group_id
  * @property {string|null} match_key
- * @property {'strict'|'exact'} match_strength
+ * @property {'strict'|'probable_mobile'|'exact'} match_strength
+ * @property {string} match_label
+ * @property {Array<string>} match_evidence
  * @property {number} fingerprint_count
  * @property {number} visitor_count
  * @property {'active'|'blocked'|'mixed'} status
@@ -168,6 +170,10 @@
  * @property {Array<{country: string, flag: string, count: number, percent: number}>} top_countries
  * @property {Array<{reason: string, count: number}>} blocking_chart
  * @property {Array<{id: string, title: string, severity: string, time: string}>} recent_incidents
+ * @property {Array<{country: string, flag: string, count: number, percent: number, delta: number, top_reason: string, threat_score: number}>} [threat_hotspots]
+ * @property {{totals: {blocked: number, challenged: number, rate_limited: number, observed: number}, summaries: Array<{label: string, value: string}>}|null} [enforcement_pressure]
+ * @property {Array<{id: string, title: string, severity: string, status: string, target_type: string, target_label: string, time: string, repeat_count: number, state_tags: Array<string>}>} [priority_investigations]
+ * @property {Array<{external_user_id: string, email: string|null, display_name: string|null, current_risk_score: number, trust_level: string, total_devices: number, total_sessions: number, open_flags_count: number, top_flag: string|null, last_seen: string|null, last_country: string|null, enhanced_audit: boolean}>} [risk_leaderboard]
  */
 
 /**
@@ -175,6 +181,59 @@
  * @property {number} active_visitors
  * @property {number} blocked_attempts_last_minute
  * @property {number} suspicious_sessions
+ */
+
+/**
+ * @typedef {Object} PortalUserProfile
+ * @property {string} external_user_id
+ * @property {string|null} email
+ * @property {string|null} display_name
+ * @property {number} current_risk_score
+ * @property {string} trust_level
+ * @property {number} total_devices
+ * @property {number} total_sessions
+ * @property {string|null} first_seen
+ * @property {string|null} last_seen
+ * @property {string|null} last_ip
+ * @property {string|null} last_country
+ * @property {boolean} enhanced_audit
+ * @property {number} [open_flags_count]
+ */
+
+/**
+ * @typedef {Object} PortalUserDevice
+ * @property {string} id
+ * @property {string|null} fingerprint_id
+ * @property {string} platform
+ * @property {string|null} ip
+ * @property {string|null} linked_at
+ * @property {string|null} last_seen_at
+ */
+
+/**
+ * @typedef {Object} PortalUserActivity
+ * @property {string} id
+ * @property {string} event_type
+ * @property {string|null} platform
+ * @property {string|null} site_id
+ * @property {string|null} fingerprint_id
+ * @property {string|null} ip
+ * @property {string|null} country
+ * @property {string|null} page_url
+ * @property {string|null} session_id
+ * @property {string|null} created_at
+ */
+
+/**
+ * @typedef {Object} PortalUserFlag
+ * @property {string} id
+ * @property {string} flag_type
+ * @property {string} severity
+ * @property {string} status
+ * @property {string|null} related_device_id
+ * @property {string|null} evidence
+ * @property {string|null} detected_at
+ * @property {string|null} resolved_at
  */
 
 /**

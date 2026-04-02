@@ -1,0 +1,134 @@
+{
+  "defaults": {
+    "source_path": ".",
+    "keep_releases": 5,
+    "rollback_on_health_failure": true,
+    "shared_paths": [
+      "backend/.env",
+      "backend/data"
+    ],
+    "sync_excludes": [
+      "frontend/dist/",
+      "backend/.mypy_cache/",
+      "backend/.ruff_cache/"
+    ]
+  },
+  "targets": {
+    "local": {
+      "deploy_path": ".skynet-deploy/local",
+      "connection": {
+        "type": "local"
+      },
+      "runtime": {
+        "type": "docker",
+        "compose_files": [
+          "docker-compose.yml"
+        ],
+        "project_name": "skynet-local",
+        "build": true,
+        "migrate_service": "backend",
+        "migrate_command": [
+          "alembic",
+          "upgrade",
+          "head"
+        ]
+      },
+      "restart_strategy": "compose_up",
+      "health_check": {
+        "url": "http://127.0.0.1:8000/api/health",
+        "execute_on": "local",
+        "expected_status": "ok",
+        "timeout_sec": 10,
+        "retries": 10,
+        "delay_sec": 3
+      }
+    },
+    "synology": {
+      "deploy_path": "/volume1/docker/skynet",
+      "sync": {
+        "type": "smb",
+        "uri": "smb://${SKYNET_SYNOLOGY_HOST}/docker",
+        "username": "${SKYNET_SYNOLOGY_USER}",
+        "remote_root": "/volume1/docker"
+      },
+      "environment": {
+        "PATH": "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+      },
+      "connection": {
+        "type": "ssh",
+        "host": "${SKYNET_SYNOLOGY_HOST}",
+        "user": "${SKYNET_SYNOLOGY_USER}",
+        "port": 22,
+        "identity_file": "${SKYNET_DEPLOY_KEY}"
+      },
+      "runtime": {
+        "type": "docker",
+        "docker_command": [
+          "sudo",
+          "-n",
+          "/usr/local/bin/docker"
+        ],
+        "compose_files": [
+          "docker-compose.yml"
+        ],
+        "project_name": "skynet-prod",
+        "build": false,
+        "pull": true,
+        "prebuilt_images": {
+          "namespace": "skynet",
+          "services": {
+            "backend": {
+              "repository": "backend",
+              "context": "backend",
+              "dockerfile": "Dockerfile"
+            },
+            "frontend": {
+              "repository": "frontend",
+              "context": "frontend",
+              "dockerfile": "Dockerfile"
+            }
+          }
+        },
+        "migrate_service": "backend",
+        "migrate_command": [
+          "alembic",
+          "upgrade",
+          "head"
+        ]
+      },
+      "restart_strategy": "compose_up",
+      "health_check": {
+        "url": "http://127.0.0.1:8000/api/health",
+        "execute_on": "target",
+        "expected_status": "ok",
+        "timeout_sec": 10,
+        "retries": 12,
+        "delay_sec": 5
+      }
+    },
+    "vps": {
+      "deploy_path": "/srv/skynet",
+      "connection": {
+        "type": "ssh",
+        "host": "${SKYNET_VPS_HOST}",
+        "user": "${SKYNET_VPS_USER}",
+        "port": 22,
+        "identity_file": "${SKYNET_DEPLOY_KEY}"
+      },
+      "runtime": {
+        "type": "python",
+        "service_unit": "skynet.service",
+        "workdir": "backend"
+      },
+      "restart_strategy": "systemd",
+      "health_check": {
+        "url": "http://127.0.0.1:8000/api/health",
+        "execute_on": "target",
+        "expected_status": "ok",
+        "timeout_sec": 10,
+        "retries": 12,
+        "delay_sec": 5
+      }
+    }
+  }
+}

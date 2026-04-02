@@ -5,9 +5,9 @@ from ...core.database import get_db
 from ...core.security import get_current_user
 from ...models.user import User
 from ...models.site import Site
-from ...core.config import settings
 from ...schemas.site import CreateSiteRequest
 from ...services.audit import log_action, request_ip
+from ...core.deployment import public_base_url
 import uuid, secrets
 
 router = APIRouter(prefix="/integration", tags=["integration"])
@@ -68,7 +68,8 @@ async def tracker_script(site_id: str = Query(...), db: AsyncSession = Depends(g
     s = await db.get(Site, site_id)
     if not s:
         raise HTTPException(404, "Site not found")
-    script = f"""<!-- SkyNet Tracker -->
+    origin = public_base_url()
+    script = f"""<!-- SkyNet Tracker (SkyNet.getDeviceId() available after load) -->
 <script>
   (function(s,k,y,n,e,t){{
     s._skynet=s._skynet||{{}};
@@ -78,6 +79,6 @@ async def tracker_script(site_id: str = Query(...), db: AsyncSession = Depends(g
     a.src=n+'/tracker/skynet.js';
     var b=y.getElementsByTagName('script')[0];
     b.parentNode.insertBefore(a,b);
-  }})(window,document,document,'{settings.APP_BASE_URL}');
+  }})(window,document,document,'{origin}');
 </script>"""
     return {"script": script}

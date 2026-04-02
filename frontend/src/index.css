@@ -1,18 +1,64 @@
 @import "tailwindcss";
 
+:root {
+  --theme-bg: #050505;
+  --theme-body-bg: #050505;
+  --theme-body-gradient: linear-gradient(180deg, #050505 0%, #020617 100%);
+  --theme-surface: rgba(0, 0, 0, 0.62);
+  --theme-surface-alt: rgba(0, 0, 0, 0.55);
+  --theme-panel: rgba(4, 4, 4, 0.96);
+  --theme-panel-soft: rgba(2, 2, 2, 0.85);
+  --theme-header-bg: rgba(2, 6, 23, 0.86);
+  --theme-header-border: rgba(6, 182, 212, 0.1);
+  --theme-header-text: #f9fafb;
+  --theme-nav-bg: rgba(3, 3, 3, 0.95);
+  --theme-nav-border: rgba(6, 182, 212, 0.1);
+  --theme-nav-text: #9ca3af;
+  --theme-nav-text-active: #22d3ee;
+  --theme-footer-bg: rgba(2, 6, 23, 0.82);
+  --theme-footer-border: rgba(6, 182, 212, 0.1);
+  --theme-footer-text: #9ca3af;
+  --theme-panel-bg: rgba(0, 0, 0, 0.55);
+  --theme-panel-border: rgba(6, 182, 212, 0.1);
+  --theme-panel-glow: rgba(6, 182, 212, 0.18);
+  --theme-text: #f9fafb;
+  --theme-text-muted: #9ca3af;
+  --theme-text-soft: #6b7280;
+  --theme-border: rgba(6, 182, 212, 0.1);
+  --theme-border-strong: rgba(6, 182, 212, 0.25);
+  --theme-accent: #22d3ee;
+  --theme-accent-soft: rgba(34, 211, 238, 0.15);
+  --theme-accent-glow: rgba(6, 182, 212, 0.45);
+  --theme-success: #4ade80;
+  --theme-warning: #facc15;
+  --theme-danger: #f87171;
+  --theme-font-sans: 'Segoe UI', system-ui, sans-serif;
+  --theme-density-scale: 1;
+}
+
+[data-theme-density="compact"] {
+  --theme-density-scale: 0.92;
+}
+
+[data-theme-density="spacious"] {
+  --theme-density-scale: 1.08;
+}
+
 @layer base {
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    background: #050505;
-    color: #f9fafb;
-    font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+    background-color: var(--theme-body-bg);
+    background-image: var(--theme-body-gradient);
+    color: var(--theme-text);
+    font-family: var(--theme-font-sans);
     -webkit-font-smoothing: antialiased;
+    transition: background-color 160ms ease, color 160ms ease, background-image 160ms ease;
   }
-  #root { width: 100%; min-height: 100vh; }
+  #root { width: 100%; min-height: 100vh; background: transparent; }
   ::-webkit-scrollbar { width: 5px; height: 5px; }
-  ::-webkit-scrollbar-track { background: #050505; }
-  ::-webkit-scrollbar-thumb { background: rgba(6,182,212,0.35); border-radius: 9999px; }
+  ::-webkit-scrollbar-track { background: var(--theme-bg); }
+  ::-webkit-scrollbar-thumb { background: var(--theme-accent-glow); border-radius: 9999px; }
 }
 
 .neon-text-cyan { text-shadow: 0 0 8px rgba(6,182,212,0.8), 0 0 20px rgba(6,182,212,0.3); }

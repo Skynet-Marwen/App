@@ -77,6 +77,98 @@
       Math.abs(str.length).toString(16).padStart(8, '0');
   }
 
+  function simpleHash(input) {
+    var text = String(input || '');
+    var hash = 0;
+    for (var i = 0; i < text.length; i++) {
+      hash = ((hash << 5) - hash) + text.charCodeAt(i);
+      hash = hash & hash;
+    }
+    return Math.abs(hash).toString(16);
+  }
+
+  function readCookie(name) {
+    var needle = name + '=';
+    var parts = document.cookie ? document.cookie.split(';') : [];
+    for (var i = 0; i < parts.length; i++) {
+      var part = parts[i].trim();
+      if (part.indexOf(needle) === 0) return decodeURIComponent(part.slice(needle.length));
+    }
+    return null;
+  }
+
+  function writeCookie(name, value, maxAgeSeconds) {
+    if (!value) return;
+    var secure = window.location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = name + '=' + encodeURIComponent(value) + '; Path=/; Max-Age=' + maxAgeSeconds + '; SameSite=Lax' + secure;
+  }
+
+  function getDeviceCookie() {
+    return readCookie('_skynet_did');
+  }
+
+  var timingState = {
+    lastNow: null,
+    deltas: [],
+    resolutionFloor: null,
+  };
+
+  function sampleTimingProfile() {
+    if (!window.performance || typeof window.performance.now !== 'function' || typeof window.requestAnimationFrame !== 'function') return;
+    window.requestAnimationFrame(function () {
+      var now = window.performance.now();
+      if (timingState.lastNow !== null) {
+        var delta = now - timingState.lastNow;
+        if (delta > 0) {
+          timingState.deltas.push(delta);
+          if (timingState.deltas.length > 18) timingState.deltas.shift();
+          var fractional = Math.abs(delta - Math.round(delta));
+          if (timingState.resolutionFloor === null || fractional < timingState.resolutionFloor) {
+            timingState.resolutionFloor = fractional;
+          }
+        }
+      }
+      timingState.lastNow = now;
+      sampleTimingProfile();
+    });
+  }
+
+  function readTimingProfile() {
+    if (!timingState.deltas.length) return null;
+    var sum = 0;
+    var min = timingState.deltas[0];
+    var max = timingState.deltas[0];
+    for (var i = 0; i < timingState.deltas.length; i++) {
+      var delta = timingState.deltas[i];
+      sum += delta;
+      if (delta < min) min = delta;
+      if (delta > max) max = delta;
+    }
+    return {
+      clock_resolution_ms: timingState.resolutionFloor === null ? null : Number(timingState.resolutionFloor.toFixed(4)),
+      raf_mean_ms: Number((sum / timingState.deltas.length).toFixed(4)),
+      raf_jitter_score: Number((max - min).toFixed(4)),
+    };
+  }
+
+  function readFingerprintTraits() {
+    var connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    var timing = readTimingProfile() || {};
+    return {
+      hardware_concurrency: typeof navigator.hardwareConcurrency === 'number' ? navigator.hardwareConcurrency : null,
+      device_memory: typeof navigator.deviceMemory === 'number' ? navigator.deviceMemory : null,
+      platform: navigator.platform || null,
+      connection_type: connection && connection.effectiveType ? connection.effectiveType : null,
+      plugin_count: navigator.plugins ? navigator.plugins.length : null,
+      touch_points: typeof navigator.maxTouchPoints === 'number' ? navigator.maxTouchPoints : null,
+      webdriver: typeof navigator.webdriver === 'boolean' ? navigator.webdriver : null,
+      timezone_offset_minutes: typeof Date === 'function' ? new Date().getTimezoneOffset() * -1 : null,
+      clock_resolution_ms: timing.clock_resolution_ms || null,
+      raf_mean_ms: timing.raf_mean_ms || null,
+      raf_jitter_score: timing.raf_jitter_score || null,
+    };
+  }
+
   // ─── Session ──────────────────────────────────────────────────────────────
 
   function getSessionId() {
@@ -88,6 +180,178 @@
       }
       return id;
     } catch (e) { return 'nostorage'; }
+  }
+
+  function buildTrackingPayload(extra) {
+    return Object.assign({
+      page_url: window.location.href,
+      referrer: document.referrer || null,
+      fingerprint: buildFingerprint(),
+      canvas_hash: canvasFingerprint(),
+      webgl_hash: webglFingerprint(),
+      screen: screen.width + 'x' + screen.height,
+      language: navigator.language,
+      timezone: Intl && Intl.DateTimeFormat().resolvedOptions().timeZone || null,
+      session_id: getSessionId(),
+      device_cookie: getDeviceCookie(),
+      fingerprint_traits: readFingerprintTraits(),
+    }, extra || {});
+  }
+
+  function scopedStorageKey(name) {
+    return '_sn_' + name + '::' + API_BASE + '::' + API_KEY;
+  }
+
+  function readDeviceContext(fingerprint) {
+    try {
+      var raw = localStorage.getItem(scopedStorageKey('device_context'));
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      var cookie = getDeviceCookie();
+      if (!parsed) return null;
+      if (cookie && parsed.device_cookie === cookie) return parsed;
+      if (parsed.fingerprint !== fingerprint) return null;
+      return parsed;
+    } catch (e) { return null; }
+  }
+
+  function readChallengeTokenFromUrl() {
+    try {
+      var params = new URLSearchParams(window.location.search || '');
+      return params.get('skynet_challenge');
+    } catch (e) { return null; }
+  }
+
+  function readChallengeToken() {
+    try {
+      var fromUrl = readChallengeTokenFromUrl();
+      if (fromUrl) {
+        localStorage.setItem(scopedStorageKey('challenge_token'), fromUrl);
+        return fromUrl;
+      }
+      return localStorage.getItem(scopedStorageKey('challenge_token'));
+    } catch (e) { return readChallengeTokenFromUrl(); }
+  }
+
+  function writeDeviceContext(context) {
+    if (!context || !context.device_id) return;
+    try {
+      if (context.device_cookie) writeCookie('_skynet_did', context.device_cookie, 31536000);
+      localStorage.setItem(scopedStorageKey('device_context'), JSON.stringify(context));
+    } catch (e) {}
+  }
+
+  // ─── Behavior Metrics ────────────────────────────────────────────────────
+
+  var behaviorState = {
+    startedAt: Date.now(),
+    sentInteractions: 0,
+    counts: { click: 0, scroll: 0, pointer: 0, keydown: 0 },
+    lastSeenAt: { click: 0, scroll: 0, pointer: 0, keydown: 0 },
+    intervals: { click: [], scroll: [], pointer: [], keydown: [] },
+  };
+
+  function pushBehaviorInterval(kind, now) {
+    var previous = behaviorState.lastSeenAt[kind];
+    behaviorState.lastSeenAt[kind] = now;
+    if (!previous) return;
+    var delta = now - previous;
+    if (delta <= 0) return;
+    var target = behaviorState.intervals[kind];
+    target.push(delta);
+    if (target.length > 12) target.shift();
+  }
+
+  function recordBehavior(kind, throttleMs) {
+    var now = Date.now();
+    if (throttleMs && behaviorState.lastSeenAt[kind] && (now - behaviorState.lastSeenAt[kind]) < throttleMs) return;
+    behaviorState.counts[kind] += 1;
+    pushBehaviorInterval(kind, now);
+  }
+
+  function readBehaviorMetrics() {
+    var total = behaviorState.counts.click + behaviorState.counts.scroll + behaviorState.counts.pointer + behaviorState.counts.keydown;
+    if (!total) return null;
+    return {
+      total_interactions: total,
+      session_duration_ms: Date.now() - behaviorState.startedAt,
+      click_count: behaviorState.counts.click,
+      scroll_count: behaviorState.counts.scroll,
+      pointer_count: behaviorState.counts.pointer,
+      keydown_count: behaviorState.counts.keydown,
+      click_intervals_ms: behaviorState.intervals.click.slice(),
+      scroll_intervals_ms: behaviorState.intervals.scroll.slice(),
+      pointer_intervals_ms: behaviorState.intervals.pointer.slice(),
+      keydown_intervals_ms: behaviorState.intervals.keydown.slice(),
+    };
+  }
+
+  function postBehaviorSnapshot() {
+    var behavior = readBehaviorMetrics();
+    if (!behavior || behavior.total_interactions <= behaviorState.sentInteractions) return;
+    behaviorState.sentInteractions = behavior.total_interactions;
+    SkyNet.track('behavior_snapshot', { behavior: behavior });
+  }
+
+  // ─── Form Signals ────────────────────────────────────────────────────────
+
+  function isPotentialHoneypotField(field) {
+    if (!field || !field.name) return false;
+    var name = String(field.name || '').toLowerCase();
+    var type = String(field.type || '').toLowerCase();
+    var hiddenType = type === 'hidden';
+    var style = window.getComputedStyle ? window.getComputedStyle(field) : null;
+    var visuallyHidden = !!style && (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0);
+    return hiddenType || visuallyHidden || /website|homepage|company|url|fax/.test(name);
+  }
+
+  function formSignature(form) {
+    if (!form || !form.elements) return null;
+    var chunks = [];
+    for (var i = 0; i < form.elements.length; i++) {
+      var field = form.elements[i];
+      if (!field || !field.name || field.disabled) continue;
+      var tag = (field.tagName || '').toLowerCase();
+      var type = String(field.type || '').toLowerCase();
+      if (type === 'password' || type === 'file' || type === 'submit' || type === 'button') continue;
+      if (tag !== 'textarea' && tag !== 'input' && tag !== 'select') continue;
+      var value = '';
+      if (type === 'checkbox' || type === 'radio') {
+        value = field.checked ? '1' : '0';
+      } else {
+        value = String(field.value || '').trim().toLowerCase();
+      }
+      if (!value) continue;
+      chunks.push(field.name.toLowerCase() + ':' + value);
+    }
+    return chunks.length ? simpleHash(chunks.join('|')) : null;
+  }
+
+  function readFormMetadata(form) {
+    if (!form || !form.elements) return null;
+    var fieldCount = 0;
+    var visibleFieldCount = 0;
+    var honeypotField = null;
+    var honeypotTriggered = false;
+
+    for (var i = 0; i < form.elements.length; i++) {
+      var field = form.elements[i];
+      if (!field || !field.name || field.disabled) continue;
+      fieldCount += 1;
+      if (!isPotentialHoneypotField(field)) visibleFieldCount += 1;
+      if (!honeypotField && isPotentialHoneypotField(field)) honeypotField = field.name;
+      if (isPotentialHoneypotField(field) && String(field.value || '').trim()) honeypotTriggered = true;
+    }
+
+    return {
+      action: form.getAttribute('action') || window.location.pathname,
+      method: (form.getAttribute('method') || 'get').toLowerCase(),
+      field_count: fieldCount,
+      visible_field_count: visibleFieldCount,
+      honeypot_field: honeypotField,
+      honeypot_triggered: honeypotTriggered,
+      content_signature: formSignature(form),
+    };
   }
 
   // ─── HTTP ─────────────────────────────────────────────────────────────────
@@ -105,6 +369,50 @@
       xhr.setRequestHeader('X-SkyNet-Key', API_KEY);
       xhr.send(body);
     }
+  }
+
+  function requestJson(method, path, data, extraHeaders) {
+    var url = API_BASE + path;
+    var body = data ? JSON.stringify(data) : null;
+    var headers = extraHeaders || {};
+
+    if (typeof fetch !== 'undefined' && typeof Promise !== 'undefined') {
+      var fetchHeaders = { 'Content-Type': 'application/json' };
+      for (var key in headers) {
+        if (Object.prototype.hasOwnProperty.call(headers, key)) {
+          fetchHeaders[key] = headers[key];
+        }
+      }
+      return fetch(url, {
+        method: method,
+        headers: fetchHeaders,
+        body: body,
+      }).then(function (response) {
+        if (!response.ok) throw new Error('http_' + response.status);
+        return response.json();
+      });
+    }
+
+    return new Promise(function (resolve, reject) {
+      var xhr = new XMLHttpRequest();
+      xhr.open(method, url, true);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      for (var headerName in headers) {
+        if (Object.prototype.hasOwnProperty.call(headers, headerName)) {
+          xhr.setRequestHeader(headerName, headers[headerName]);
+        }
+      }
+      xhr.onload = function () {
+        try {
+          if (xhr.status < 200 || xhr.status >= 300) throw new Error('http_' + xhr.status);
+          resolve(JSON.parse(xhr.responseText || '{}'));
+        } catch (e) {
+          reject(e);
+        }
+      };
+      xhr.onerror = function () { reject(new Error('network_error')); };
+      xhr.send(body);
+    });
   }
 
   // ─── Block Page Enforcement ───────────────────────────────────────────────
@@ -159,11 +467,21 @@
 
   function checkAccess(fp, onClear) {
     var url = API_BASE + '/api/v1/track/check-access?key=' + encodeURIComponent(API_KEY) + '&fp=' + encodeURIComponent(fp);
+    var deviceCookie = getDeviceCookie();
+    if (deviceCookie) url += '&dc=' + encodeURIComponent(deviceCookie);
+    var challengeToken = readChallengeToken();
+    if (challengeToken) url += '&ct=' + encodeURIComponent(challengeToken);
 
     // Fail open: if check hangs or errors, always proceed with tracking
     function handle(data) {
       if (data && data.blocked) {
         injectBlockPage(data.config || {}, data.request_id || '');
+      } else if (data && data.challenge && data.challenge_url) {
+        var target = data.challenge_url;
+        if (target.indexOf('http://') !== 0 && target.indexOf('https://') !== 0) {
+          target = API_BASE + target;
+        }
+        window.location.href = target;
       } else {
         onClear();
       }
@@ -193,22 +511,69 @@
 
   // ─── Public API ───────────────────────────────────────────────────────────
 
+  var deviceContextPromise = null;
+  var latestTrackingPayload = null;
+  var latestDeviceContext = null;
+  var readyCallbacks = [];
+
+  function notifyReady(context) {
+    if (!context || !context.device_id) return;
+    latestDeviceContext = context;
+    while (readyCallbacks.length) {
+      try { readyCallbacks.shift()(context); } catch (e) {}
+    }
+  }
+
+  function resolveDeviceContext(extra) {
+    var payload = buildTrackingPayload(extra);
+    latestTrackingPayload = payload;
+
+    var cached = readDeviceContext(payload.fingerprint);
+    if (cached) {
+      notifyReady(cached);
+      if (typeof Promise !== 'undefined') return Promise.resolve(cached);
+      return cached;
+    }
+
+    if (deviceContextPromise) return deviceContextPromise;
+
+    deviceContextPromise = requestJson('POST', '/api/v1/track/device-context', {
+      fingerprint: payload.fingerprint,
+      canvas_hash: payload.canvas_hash,
+      webgl_hash: payload.webgl_hash,
+      screen: payload.screen,
+      language: payload.language,
+      timezone: payload.timezone,
+      session_id: payload.session_id,
+      device_cookie: payload.device_cookie,
+      fingerprint_traits: payload.fingerprint_traits,
+      page_url: payload.page_url,
+    }, {
+      'X-SkyNet-Key': API_KEY,
+    }).then(function (context) {
+      deviceContextPromise = null;
+      if (context && context.device_id) {
+        writeDeviceContext(context);
+        notifyReady(context);
+      }
+      return context;
+    }).catch(function (error) {
+      deviceContextPromise = null;
+      throw error;
+    });
+
+    return deviceContextPromise;
+  }
+
   var SkyNet = {
     /**
      * Track current page view. Called automatically on load.
      */
     trackPageview: function (extra) {
-      post('pageview', Object.assign({
-        page_url: window.location.href,
-        referrer: document.referrer || null,
-        fingerprint: buildFingerprint(),
-        canvas_hash: canvasFingerprint(),
-        webgl_hash: webglFingerprint(),
-        screen: screen.width + 'x' + screen.height,
-        language: navigator.language,
-        timezone: Intl && Intl.DateTimeFormat().resolvedOptions().timeZone || null,
-        session_id: getSessionId(),
-      }, extra || {}));
+      var payload = buildTrackingPayload(extra);
+      latestTrackingPayload = payload;
+      post('pageview', payload);
+      return payload;
     },
 
     /**
@@ -217,12 +582,20 @@
      * @param {object} properties
      */
     track: function (eventType, properties) {
+      var payload = latestTrackingPayload || buildTrackingPayload();
+      var merged = properties || null;
+      if (!merged || typeof merged !== 'object') merged = {};
+      if (!merged.behavior) {
+        var behavior = readBehaviorMetrics();
+        if (behavior) merged.behavior = behavior;
+      }
       post('event', {
         event_type: eventType,
-        page_url: window.location.href,
-        fingerprint: buildFingerprint(),
-        properties: properties || null,
-        session_id: getSessionId(),
+        page_url: payload.page_url,
+        fingerprint: payload.fingerprint,
+        properties: Object.keys(merged).length ? merged : null,
+        session_id: payload.session_id,
+        device_cookie: payload.device_cookie,
       });
     },
 
@@ -233,11 +606,80 @@
      * @param {object} traits  — optional extra user traits
      */
     identify: function (userId, traits) {
+      var payload = latestTrackingPayload || buildTrackingPayload();
       post('identify', {
         user_id: userId,
-        fingerprint: buildFingerprint(),
+        fingerprint: payload.fingerprint,
         traits: traits || null,
+        device_cookie: payload.device_cookie,
       });
+    },
+
+    /**
+     * Resolve the SKYNET device context for the current browser.
+     * Returns a Promise when supported by the browser.
+     */
+    getDeviceContext: function (callback) {
+      var payload = latestTrackingPayload || buildTrackingPayload();
+      var cached = latestDeviceContext || readDeviceContext(payload.fingerprint);
+      if (cached && cached.device_id) {
+        latestDeviceContext = cached;
+        if (typeof callback === 'function') callback(cached);
+        if (typeof Promise !== 'undefined') return Promise.resolve(cached);
+        return cached;
+      }
+      if (typeof callback === 'function') readyCallbacks.push(callback);
+      return resolveDeviceContext(payload);
+    },
+
+    /**
+     * Resolve and return only the SKYNET device UUID (`devices.id`).
+     */
+    getDeviceId: function (callback) {
+      var promise = SkyNet.getDeviceContext();
+      if (typeof callback === 'function') {
+        if (promise && typeof promise.then === 'function') {
+          promise.then(function (context) {
+            callback(context ? context.device_id : null);
+          }).catch(function () {
+            callback(null);
+          });
+        } else {
+          callback(promise ? promise.device_id : null);
+        }
+      }
+      if (promise && typeof promise.then === 'function') {
+        return promise.then(function (context) {
+          return context ? context.device_id : null;
+        });
+      }
+      return promise ? promise.device_id : null;
+    },
+
+    /**
+     * Run callback once device context has been resolved.
+     */
+    onReady: function (callback) {
+      if (typeof callback !== 'function') return;
+      if (latestDeviceContext && latestDeviceContext.device_id) {
+        callback(latestDeviceContext);
+        return;
+      }
+      readyCallbacks.push(callback);
+      resolveDeviceContext();
+    },
+
+    /**
+     * Expose the raw tracker fingerprint for debugging or server-side exchange.
+     */
+    getFingerprint: function () {
+      var payload = latestTrackingPayload || buildTrackingPayload();
+      latestTrackingPayload = payload;
+      return payload.fingerprint;
+    },
+
+    getBehaviorMetrics: function () {
+      return readBehaviorMetrics();
     },
 
     /**
@@ -262,10 +704,12 @@
   // ─── Auto-track (with block check first) ─────────────────────────────────
 
   function autoTrack() {
-    var fp = buildFingerprint();
-    checkAccess(fp, function () {
+    var payload = buildTrackingPayload();
+    latestTrackingPayload = payload;
+    checkAccess(payload.fingerprint, function () {
       // Not blocked — proceed with normal tracking
-      if (sn.auto !== false) { SkyNet.trackPageview(); }
+      resolveDeviceContext(payload).catch(function () {});
+      if (sn.auto !== false) { post('pageview', payload); }
     });
   }
 
@@ -274,6 +718,21 @@
   } else {
     autoTrack();
   }
+  sampleTimingProfile();
+
+  document.addEventListener('click', function () { recordBehavior('click'); }, true);
+  document.addEventListener('keydown', function () { recordBehavior('keydown'); }, true);
+  document.addEventListener('mousemove', function () { recordBehavior('pointer', 700); }, true);
+  document.addEventListener('scroll', function () { recordBehavior('scroll', 900); }, true);
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') postBehaviorSnapshot();
+  });
+  window.addEventListener('pagehide', postBehaviorSnapshot);
+  document.addEventListener('submit', function (event) {
+    var form = event.target;
+    if (!form || !form.tagName || form.tagName.toLowerCase() !== 'form') return;
+    SkyNet.track('form_submit', { form: readFormMetadata(form) });
+  }, true);
 
   // SPA support: re-check and re-track on navigation
   var _pushState = history.pushState;
