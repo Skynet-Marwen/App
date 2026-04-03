@@ -8,15 +8,8 @@ const deltaTone = (delta) => {
   return 'text-gray-500'
 }
 
-export default function ThreatHotspotsCard({ hotspots = [], fallbackCountries = [], onCountryClick }) {
-  const items = hotspots.length > 0
-    ? hotspots
-    : fallbackCountries.map((country) => ({
-        ...country,
-        delta: 0,
-        top_reason: 'mixed',
-        threat_score: Math.min(99, Math.round((country.percent ?? 0) * 1.2)),
-      }))
+export default function ThreatHotspotsCard({ hotspots = [], onCountryClick }) {
+  const items = hotspots
 
   const topSource = items[0]
   const fastestRising = [...items].sort((left, right) => (right.delta ?? 0) - (left.delta ?? 0))[0]

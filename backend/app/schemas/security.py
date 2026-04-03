@@ -40,9 +40,27 @@ class SecurityScanRequest(BaseModel):
     site_id: str | None = None
 
 
+class SecurityScanError(BaseModel):
+    site_id: str | None = None
+    site_url: str | None = None
+    detail: str
+
+
 class SecurityActionResponse(BaseModel):
     ok: bool = True
     detail: str
+
+
+class SecurityStatusProfile(BaseModel):
+    id: str
+    site_id: str | None = None
+    base_url: str
+    detected_server: str | None = None
+    frameworks: list[str] = Field(default_factory=list)
+    technologies: list[str] = Field(default_factory=list)
+    scan_status: str
+    last_scanned_at: datetime | None = None
+    notes: str | None = None
 
 
 class SecurityStatusResponse(BaseModel):
@@ -53,7 +71,7 @@ class SecurityStatusResponse(BaseModel):
     open_findings: int
     active_exploitation_findings: int
     open_recommendations: int
-    profiles: list[dict] = Field(default_factory=list)
+    profiles: list[SecurityStatusProfile] = Field(default_factory=list)
 
 
 class SecurityScanResponse(BaseModel):
@@ -62,3 +80,4 @@ class SecurityScanResponse(BaseModel):
     findings_created: int
     recommendations_created: int
     intel_updated: int
+    errors: list[SecurityScanError] = Field(default_factory=list)

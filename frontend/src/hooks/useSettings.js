@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { settingsApi } from '../services/api'
+import { antiEvasionApi, settingsApi } from '../services/api'
 
 const DEFAULT_BLOCK = {
   title: 'ACCESS RESTRICTED',
@@ -15,6 +15,7 @@ const DEFAULT_BLOCK = {
 
 export function useSettings() {
   const [settings, setSettings] = useState({})
+  const [securityConfig, setSecurityConfig] = useState({})
   const [blockPage, setBlockPage] = useState(DEFAULT_BLOCK)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -22,13 +23,18 @@ export function useSettings() {
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      const [settingsRes, blockRes] = await Promise.all([
+      const [settingsRes, blockRes, securityRes] = await Promise.all([
         settingsApi.get(),
         settingsApi.getBlockPage(),
+        antiEvasionApi.config(),
       ])
       setSettings(settingsRes.data)
       setBlockPage({ ...DEFAULT_BLOCK, ...blockRes.data })
-    } catch (_) {
+      setSecurityConfig(securityRes.data)
+    } catch {
+      setSettings({})
+      setBlockPage(DEFAULT_BLOCK)
+      setSecurityConfig({})
     } finally {
       setLoading(false)
     }
@@ -56,15 +62,32 @@ export function useSettings() {
     }
   }, [])
 
+  const saveSecuritySettings = useCallback(async (nextSettings, nextSecurityConfig) => {
+    setSaving(true)
+    try {
+      await Promise.all([
+        settingsApi.update(nextSettings),
+        antiEvasionApi.updateConfig(nextSecurityConfig),
+      ])
+      setSettings(nextSettings)
+      setSecurityConfig(nextSecurityConfig)
+    } finally {
+      setSaving(false)
+    }
+  }, [])
+
   return {
     settings,
     setSettings,
+    securityConfig,
+    setSecurityConfig,
     blockPage,
     setBlockPage,
     loading,
     saving,
     refresh,
     saveSettings,
+    saveSecuritySettings,
     saveBlockPage,
   }
 }

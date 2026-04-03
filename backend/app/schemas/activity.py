@@ -12,6 +12,7 @@ class ActivityPayload(BaseModel):
     properties: Optional[dict] = None
     session_id: Optional[str] = None
     site_id: Optional[str] = None
+    site_key: Optional[str] = None
 
 
 # ── Response ──────────────────────────────────────────────────────────────────

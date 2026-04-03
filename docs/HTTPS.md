@@ -159,18 +159,22 @@ SkyNet now exposes HTTPS deployment settings in the dashboard under **Settings â
 - Uploaded PEM certificate staging
 - Trust Proxy Headers
 - HSTS
+- Allowed Domains
+- CORS Allowed Origins / Methods / Headers
+- IP Allowlist / Denylist
+- Runtime Request Limits
 
 UI file:
 - [frontend/src/pages/settings/HttpsTab.jsx](../frontend/src/pages/settings/HttpsTab.jsx)
 
 Important:
-- runtime settings are still in-memory today
-- the theme registry persists separately in the database; this note only applies to the general runtime settings object
+- Access & Network runtime settings now persist in the shared `runtime_config` row
 - for persistent deployments, also mirror these values in `backend/.env`
 - self-signed generation writes files to `backend/data/certs/self-signed`
 - uploaded PEM files are stored in `backend/data/certs/uploaded`
 - Let's Encrypt HTTP challenge works automatically with the bundled Caddy edge profile once the public hostname resolves to the host and ports 80/443 are reachable
 - Let's Encrypt DNS settings are stored in SkyNet, but DNS issuance still needs an ACME-capable DNS client or custom Caddy build at the edge
+- `Trust Proxy Headers` now also controls whether forwarded client IP headers are accepted for rate limiting, tracking, and gateway decisions
 
 ---
 

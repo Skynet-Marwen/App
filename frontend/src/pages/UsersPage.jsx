@@ -2,10 +2,12 @@ import { useState } from 'react'
 import { Search, UserPlus, Ban, Key, Trash2, LogOut, ShieldCheck } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
 import { Card, Table, Badge, Button, Input, Pagination, Modal, Select, Alert, PageToolbar } from '../components/ui/index'
+import { useAuthStore } from '../store/useAppStore'
 import { useUsers } from '../hooks/useUsers'
 import { useUserSessions } from '../hooks/useUserSessions'
 
 const roleBadge = (role) => {
+  if (role === 'superadmin') return <Badge variant="warning">Superadmin</Badge>
   if (role === 'admin') return <Badge variant="purple">Admin</Badge>
   if (role === 'moderator') return <Badge variant="info">Moderator</Badge>
   return <Badge variant="default">User</Badge>
@@ -20,6 +22,8 @@ const statusBadge = (status) => {
 const EMPTY_FORM = { email: '', username: '', role: 'user', password: '' }
 
 export default function UsersPage() {
+  const currentUser = useAuthStore((state) => state.user)
+  const canManageSuperadmin = currentUser?.role === 'superadmin'
   const {
     users,
     total,
@@ -64,19 +68,27 @@ export default function UsersPage() {
     try {
       await blockUser(blockModal.id)
       setBlockModal(null)
-    } catch (_) {}
+    } catch (error) {
+      setError(error.response?.data?.detail || 'Failed to block user')
+    }
     finally { setSubmitting(false) }
   }
 
   const handleResetPassword = async (userId) => {
-    try { await resetPassword(userId) } catch (_) {}
+    try {
+      await resetPassword(userId)
+    } catch (error) {
+      setError(error.response?.data?.detail || 'Failed to reset password')
+    }
   }
 
   const handleRevokeSession = async (sessionId) => {
     if (!selected) return
     try {
       await revoke(sessionId)
-    } catch (_) {}
+    } catch (error) {
+      setError(error.response?.data?.detail || 'Failed to revoke session')
+    }
   }
 
   const columns = [
@@ -92,9 +104,10 @@ export default function UsersPage() {
       </div>
     )},
     { key: 'role', label: 'Role', render: (v) => roleBadge(v) },
+    { key: 'tenant_name', label: 'Tenant', render: (_, row) => <span className="text-xs text-gray-300">{row.tenant_name || 'Global'}</span> },
     { key: 'status', label: 'Status', render: (v) => statusBadge(v) },
     { key: 'last_login', label: 'Last Login', render: (v) => <span className="text-xs text-gray-400">{v ?? '—'}</span> },
-    { key: 'devices_count', label: 'Devices', render: (v) => <span className="text-xs text-white">{v ?? 0}</span> },
+    { key: 'devices_count', label: 'Active Devices', render: (v) => <span className="text-xs text-white">{v ?? 0}</span> },
     { key: 'keycloak_id', label: 'Keycloak', render: (v) => v ? <Badge variant="success"><ShieldCheck size={11} className="mr-1" />Linked</Badge> : <Badge variant="default">Local</Badge> },
     {
       key: 'actions', label: '', width: '130px',
@@ -187,7 +200,12 @@ export default function UsersPage() {
           <Input label="Username" placeholder="johndoe" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
           <Input label="Password" type="password" placeholder="••••••••" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
           <Select label="Role" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}
-            options={[{ value: 'user', label: 'User' }, { value: 'moderator', label: 'Moderator' }, { value: 'admin', label: 'Admin' }]}
+            options={[
+              { value: 'user', label: 'User' },
+              { value: 'moderator', label: 'Moderator' },
+              { value: 'admin', label: 'Admin' },
+              ...(canManageSuperadmin ? [{ value: 'superadmin', label: 'Superadmin' }] : []),
+            ]}
           />
           <div className="flex gap-2 justify-end">
             <Button variant="secondary" onClick={() => setCreateModal(false)}>Cancel</Button>

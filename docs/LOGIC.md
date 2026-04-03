@@ -131,8 +131,8 @@ Async worker dispatched after each tracking write:
 - **DNSBL**: source IP listed by configured public DNSBL providers → incident `DNSBL_LISTED`
 
 ### 3.3 Deferred Checks
-- VPN/Tor/datacenter reputation feeds — config exists, deeper provider-backed enforcement still pending
-- Timezone/language mismatch — config exists, dedicated mismatch scoring still pending
+- VPN / datacenter / provider keyword heuristics are live when GeoIP/provider metadata is available from the configured provider
+- Timezone mismatch and language-region mismatch now create incidents and can influence challenge/block posture through Security & Detection settings
 - Impossible travel (geo + time delta on activity_events) — shipped in v1.3.0 as an `impossible_travel` anomaly flag heuristic
 
 ---
@@ -236,7 +236,16 @@ Every state-changing action must produce an audit entry via `services/audit.log_
 
 ---
 
-## 10. Theme Resolution & Branding Logic
+## 10. Operational Metric Truthfulness
+
+- Overview hotspot, investigation, and enforcement widgets consume only backend-generated payloads.
+- Integration site stats consume live aggregate queries over `visitors` and `events`; placeholder zeros are not acceptable.
+- `visitors_change` and `users_change` compare the current selected range against the immediately preceding range of the same duration.
+- `total_blocked` is currently a point-in-time posture metric, not a range metric, so no synthetic blocked trend should be displayed until a historical blocked series exists.
+
+---
+
+## 11. Theme Resolution & Branding Logic
 
 ### Theme Priority
 
@@ -253,12 +262,13 @@ Each operator stores:
 }
 ```
 
-If `theme_source = "default"`, the runtime resolves the current global default theme and may apply a dynamic override based on risk band or tenant host mapping.
+If `theme_source = "default"`, the runtime resolves the current global default theme and may apply a dynamic override based on risk band, tenant host mapping, or a tenant account default theme.
 
 ### Dynamic Theme Policy
 
 - `theme_dynamic_strategy = "risk"` maps `normal`, `elevated`, `high`, and `critical` bands to theme IDs.
 - `theme_dynamic_strategy = "tenant"` maps request host / tenant hint values to theme IDs, with an optional `default` fallback.
+- When an operator belongs to a tenant account and that tenant has a `default_theme_id`, tenant strategy resolution can use that account default before the generic host-map fallback.
 - Dynamic themes only apply when the operator follows the default theme. Per-user explicit theme selection still wins.
 
 ### Default Assignment
@@ -289,7 +299,7 @@ the backend falls the user back to the active default theme and rewrites the use
 The frontend theme engine applies:
 
 - CSS variables from `theme.colors`
-- shell layout metadata from `theme.layout`
+- shell layout metadata from `theme.layout`, including shell mode, content width, sidebar width, topbar density, and sticky-header behavior
 - widget visibility from `theme.widgets`
 - branding copy/logo/title from `theme.branding`
 - role-specific shell overrides from `theme.layout.role_surfaces`
@@ -332,4 +342,12 @@ This only changes the shell presentation layer. It never replaces backend author
 | `ENHANCED_AUDIT_TOGGLE` | actor_id, external_user_id, enabled, reason |
 
 Audit logs: write-only. No DELETE endpoint. Retention: `incident_retention_days`.
-Authenticated activity timelines are pruned by the runtime loop using `event_retention_days`.
+Authenticated activity timelines and tracker `events` are pruned by the runtime loop using `event_retention_days`.
+Resolved incidents are pruned using `incident_retention_days`.
+Stale visitors are either anonymized or deleted using `visitor_retention_days` plus the `anonymize_ips` toggle.
+
+### Integration Connector Runtime
+
+- `integration_api_access_enabled=false` rejects tracker/site API key traffic without deleting the registered site.
+- New and regenerated site API keys inherit `integration_api_key_prefix`.
+- Notification fanout can mirror selected events into SIEM and monitoring webhook connectors using signed JSON payloads.

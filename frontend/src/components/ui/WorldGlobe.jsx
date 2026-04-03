@@ -102,7 +102,7 @@ export function WorldGlobe({ countries = [], showList = true }) {
     <div className="w-full">
       <div
         ref={shellRef}
-        className="relative isolate mx-auto aspect-square w-full max-w-[360px] overflow-hidden rounded-[1.4rem] border border-cyan-500/10 bg-black/45 shadow-[0_0_36px_rgba(6,182,212,0.12)]"
+        className="relative isolate mx-auto aspect-square w-full max-w-[360px] overflow-hidden rounded-[1.4rem] border border-cyan-500/10 bg-black/45 shadow-[0_12px_30px_rgba(0,0,0,0.18)]"
       >
         <div
           className="pointer-events-none absolute inset-0"
@@ -142,7 +142,7 @@ export function WorldGlobe({ countries = [], showList = true }) {
                 <div className="h-1 overflow-hidden rounded-full border border-cyan-500/10 bg-black/60">
                   <div
                     className="h-full rounded-full bg-cyan-500"
-                    style={{ width: `${country.percent}%`, boxShadow: '0 0 6px rgba(6,182,212,0.6)' }}
+                    style={{ width: `${country.percent}%` }}
                   />
                 </div>
               </div>

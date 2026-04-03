@@ -1,11 +1,13 @@
 import { useAuthStore } from '../../store/useAppStore'
 import { useThemeStore } from '../../store/themeStore'
+import { getThemeContentWidthClass } from '../../services/themeEngine'
 
 export default function DashboardFooter() {
   const user = useAuthStore((state) => state.user)
   const currentTheme = useThemeStore((state) => state.currentTheme)
   const branding = currentTheme?.branding || {}
   const layout = currentTheme?.layout || {}
+  const contentWidthClass = getThemeContentWidthClass(layout)
 
   if (layout.footer_enabled === false) return null
 
@@ -18,7 +20,7 @@ export default function DashboardFooter() {
         color: 'var(--theme-footer-text)',
       }}
     >
-      <div className="mx-auto flex w-full max-w-[1720px] flex-col gap-3 px-4 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between lg:px-6 xl:px-8">
+      <div className={`mx-auto flex w-full flex-col gap-3 px-4 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between lg:px-6 xl:px-8 ${contentWidthClass}`}>
         <div className="flex min-w-0 items-center gap-3">
           {branding.logo_url ? (
             <img

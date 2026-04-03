@@ -22,7 +22,7 @@ export default function ThemePreviewCard({ theme }) {
       style={{
         background: colors.backgroundGradient || background,
         borderColor: `${primary}33`,
-        boxShadow: `0 0 24px ${primary}14`,
+        boxShadow: '0 10px 24px rgba(0, 0, 0, 0.18)',
       }}
     >
       <div

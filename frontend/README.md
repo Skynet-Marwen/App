@@ -45,5 +45,10 @@ npm run lint
 - The app uses a single Axios client in `src/services/api.js` and attaches `skynet_token` from `localStorage`.
 - Theme logos are served by the backend via `/api/v1/themes/:id/logo`; frontend pages consume the resolved URL from the theme payload instead of relying on local static assets.
 - The dashboard shell is now fixed for desktop: header, sidebar, and footer stay in place while `main` is the scroll region.
+- Themes can now switch that shell between fixed-dashboard and document-scroll modes, and can also control content width, sidebar width, sticky-header behavior, and Overview widget visibility.
+- Settings -> Authentication & Identity now includes tenant accounts, tenant-bound operators, and a guarded `superadmin` control plane.
 - Integration snippets now include the browser-side device UUID handoff helper used by `/identity/link` and `/track/activity`.
-- The current shipped backend version is `1.2.0`; the active unreleased branch also includes tracker/backend device-identity hardening (`_skynet_did`, fingerprint confidence, stability scoring).
+- Overview cards should render backend-derived metrics only. If a signal is absent, the UI should show an empty state instead of fabricating hotspot, investigation, or enforcement data.
+- Settings -> Data & Storage now exposes storage health, retention archive export, and on-demand cleanup actions.
+- Settings -> Integrations now exposes API access governance, threat-intel refresh, and signed SIEM / monitoring connector delivery.
+- The current shipped backend version is `1.6.9`.

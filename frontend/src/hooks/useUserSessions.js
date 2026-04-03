@@ -14,7 +14,7 @@ export function useUserSessions(userId) {
     try {
       const res = await usersApi.sessions(userId)
       setSessions(res.data)
-    } catch (_) {
+    } catch {
       setSessions([])
     } finally {
       setLoading(false)

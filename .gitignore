@@ -36,6 +36,7 @@ npm-debug.log*
 # ── Docker ────────────────────────────────────────────────────────────────────
 # (docker-compose overrides with local secrets — never commit)
 docker-compose.override.yml
+infra/targets.json
 
 # ── OS ────────────────────────────────────────────────────────────────────────
 .DS_Store

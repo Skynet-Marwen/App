@@ -7,6 +7,7 @@ from ...models.user import User
 from ...models.blocking import BlockingRule, BlockedIP
 from ...schemas.blocking import CreateRuleRequest, BlockIPRequest
 from ...services.audit import log_action, request_ip
+from ...services.incident_notifications import dispatch_notification_event
 import uuid
 
 router = APIRouter(prefix="/blocking", tags=["blocking"])
@@ -86,6 +87,18 @@ async def block_ip(body: BlockIPRequest, request: Request, db: AsyncSession = De
     db.add(ip)
     log_action(db, action="BLOCK_IP", actor_id=current.id, target_type="ip", target_id=body.ip, ip=request_ip(request), extra={"reason": body.reason})
     await db.commit()
+    dispatch_notification_event(
+        "block_triggered",
+        {
+            "target_type": "ip",
+            "target_id": body.ip,
+            "target": body.ip,
+            "reason": body.reason,
+            "actor": current.username,
+        },
+        subject="SkyNet Notification — IP Blocked",
+        severity="medium",
+    )
     return {"message": "Blocked"}
 
 

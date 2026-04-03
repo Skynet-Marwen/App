@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Eye, Users, Monitor, Shield, AlertTriangle, Activity } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import DashboardLayout from '../components/layout/DashboardLayout'
@@ -9,16 +10,45 @@ import GatewayOperationsCard from '../components/overview/GatewayOperationsCard'
 import PriorityInvestigationsCard from '../components/overview/PriorityInvestigationsCard'
 import RiskLeaderboardCard from '../components/overview/RiskLeaderboardCard'
 import { useOverview } from '../hooks/useOverview'
-import { useUIStore } from '../store/useAppStore'
+import { useUIStore, useRuntimeSettingsStore } from '../store/useAppStore'
 import { useThemeStore } from '../store/themeStore'
 import { themeHasWidget } from '../services/themeEngine'
+import { isUiVisible } from '../services/uiVisibility'
+
+const OVERVIEW_VISIBILITY_KEYS = {
+  'realtime-banner': 'realtime_banner',
+  'stat-cards': 'stat_cards',
+  'traffic-heatmap': 'traffic_heatmap',
+  'threat-hotspots': 'threat_hotspots',
+  'enforcement-pressure': 'enforcement_pressure',
+  'gateway-operations': 'gateway_operations',
+  'risk-leaderboard': 'risk_leaderboard',
+  'priority-investigations': 'priority_investigations',
+}
 
 export default function OverviewPage() {
   const { statsRange } = useUIStore()
   const navigate = useNavigate()
   const currentTheme = useThemeStore((state) => state.currentTheme)
+  const uiVisibility = useRuntimeSettingsStore((state) => state.uiVisibility)
+  const fetchRuntimeSettings = useRuntimeSettingsStore((state) => state.fetchRuntimeSettings)
   const { overview, realtime, loading, realtimeSource, refresh } = useOverview(statsRange)
-  const showWidget = (widgetId) => themeHasWidget(currentTheme, widgetId)
+
+  useEffect(() => {
+    fetchRuntimeSettings().catch(() => {})
+  }, [fetchRuntimeSettings])
+
+  const showWidget = (widgetId) =>
+    themeHasWidget(currentTheme, widgetId) &&
+    isUiVisible(uiVisibility, `overview.${OVERVIEW_VISIBILITY_KEYS[widgetId]}`)
+  const showRealtimeBanner = showWidget('realtime-banner')
+  const showStatCards = showWidget('stat-cards')
+  const showTrafficHeatmap = showWidget('traffic-heatmap')
+  const showThreatHotspots = showWidget('threat-hotspots')
+  const showEnforcementPressure = showWidget('enforcement-pressure')
+  const showGatewayOperations = showWidget('gateway-operations')
+  const showRiskLeaderboard = showWidget('risk-leaderboard')
+  const showPriorityInvestigations = showWidget('priority-investigations')
   const realtimeBadge = realtimeSource === 'websocket'
     ? <Badge variant="success">Live socket</Badge>
     : <Badge variant="warning">Polling fallback</Badge>
@@ -29,10 +59,10 @@ export default function OverviewPage() {
   }
 
   return (
-    <DashboardLayout title="Overview" showRange onRefresh={refresh}>
+      <DashboardLayout title="Overview" showRange onRefresh={refresh}>
 
       {/* Realtime HUD banner */}
-      {showWidget('realtime-banner') && (
+      {showRealtimeBanner && (
       <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-cyan-500/15 px-4 py-3 xl:px-5 animate-border-breathe"
         style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(10px)' }}>
         <span className="w-2 h-2 bg-green-400 rounded-full animate-hud-dot flex-shrink-0" style={{ color: '#4ade80' }} />
@@ -56,7 +86,7 @@ export default function OverviewPage() {
       )}
 
       {/* Stat cards */}
-      {showWidget('stat-cards') && (
+      {showStatCards && (
       <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         <StatCard label="Total Visitors" rawValue={overview?.total_visitors} value={overview?.total_visitors?.toLocaleString() ?? '—'} change={overview?.visitors_change} icon={Eye} color="cyan" loading={loading} />
         <StatCard label="Unique Users"   rawValue={overview?.unique_users}    value={overview?.unique_users?.toLocaleString() ?? '—'}    change={overview?.users_change}    icon={Users} color="blue" loading={loading} />
@@ -68,10 +98,11 @@ export default function OverviewPage() {
       )}
 
       {/* Charts row */}
+      {(showTrafficHeatmap || showThreatHotspots) && (
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-4">
 
         {/* Traffic — Heatmap */}
-        {showWidget('traffic-heatmap') && (
+        {showTrafficHeatmap && (
         <Card className="xl:col-span-2 !p-0">
           <div className="p-5 pb-3">
             <p className="text-xs font-mono font-medium text-cyan-400 uppercase tracking-widest">Traffic Intensity</p>
@@ -83,46 +114,48 @@ export default function OverviewPage() {
         </Card>
         )}
 
-        {showWidget('threat-hotspots') && (
+        {showThreatHotspots && (
         <ThreatHotspotsCard
           hotspots={overview?.threat_hotspots ?? []}
-          fallbackCountries={overview?.top_countries ?? []}
           onCountryClick={(item) => openVisitorsSearch(item?.country || item?.top_reason || '')}
         />
         )}
       </div>
+      )}
 
+      {(showEnforcementPressure || showGatewayOperations) && (
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-4">
-        {showWidget('enforcement-pressure') && (
+        {showEnforcementPressure && (
         <EnforcementPressureCard
           pressure={overview?.enforcement_pressure}
-          fallbackChart={overview?.blocking_chart ?? []}
           loading={loading}
         />
         )}
-        {showWidget('gateway-operations') && (
+        {showGatewayOperations && (
         <GatewayOperationsCard
           gateway={overview?.gateway_dashboard}
           loading={loading}
         />
         )}
       </div>
+      )}
 
       {/* Bottom row */}
+      {(showRiskLeaderboard || showPriorityInvestigations) && (
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        {showWidget('risk-leaderboard') && (
+        {showRiskLeaderboard && (
         <RiskLeaderboardCard
           leaders={overview?.risk_leaderboard ?? []}
         />
         )}
-        {showWidget('priority-investigations') && (
+        {showPriorityInvestigations && (
         <PriorityInvestigationsCard
           investigations={overview?.priority_investigations ?? []}
-          fallbackIncidents={overview?.recent_incidents ?? []}
           onInspect={(item) => openVisitorsSearch(item?.target_label || item?.title || '')}
         />
         )}
       </div>
+      )}
     </DashboardLayout>
   )
 }

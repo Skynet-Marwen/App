@@ -8,7 +8,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.database import get_db
-from ...core.security import get_current_user
+from ...core.security import get_current_user, is_admin_user
 from ...models.theme import Theme
 from ...models.user import User
 from ...schemas.theme import (
@@ -36,7 +36,7 @@ router = APIRouter(tags=["themes"])
 
 
 def require_theme_admin(current: User = Depends(get_current_user)) -> User:
-    if current.role != "admin":
+    if not is_admin_user(current):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required")
     return current
 
@@ -54,7 +54,7 @@ async def get_themes(
     current: User = Depends(get_current_user),
 ):
     await ensure_default_theme(db)
-    themes = await list_themes(db, include_inactive=current.role == "admin")
+    themes = await list_themes(db, include_inactive=is_admin_user(current))
     return [serialize_theme(theme) for theme in themes]
 
 

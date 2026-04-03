@@ -22,7 +22,9 @@ export function useAuditLogs() {
       })
       setItems(res.data.items)
       setTotal(res.data.total)
-    } catch (_) {
+    } catch {
+      setItems([])
+      setTotal(0)
     } finally {
       setLoading(false)
     }

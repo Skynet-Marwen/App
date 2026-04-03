@@ -1,17 +1,18 @@
 /* global __APP_VERSION__ */
 
 import { useState, useEffect } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, UserCog, Monitor, Shield, AlertTriangle,
   Plug, Settings, LogOut, ChevronLeft, ChevronRight,
   Eye, Activity, Info, Cpu
 } from 'lucide-react'
 import { ScrollText } from 'lucide-react'
-import { useUIStore, useAuthStore } from '../../store/useAppStore'
+import { useUIStore, useAuthStore, useRuntimeSettingsStore } from '../../store/useAppStore'
 import { systemApi } from '../../services/api'
 import { useThemeStore } from '../../store/themeStore'
 import { getThemeNavigationSurface } from '../../services/themeEngine'
+import { isUiVisible } from '../../services/uiVisibility'
 
 const navItems = [
   { key: 'overview', to: '/', label: 'Overview', icon: LayoutDashboard, exact: true },
@@ -28,7 +29,10 @@ const navItems = [
 export default function Sidebar() {
   const { sidebarCollapsed, toggleSidebar } = useUIStore()
   const { logout, user } = useAuthStore()
+  const location = useLocation()
   const currentTheme = useThemeStore((state) => state.currentTheme)
+  const uiVisibility = useRuntimeSettingsStore((state) => state.uiVisibility)
+  const fetchRuntimeSettings = useRuntimeSettingsStore((state) => state.fetchRuntimeSettings)
   const navigate = useNavigate()
   const [versionInfo, setVersionInfo] = useState(null)
   const [showVersions, setShowVersions] = useState(false)
@@ -36,11 +40,15 @@ export default function Sidebar() {
   const brandLabel = currentTheme?.branding?.logo_text || currentTheme?.branding?.company_name || 'SkyNet'
   const logoUrl = currentTheme?.branding?.logo_url || ''
   const logoSize = currentTheme?.layout?.logo_size || 'md'
+  const sidebarWidth = currentTheme?.layout?.sidebar_width || 'standard'
   const logoClassName = logoSize === 'lg' ? 'h-10 w-10' : logoSize === 'sm' ? 'h-6 w-6' : 'h-8 w-8'
+  const expandedWidthClass = sidebarWidth === 'wide' ? 'w-72' : sidebarWidth === 'narrow' ? 'w-56' : 'w-60'
+  const tenantLabel = user?.tenant_name || user?.tenant_slug || ''
 
   useEffect(() => {
     systemApi.info().then(r => setVersionInfo(r.data)).catch(() => {})
-  }, [])
+    fetchRuntimeSettings().catch(() => {})
+  }, [fetchRuntimeSettings])
 
   const handleLogout = async () => {
     await logout()
@@ -50,7 +58,7 @@ export default function Sidebar() {
   return (
     <aside
       className={`flex flex-col border-r border-cyan-500/10 transition-all duration-300 ${
-        sidebarCollapsed ? 'w-16' : 'w-60'
+        sidebarCollapsed ? 'w-16' : expandedWidthClass
       } h-screen flex-shrink-0 sticky top-0 overflow-hidden`}
       style={{ background: 'var(--theme-nav-bg)', borderColor: 'var(--theme-nav-border)', backdropFilter: 'blur(8px)' }}
     >
@@ -78,7 +86,10 @@ export default function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 min-h-0 overflow-y-auto py-4 space-y-1 px-2">
         {navItems
-          .filter(({ key }) => !roleSurface.hidden.has(key))
+          .filter(({ key, to, exact }) => {
+            const isCurrentEntry = exact ? location.pathname === to : location.pathname.startsWith(to)
+            return !roleSurface.hidden.has(key) && (isUiVisible(uiVisibility, `navigation.${key}`) || isCurrentEntry)
+          })
           .map(({ key, to, label, icon, exact }) => {
             const NavIcon = icon
             return (
@@ -156,6 +167,7 @@ export default function Sidebar() {
           <div className="px-3 py-1.5">
             <p className="text-xs text-gray-400 truncate">{user.email}</p>
             <p className="text-xs text-gray-600 capitalize">{user.role}</p>
+            {tenantLabel ? <p className="text-[10px] text-gray-500 uppercase tracking-widest mt-1">{tenantLabel}</p> : null}
           </div>
         )}
 

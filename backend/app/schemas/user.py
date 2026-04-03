@@ -8,6 +8,7 @@ class CreateUserRequest(BaseModel):
     username: str
     password: str
     role: str = "user"
+    tenant_id: Optional[str] = None
 
     @field_validator("email")
     @classmethod
@@ -19,19 +20,25 @@ class CreateUserRequest(BaseModel):
     def clean_fields(cls, value: str) -> str:
         return clean_text(value)
 
+    @field_validator("tenant_id")
+    @classmethod
+    def clean_optional_tenant(cls, value: Optional[str]) -> Optional[str]:
+        return clean_optional_text(value)
+
 
 class UpdateUserRequest(BaseModel):
     email: Optional[EmailStr] = None
     username: Optional[str] = None
     role: Optional[str] = None
     status: Optional[str] = None
+    tenant_id: Optional[str] = None
 
     @field_validator("email")
     @classmethod
     def normalize_email(cls, value: Optional[EmailStr]) -> Optional[str]:
         return clean_text(str(value)).lower() if value else None
 
-    @field_validator("username", "role", "status")
+    @field_validator("username", "role", "status", "tenant_id")
     @classmethod
     def clean_optional_fields(cls, value: Optional[str]) -> Optional[str]:
         return clean_optional_text(value)
@@ -43,6 +50,9 @@ class UserOut(BaseModel):
     username: str
     role: str
     status: str
+    tenant_id: Optional[str] = None
+    tenant_name: Optional[str] = None
+    tenant_slug: Optional[str] = None
     last_login: Optional[str] = None
     created_at: str
     devices_count: int = 0

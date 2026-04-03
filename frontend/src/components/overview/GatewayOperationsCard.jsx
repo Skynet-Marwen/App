@@ -63,17 +63,21 @@ export default function GatewayOperationsCard({ gateway, loading }) {
 
       <div className="space-y-4">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {METRICS.map(({ key, label, suffix, Icon, tone }) => (
-            <div key={key} className="rounded-xl border border-cyan-500/10 bg-black/25 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-gray-500">{label}</p>
-                <Icon size={14} className={tone} />
+          {METRICS.map((metric) => {
+            const IconComponent = metric.Icon
+
+            return (
+              <div key={metric.key} className="rounded-xl border border-cyan-500/10 bg-black/25 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-gray-500">{metric.label}</p>
+                  <IconComponent size={14} className={metric.tone} />
+                </div>
+                <p className={`mt-2 text-lg font-semibold ${metric.tone}`}>
+                  {loading ? '…' : formatMetric({ key: metric.key, suffix: metric.suffix })}
+                </p>
               </div>
-              <p className={`mt-2 text-lg font-semibold ${tone}`}>
-                {loading ? '…' : formatMetric({ key, suffix })}
-              </p>
-            </div>
-          ))}
+            )
+          })}
         </div>
 
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.1fr_0.9fr_0.9fr]">

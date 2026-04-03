@@ -1,7 +1,7 @@
 # SkyNet — API Reference
 
 > Version: v1 | Base URL: `/api/v1`
-> Last updated: 2026-04-02 — shipped app version `1.6.0`
+> Last updated: 2026-04-03 — shipped app version `1.6.9`
 
 ---
 
@@ -42,7 +42,15 @@ username=admin@skynet.local&password=admin
 {
   "access_token": "eyJ...",
   "token_type": "bearer",
-  "user": { "id": "uuid", "email": "...", "username": "admin", "role": "admin" }
+  "user": {
+    "id": "uuid",
+    "email": "...",
+    "username": "admin",
+    "role": "superadmin",
+    "tenant_id": null,
+    "tenant_name": null,
+    "tenant_slug": null
+  }
 }
 ```
 
@@ -55,6 +63,8 @@ SKYNET auth required. Invalidates current session.
 
 ### `GET /auth/me`
 SKYNET auth required. Returns current operator profile.
+
+The payload now includes `tenant_id`, `tenant_name`, `tenant_slug`, `theme_id`, and `theme_source` so the frontend can coordinate tenant-bound operator UX and theme resolution.
 
 ---
 
@@ -425,6 +435,11 @@ Track an authenticated user activity event.
 ### `GET /stats/overview?range=24h`
 SKYNET auth required. `range` = `1h | 24h | 7d | 30d`
 
+Notes:
+- `visitors_change` and `users_change` compare the selected range with the immediately previous range of the same size.
+- `total_blocked` is a current posture count (blocked IPs + blocked visitors + blocked devices), so `blocked_change` may be omitted when a truthful period-over-period comparison is not available.
+- Overview widgets should show empty states when these fields are absent; they must not fabricate substitute hotspot, investigation, or enforcement data.
+
 **Response `200`**
 ```json
 {
@@ -523,18 +538,58 @@ SKYNET auth required. Sends a realtime snapshot envelope roughly every 5 seconds
 ### `GET /users`
 Params: `page`, `page_size`, `search`
 
+Admin-only. Tenant-bound admins see their own tenant scope; superadmins can see global operators and all tenant scopes.
+
 ### `POST /users`
-**Body** `{ "email": "...", "username": "...", "password": "...", "role": "user" }`
+Admin-only.
+
+**Body** `{ "email": "...", "username": "...", "password": "...", "role": "user", "tenant_id": "optional-uuid-or-null" }`
+
+Notes:
+- `role` can be `user`, `moderator`, `admin`, or `superadmin`
+- only superadmins can create or promote `superadmin` accounts
+- `superadmin` accounts stay global and cannot be tenant-bound
 
 ### `GET /users/{id}`
 ### `PUT /users/{id}`
-**Body** `{ "role": "moderator", "status": "active" }`
+**Body** `{ "role": "moderator", "status": "active", "tenant_id": null }`
 
 ### `DELETE /users/{id}`
 ### `POST /users/{id}/block` · `DELETE /users/{id}/block`
 ### `POST /users/{id}/reset-password`
 ### `GET /users/{id}/sessions`
 ### `DELETE /users/{id}/sessions/{session_id}`
+
+### `GET /tenants`
+Admin-only. Lists tenant accounts visible to the current operator.
+
+**Response `200`**
+```json
+[
+  {
+    "id": "uuid",
+    "name": "Mouwaten",
+    "slug": "mouwaten",
+    "primary_host": "mouwaten.example.com",
+    "description": "Citizen portal",
+    "default_theme_id": "mouwaten-ops",
+    "default_theme_name": "Mouwaten Ops",
+    "is_active": true,
+    "user_count": 6,
+    "created_at": "2026-04-02 23:10",
+    "updated_at": "2026-04-02 23:10"
+  }
+]
+```
+
+### `POST /tenants`
+Superadmin-only. Creates a tenant account.
+
+### `PUT /tenants/{tenant_id}`
+Superadmin-only. Updates tenant metadata, primary host, active state, or default theme.
+
+### `DELETE /tenants/{tenant_id}`
+Superadmin-only. Deletes a tenant account after operators are unassigned.
 
 ---
 
@@ -595,9 +650,78 @@ Params: `page`, `page_size`, `action`, `actor_id`, `target_type`, `target_id`, `
 
 ### `GET /integration/sites` · `POST /integration/sites`
 **Body** `{ "name": "My App", "url": "https://example.com" }`
+
+`GET /integration/sites` returns real per-site aggregates:
+
+```json
+[
+  {
+    "id": "uuid",
+    "name": "Mouwaten",
+    "url": "https://mouwaten.example.com",
+    "description": "Citizen portal",
+    "api_key": "hex-key",
+    "active": true,
+    "stats": {
+      "visitors": 1842,
+      "events": 9231,
+      "blocked": 17
+    },
+    "created_at": "2026-04-02"
+  }
+]
+```
+
+`stats.blocked` is currently the number of blocked visitors associated with the site.
+New site API keys and regenerated keys honor the runtime `integration_api_key_prefix` setting and are rejected when `integration_api_access_enabled=false`.
+
 ### `DELETE /integration/sites/{id}`
 ### `POST /integration/sites/{id}/regenerate-key`
 ### `GET /integration/tracker-script?site_id={id}`
+
+---
+
+## Security Center
+
+### `GET /security/status`
+SKYNET admin auth required. Returns scheduler config, aggregate open counts, and scanned target profiles.
+
+### `GET /security/findings`
+SKYNET admin auth required. Returns open STIE findings.
+
+### `GET /security/recommendations`
+SKYNET admin auth required. Returns current remediation recommendations.
+
+### `POST /security/scan`
+SKYNET admin auth required. Runs a manual STIE scan.
+
+**Body**
+```json
+{ "refresh_intel": true, "site_id": null }
+```
+
+**Response `200`**
+```json
+{
+  "ok": true,
+  "scanned_targets": 2,
+  "findings_created": 5,
+  "recommendations_created": 6,
+  "intel_updated": 14,
+  "errors": [
+    {
+      "site_id": "uuid",
+      "site_url": "https://broken.example.com",
+      "detail": "timed out"
+    }
+  ]
+}
+```
+
+Notes:
+- STIE scan runs are resilient per site. One failing target should not abort the whole scan.
+- When `errors` is non-empty, the matching target profile is marked `scan_status = error` and the note is surfaced in the dashboard.
+- Threat-intel refresh now ignores malformed advisory rows from upstream feeds or fallback sources instead of aborting the entire scan.
 
 ---
 
@@ -606,6 +730,8 @@ Params: `page`, `page_size`, `action`, `actor_id`, `target_type`, `target_id`, `
 ### `GET /settings` · `PUT /settings`
 SKYNET auth required.
 
+Review note (2026-04-03): this is the intended operator-facing contract, but the active branch still needs RBAC hardening on several settings-adjacent routes so only admin/superadmin users can mutate global configuration consistently.
+
 **Key fields in settings object:**
 ```json
 {
@@ -613,7 +739,39 @@ SKYNET auth required.
   "base_url": "https://skynet.example.com",
   "https_mode": "edge",
   "https_provider": "reverse_proxy",
+  "allowed_domains": ["skynet.example.com", "*.ops.example.com"],
+  "cors_allowed_origins": ["https://skynet.example.com", "https://admin.example.com"],
+  "cors_allowed_methods": ["GET", "POST", "PUT", "DELETE"],
+  "cors_allowed_headers": ["Authorization", "Content-Type", "X-SkyNet-Key"],
+  "cors_allow_credentials": true,
   "geoip_provider": "ip-api",
+  "risk_modifier_weights": {
+    "shared_device": 0.20,
+    "new_device": 0.10
+  },
+  "fingerprint_signal_weights": {
+    "canvas_hash": 0.16,
+    "webgl_hash": 0.18
+  },
+  "network_proxy_action": "observe",
+  "network_country_watchlist": ["RU", "CN"],
+  "network_ip_allowlist": ["10.0.0.0/24"],
+  "network_ip_denylist": ["198.51.100.20"],
+  "rate_limit_default_per_minute": 300,
+  "rate_limit_track_per_minute": 200,
+  "rate_limit_auth_per_minute": 30,
+  "rate_limit_auth_login_per_minute": 10,
+  "integration_api_access_enabled": true,
+  "integration_api_key_prefix": "sk_",
+  "rate_limit_integration_per_minute": 120,
+  "integration_siem_enabled": false,
+  "integration_siem_url": "",
+  "integration_siem_secret": "",
+  "integration_siem_events": ["high_severity_incident", "evasion_detected"],
+  "integration_monitoring_enabled": false,
+  "integration_monitoring_url": "",
+  "integration_monitoring_secret": "",
+  "integration_monitoring_events": ["high_severity_incident", "block_triggered"],
   "smtp_enabled": false,
   "smtp_password": "",
   "idp_providers": [
@@ -636,7 +794,17 @@ SKYNET auth required.
 
 Notes:
 - `idp_providers[*].jwks_url` and `idp_providers[*].issuer` accept `http`/`https` URLs only.
+- `allowed_domains` accepts bare hosts and wildcard hosts like `*.skynet.tn`; when non-empty, requests for other hosts are rejected before routing.
+- `cors_allowed_origins` accepts exact origins or `*`; `cors_allowed_methods` and `cors_allowed_headers` accept `*` or explicit values.
+- `network_ip_allowlist` and `network_ip_denylist` accept single IPs or CIDR blocks.
 - Webhook events can now include `on_high_severity_incident` for alert delivery on open high/critical incidents.
+- Escalation settings live in the main settings payload: `notification_escalation_enabled`, `notification_escalation_min_severity`, `notification_escalation_delay_minutes`, `notification_escalation_repeat_limit`, and `notification_escalation_channels`.
+- `notification_event_matrix` is the authoritative per-event routing map for notification channels and event-level escalation eligibility.
+- Security tuning now also lives in the main settings payload: `risk_modifier_weights`, `fingerprint_signal_weights`, `network_*_action`, `network_country_watchlist`, and `network_provider_watchlist`.
+- Access & Network rate limits are enforced per IP at runtime for login, authenticated operator routes, tracker routes, and all other HTTP requests.
+- Integration runtime also lives in the main settings payload: `integration_api_access_enabled`, `integration_api_key_prefix`, `rate_limit_integration_per_minute`, and the `integration_*` connector settings for SIEM / monitoring webhook fanout.
+- `keycloak_sync_auth_realm` and `keycloak_sync_realm` let Keycloak Admin sync authenticate against one realm while importing users from another.
+- Current gap: `webhook_secret` is still a plaintext runtime field on the active branch and should not be treated as hardened secret storage until it is moved to masked encrypted-at-rest handling.
 
 ### `GET /settings/https/status`
 Returns the state of the self-signed and uploaded certificate stores.
@@ -653,7 +821,49 @@ SMTP state is returned by `GET /settings`.
 ### `PUT /settings/smtp` · `POST /settings/smtp/test` · `GET /settings/smtp/reveal`
 `GET /settings/smtp/reveal` is admin-only and returns the decrypted stored SMTP password.
 
-`event_retention_days` is active at runtime and prunes old `activity_events` during the background maintenance loop.
+### `POST /settings/webhooks/test`
+Sends a signed test webhook using the supplied form values without saving them first.
+
+**Body**
+```json
+{
+  "url": "https://hooks.example.com/skynet",
+  "secret": "shared-secret",
+  "event": "webhook_test"
+}
+```
+
+### `GET /settings/notifications/deliveries`
+Returns recent SMTP and webhook delivery attempts, including failed sends and escalation retries.
+
+### `GET /settings/storage/status`
+Returns storage health, retention preview counts, database footprint, index count, Redis memory status, and archive/backup catalog sizes.
+
+### `POST /settings/storage/purge`
+Runs retention cleanup immediately for expired tracker events, authenticated activity events, resolved incidents, and stale visitors.
+
+### `POST /settings/storage/archive`
+Exports a JSON retention archive of the rows that are currently eligible for cleanup, stores a copy under `backend/data/retention-archives/`, and returns the same archive as a download.
+
+### `GET /settings/integrations/status`
+Returns Integration domain health: site/API access posture, SIEM + monitoring connector status, and current threat-intel inventory metadata.
+
+### `POST /settings/integrations/test`
+Sends a signed webhook test to either the SIEM or monitoring connector using the supplied runtime values.
+
+**Body**
+```json
+{
+  "connector": "siem",
+  "url": "https://collector.example.com/skynet",
+  "secret": "shared-secret"
+}
+```
+
+### `POST /settings/integrations/threat-intel/refresh`
+Forces an immediate STIE threat-intel refresh and returns the number of updated entries.
+
+`event_retention_days` now prunes both `events` and `activity_events` during the background maintenance loop. `incident_retention_days` prunes resolved incidents, and `visitor_retention_days` either anonymizes or deletes stale visitors depending on `anonymize_ips`.
 
 ---
 
@@ -665,6 +875,7 @@ Theme registry and per-user theme resolution are first-class backend features.
 SKYNET auth required. Returns the active theme registry for normal users; admins also see inactive themes.
 
 `layout.role_surfaces` is optional and lets themes hide or relabel shell navigation entries per operator role without changing backend authorization.
+`layout.shell_mode`, `layout.content_width`, `layout.sidebar_width`, `layout.topbar`, and `layout.header_sticky` now drive the live dashboard shell directly.
 
 ### `POST /themes`
 Admin-only. Create a new global theme.
@@ -678,6 +889,11 @@ Admin-only. Create a new global theme.
   "layout": {
     "footer_enabled": true,
     "logo_size": "md",
+    "shell_mode": "fixed",
+    "content_width": "wide",
+    "sidebar_width": "standard",
+    "topbar": "default",
+    "header_sticky": true,
     "role_surfaces": {
       "user": { "hidden": ["settings", "integration"] },
       "moderator": { "hidden": ["settings"], "labels": { "users": "Identity" } }
@@ -788,6 +1004,7 @@ SKYNET auth required. Persist a per-user theme choice.
 ```
 
 Use `{ "theme_source": "default" }` to reset a user back to the system default.
+If the operator follows the system default theme, backend resolution may return a dynamic risk/tenant override instead of the stored default theme. Tenant-bound operators can also inherit their tenant account's default theme when the tenant strategy is active.
 
 ---
 
@@ -837,6 +1054,20 @@ SKYNET auth required. Aggregated dashboard search for fast jumps across visitors
 
 ### `GET /system/info`
 No auth. Returns version strings.
+
+Review note (2026-04-03): this endpoint is currently broader than intended and should be treated as a temporary exposure until the system surface is tightened to operator/admin-only access.
+
+### `GET /system/bootstrap-status`
+SKYNET auth required. Returns onboarding and platform-readiness state.
+
+### `GET /system/diagnostics`
+SKYNET auth required. Returns database/Redis health, runtime flags, inventory totals, and recent audit activity.
+
+### `POST /system/maintenance/reload-runtime`
+SKYNET auth required. Reloads the persisted runtime config into the in-process cache.
+
+### `POST /system/maintenance/reset-onboarding`
+SKYNET auth required. Re-enables the onboarding wizard and clears the completion marker.
 
 ### `GET /health`
 No auth. `{ "status": "ok", "service": "SkyNet" }`

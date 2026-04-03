@@ -36,8 +36,12 @@ const DEFAULT_THEME = {
   layout: {
     density: 'comfortable',
     radius: 'xl',
-    sidebar: 'default',
+    sidebar: 'expanded',
+    sidebar_width: 'standard',
     topbar: 'default',
+    shell_mode: 'fixed',
+    content_width: 'regular',
+    header_sticky: true,
     font_family: "'Segoe UI', system-ui, sans-serif",
     nav_style: 'stacked',
     header_alignment: 'left',
@@ -96,6 +100,7 @@ function roleSurfaceAliases(role) {
     moderator: ['moderator', 'operator'],
     operator: ['operator', 'moderator'],
     admin: ['admin'],
+    superadmin: ['superadmin', 'admin'],
   }
   return aliasMap[normalizedRole] || [normalizedRole]
 }
@@ -205,7 +210,11 @@ export function applyTheme(theme) {
   root.dataset.themeDensity = layout.density || DEFAULT_THEME.layout.density
   root.dataset.themeRadius = layout.radius || DEFAULT_THEME.layout.radius
   root.dataset.themeSidebar = layout.sidebar || DEFAULT_THEME.layout.sidebar
+  root.dataset.themeSidebarWidth = layout.sidebar_width || DEFAULT_THEME.layout.sidebar_width
   root.dataset.themeTopbar = layout.topbar || DEFAULT_THEME.layout.topbar
+  root.dataset.themeShellMode = layout.shell_mode || DEFAULT_THEME.layout.shell_mode
+  root.dataset.themeContentWidth = layout.content_width || DEFAULT_THEME.layout.content_width
+  root.dataset.themeHeaderSticky = layout.header_sticky === false ? 'false' : 'true'
   root.dataset.themeNavStyle = layout.nav_style || DEFAULT_THEME.layout.nav_style
   root.dataset.themeHeaderAlignment = layout.header_alignment || DEFAULT_THEME.layout.header_alignment
   root.dataset.themeFooterEnabled = layout.footer_enabled === false ? 'false' : 'true'
@@ -219,6 +228,15 @@ export function applyTheme(theme) {
   } else if (branding?.company_name) {
     document.title = branding.company_name
   }
+}
+
+export function getThemeContentWidthClass(layout = {}, fullWidth = false) {
+  if (fullWidth) return 'max-w-none'
+  const width = layout?.content_width || DEFAULT_THEME.layout.content_width
+  if (width === 'narrow') return 'max-w-5xl'
+  if (width === 'wide') return 'max-w-[1900px]'
+  if (width === 'full') return 'max-w-none'
+  return 'max-w-[1720px]'
 }
 
 export function extractResolvedTheme(payload) {

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import delete, func, select
@@ -22,6 +23,7 @@ from .stie_sources import fetch_threat_feed_bundle
 INTEL_LOCK = asyncio.Lock()
 SCAN_LOCK = asyncio.Lock()
 PAYLOAD_MARKERS = ("<script", "%3cscript", "' or 1=1", "../", "%2e%2e%2f", "${jndi:", "union select", "redirect=")
+security_logger = logging.getLogger("skynet.security")
 
 
 def _parse_datetime(value):
@@ -31,6 +33,15 @@ def _parse_datetime(value):
         return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except Exception:
         return None
+
+
+def _stringify_event_properties(value) -> str | None:
+    if value is None or isinstance(value, str):
+        return value
+    try:
+        return json.dumps(value, default=str)
+    except Exception:
+        return str(value)
 
 
 async def _build_traffic_context(db: AsyncSession, site_id: str | None) -> dict:
@@ -46,7 +57,7 @@ async def _build_traffic_context(db: AsyncSession, site_id: str | None) -> dict:
     payload_markers: list[str] = []
     suspicious_ips: set[str] = set()
     for page_url, referrer, properties, ip in events:
-        haystack = " ".join(filter(None, [page_url, referrer, properties])).lower()
+        haystack = " ".join(filter(None, [page_url, referrer, _stringify_event_properties(properties)])).lower()
         hits = [marker for marker in PAYLOAD_MARKERS if marker in haystack]
         if hits and ip:
             suspicious_ips.add(ip)
@@ -118,10 +129,38 @@ async def _apply_auto_defense(db: AsyncSession, findings: list[SecurityFinding])
                 blocked.reason = "STIE active exploitation suspected"
 
 
+async def _record_scan_error(db: AsyncSession, site: Site, detail: str) -> None:
+    now = datetime.now(timezone.utc)
+    profile = await db.scalar(select(TargetProfile).where(TargetProfile.site_id == site.id))
+    if not profile:
+        profile = TargetProfile(site_id=site.id, base_url=site.url)
+        db.add(profile)
+    profile.base_url = site.url
+    profile.scan_status = "error"
+    profile.notes = detail[:2000]
+    profile.last_scanned_at = now
+    profile.updated_at = now
+    await db.flush()
+
+
 async def run_security_scan(db: AsyncSession, *, force: bool = False, site_id: str | None = None, refresh_intel_first: bool = True) -> dict:
     cfg = security_settings()
     async with SCAN_LOCK:
-        intel_updated = await refresh_threat_intel(db, force=force) if refresh_intel_first else 0
+        errors: list[dict[str, str | None]] = []
+        intel_updated = 0
+        if refresh_intel_first:
+            try:
+                intel_updated = await refresh_threat_intel(db, force=force)
+            except Exception as exc:
+                await db.rollback()
+                security_logger.exception("STIE threat intel refresh failed during manual scan")
+                errors.append(
+                    {
+                        "site_id": None,
+                        "site_url": None,
+                        "detail": f"Threat intel refresh failed: {exc}",
+                    }
+                )
         threats = list((await db.execute(select(ThreatIntel).order_by(ThreatIntel.severity.desc()))).scalars())
         sites_query = select(Site).where(Site.active.is_(True))
         if site_id:
@@ -133,80 +172,94 @@ async def run_security_scan(db: AsyncSession, *, force: bool = False, site_id: s
         scanned_targets = 0
         threat_index = [{"id": item.id, "affected_software": item.affected_software_list(), "description": item.description} for item in threats]
         for site in sites:
-            profile = await db.scalar(select(TargetProfile).where(TargetProfile.site_id == site.id))
-            if not profile:
-                profile = TargetProfile(site_id=site.id, base_url=site.url)
-                db.add(profile)
-                await db.flush()
+            try:
+                async with db.begin_nested():
+                    profile = await db.scalar(select(TargetProfile).where(TargetProfile.site_id == site.id))
+                    if not profile:
+                        profile = TargetProfile(site_id=site.id, base_url=site.url)
+                        db.add(profile)
+                        await db.flush()
 
-            observed = list(
-                (
-                    await db.execute(
-                        select(Event.page_url).where(Event.site_id == site.id, Event.page_url.is_not(None)).limit(100)
+                    observed = list(
+                        (
+                            await db.execute(
+                                select(Event.page_url).where(Event.site_id == site.id, Event.page_url.is_not(None)).limit(100)
+                            )
+                        ).scalars()
                     )
-                ).scalars()
-            )
-            traffic = await _build_traffic_context(db, site.id)
-            result = await asyncio.to_thread(
-                analyze_target,
-                site.url,
-                observed,
-                traffic,
-                threat_index,
-                cfg["max_scan_depth"],
-                cfg["correlation_sensitivity"],
-            )
-            data = result["profile"]
-            profile.base_url = data["base_url"]
-            profile.detected_server = data["detected_server"]
-            profile.powered_by = data["powered_by"]
-            profile.frameworks = json.dumps(data["frameworks"])
-            profile.technologies = json.dumps(data["technologies"])
-            profile.response_headers = json.dumps(data["response_headers"])
-            profile.observed_endpoints = json.dumps(data["observed_endpoints"])
-            profile.scan_status = data["scan_status"]
-            profile.notes = data["notes"]
-            profile.last_scanned_at = datetime.now(timezone.utc)
-            profile.updated_at = datetime.now(timezone.utc)
+                    traffic = await _build_traffic_context(db, site.id)
+                    result = await asyncio.to_thread(
+                        analyze_target,
+                        site.url,
+                        observed,
+                        traffic,
+                        threat_index,
+                        cfg["max_scan_depth"],
+                        cfg["correlation_sensitivity"],
+                    )
+                    data = result["profile"]
+                    now = datetime.now(timezone.utc)
+                    profile.base_url = data["base_url"]
+                    profile.detected_server = data["detected_server"]
+                    profile.powered_by = data["powered_by"]
+                    profile.frameworks = json.dumps(data["frameworks"])
+                    profile.technologies = json.dumps(data["technologies"])
+                    profile.response_headers = json.dumps(data["response_headers"])
+                    profile.observed_endpoints = json.dumps(data["observed_endpoints"])
+                    profile.scan_status = data["scan_status"]
+                    profile.notes = data["notes"]
+                    profile.last_scanned_at = now
+                    profile.updated_at = now
 
-            await _replace_site_results(db, site.id)
-            new_findings: list[SecurityFinding] = []
-            for finding_data in result["findings"]:
-                finding = SecurityFinding(
-                    site_id=site.id,
-                    profile_id=profile.id,
-                    finding_type=finding_data["finding_type"],
-                    title=finding_data["title"],
-                    severity=finding_data["severity"],
-                    endpoint=finding_data["endpoint"],
-                    evidence=json.dumps(finding_data["evidence"]),
-                    correlated_risk_score=finding_data["correlated_risk_score"],
-                    active_exploitation_suspected=finding_data["active_exploitation_suspected"],
-                    status="open",
-                    updated_at=datetime.now(timezone.utc),
-                )
-                db.add(finding)
-                await db.flush()
-                new_findings.append(finding)
-                findings_created += 1
-                for recommendation in finding_data.get("recommendations", []):
-                    db.add(
-                        SecurityRecommendation(
-                            finding_id=finding.id,
-                            recommendation_text=recommendation["recommendation_text"],
-                            priority=recommendation["priority"],
-                            auto_applicable=recommendation["auto_applicable"],
-                            action_key=recommendation["action_key"],
-                            action_payload=json.dumps(recommendation["action_payload"]),
+                    await _replace_site_results(db, site.id)
+                    new_findings: list[SecurityFinding] = []
+                    for finding_data in result["findings"]:
+                        finding = SecurityFinding(
+                            site_id=site.id,
+                            profile_id=profile.id,
+                            finding_type=finding_data["finding_type"],
+                            title=finding_data["title"],
+                            severity=finding_data["severity"],
+                            endpoint=finding_data["endpoint"],
+                            evidence=json.dumps(finding_data["evidence"]),
+                            correlated_risk_score=finding_data["correlated_risk_score"],
+                            active_exploitation_suspected=finding_data["active_exploitation_suspected"],
                             status="open",
-                            updated_at=datetime.now(timezone.utc),
+                            updated_at=now,
                         )
-                    )
-                    recommendations_created += 1
+                        db.add(finding)
+                        await db.flush()
+                        new_findings.append(finding)
+                        findings_created += 1
+                        for recommendation in finding_data.get("recommendations", []):
+                            db.add(
+                                SecurityRecommendation(
+                                    finding_id=finding.id,
+                                    recommendation_text=recommendation["recommendation_text"],
+                                    priority=recommendation["priority"],
+                                    auto_applicable=recommendation["auto_applicable"],
+                                    action_key=recommendation["action_key"],
+                                    action_payload=json.dumps(recommendation["action_payload"]),
+                                    status="open",
+                                    updated_at=now,
+                                )
+                            )
+                            recommendations_created += 1
 
-            if cfg["enable_auto_defense"]:
-                await _apply_auto_defense(db, [item for item in new_findings if item.active_exploitation_suspected])
-            scanned_targets += 1
+                    if cfg["enable_auto_defense"]:
+                        await _apply_auto_defense(db, [item for item in new_findings if item.active_exploitation_suspected])
+                    scanned_targets += 1
+            except Exception as exc:
+                security_logger.exception("STIE scan failed for site %s (%s)", site.id, site.url)
+                async with db.begin_nested():
+                    await _record_scan_error(db, site, str(exc))
+                errors.append(
+                    {
+                        "site_id": site.id,
+                        "site_url": site.url,
+                        "detail": str(exc),
+                    }
+                )
 
         await db.commit()
         return {
@@ -214,4 +267,5 @@ async def run_security_scan(db: AsyncSession, *, force: bool = False, site_id: s
             "findings_created": findings_created,
             "recommendations_created": recommendations_created,
             "intel_updated": intel_updated,
+            "errors": errors,
         }

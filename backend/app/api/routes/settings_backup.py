@@ -166,5 +166,5 @@ async def get_backup_metadata(filename: str, current: User = Depends(get_current
 
 
 def _require_admin(current: User) -> None:
-    if current.role != "admin":
+    if current.role not in {"admin", "superadmin"}:
         raise HTTPException(status_code=403, detail="Insufficient privileges")

@@ -6,7 +6,7 @@ import { useTheme } from '../../hooks/useTheme'
 import { useAuthStore } from '../../store/useAppStore'
 
 export default function ThemeSelectorTab() {
-  const isAdmin = useAuthStore((state) => state.user?.role === 'admin')
+  const isAdmin = useAuthStore((state) => ['admin', 'superadmin'].includes(state.user?.role))
   const {
     availableThemes,
     currentTheme,
@@ -41,7 +41,9 @@ export default function ThemeSelectorTab() {
     const value = event.target.value
     try {
       await selectTheme(value === '__default__' ? null : value)
-    } catch (_) {}
+    } catch {
+      return
+    }
   }
 
   const accent = currentTheme?.colors?.accent || '#22d3ee'
@@ -151,7 +153,7 @@ export default function ThemeSelectorTab() {
             style={{
               background: surface,
               borderColor: `${accent}33`,
-              boxShadow: `0 0 24px ${accent}15`,
+              boxShadow: '0 10px 24px rgba(0, 0, 0, 0.18)',
             }}
           >
             <div className="flex items-center justify-between gap-3">
@@ -165,7 +167,7 @@ export default function ThemeSelectorTab() {
               </div>
               <div
                 className="h-10 w-10 rounded-full border flex items-center justify-center"
-                style={{ borderColor: accent, color: accent, boxShadow: `0 0 14px ${accent}55` }}
+                style={{ borderColor: accent, color: accent }}
               >
                 <Palette size={16} />
               </div>

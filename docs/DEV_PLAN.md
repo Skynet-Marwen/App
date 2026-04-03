@@ -5,18 +5,79 @@
 
 ---
 
-## Current Version: `1.6.0`
-## Phase: Release complete for the active gateway milestone; next focus is `v2.0.0` multi-tenancy
+## Current Version: `1.6.9`
+## Phase: Release complete for the settings-surface hardening pass; next focus is `v2.0.0` multi-tenancy
 
 ---
 
 ## In Progress
 
 - [ ] Run migrations 0005–0011 in all deployment environments
+- [ ] Harden operator RBAC on settings, integration, blocking, and system routes so `user` / `moderator` accounts cannot mutate global state or read sensitive diagnostics
+- [ ] Encrypt and mask the global webhook signing secret in runtime settings; `GET /api/v1/settings` must not return the raw value
 
 ---
 
 ## Done (Unreleased Branch)
+
+- [x] 2026-04-03 — fix(frontend+docs): restored a lint-clean frontend branch and simplified the Settings UX for non-developer operators
+  - **Changed:** Settings navigation now behaves like a compact sticky sub-navigation bar inside the Settings surface instead of a stack of section cards
+  - **Changed:** feature-status summary cards, coverage cards, capability chips, and roadmap/planning cards are now consistently hidden behind Developer Mode for a cleaner operator-facing settings experience
+  - **Changed:** glow-heavy card and modal styling was flattened so the frontend reads more like a professional operator console
+  - **Fixed:** `npm run lint` now passes again after cleaning up empty catch blocks, unused render variables, hook dependencies, and Vite config linting
+  - **Verified:** `npm run lint` and `npm run build` both pass in `frontend/`
+
+- [x] 2026-04-03 — chore(docs+review): documented branch-review hardening gaps and current verification state
+  - **Added:** explicit follow-up work for RBAC hardening, webhook-secret handling, and frontend lint cleanup in the active development plan
+  - **Changed:** security and API docs now call out the current branch gaps instead of implying those hardening items are already complete
+  - **Verified:** frontend build passes, and backend pytest execution remains unavailable in the current shell because `pytest` is not installed
+
+- [x] 2026-04-03 — feat(storage+integrations-settings): completed the Data & Storage and Integrations settings surfaces
+  - **Added:** storage status, retention archive export, and on-demand retention cleanup endpoints for events, activity, incidents, and stale visitors
+  - **Added:** integration runtime controls for API access governance, API-key prefixing, integration-specific rate limits, threat-intel refresh, and SIEM/monitoring connector testing
+  - **Changed:** Settings -> Data & Storage and Settings -> Integrations now mark all currently shipped capabilities as live in both the detailed roadmap cards and the coordinated summary
+  - **Changed:** tracker/API key validation now honors the runtime integration access toggle, and event-notification flows can fan out to SIEM/monitoring webhooks
+
+- [x] 2026-04-02 — feat(auth+theme-settings): completed the Authentication & Identity and UI / Theme Engine settings surfaces
+  - **Added:** `superadmin` role, tenant account registry, operator tenant assignment, and tenant default-theme linkage with migration `0018`
+  - **Added:** `/api/v1/tenants` CRUD plus tenant-aware operator serialization on `/users` and `/auth/me`
+  - **Added:** theme shell controls for fixed/document layout mode, content width, sidebar width, sticky header, topbar density, and curated dashboard widget sets
+  - **Changed:** Settings -> Authentication & Identity and Settings -> UI / Theme Engine now mark all currently shipped capabilities as live in both the detailed roadmap cards and the coordinated summary
+
+- [x] 2026-04-02 — feat(access-network): completed the Access & Network settings surface and aligned runtime enforcement
+  - **Added:** runtime settings for allowed domains, CORS origin/method/header policy, IP allow/deny lists, and per-route-class request limits
+  - **Added:** `AccessNetworkMiddleware` to enforce host allowlists, dynamic CORS, runtime rate limits, and pre-routing IP policy on every HTTP request
+  - **Fixed:** client IP extraction now respects `trust_proxy_headers`; forwarded IP headers are ignored unless the trusted-edge toggle is enabled
+  - **Changed:** Settings -> Access & Network and the coordinated settings summary now mark Domains & Routing, IP Control, and Rate Limiting as live
+
+- [x] 2026-04-02 — chore(settings-summary): aligned the coordinated feature-status card with the real settings roadmap surface
+  - **Changed:** shared settings capability metadata now reflects session policy, dynamic themes, widget coverage, storage granularity, blocking strategy, and system monitoring more faithfully
+  - **Changed:** the top “Coordinated product state for the current settings surface” card now derives from a finer-grained capability map instead of several overly broad buckets
+
+- [x] 2026-04-02 — fix(security-center): hardened STIE scan refresh against malformed threat-intel feed rows
+  - **Fixed:** GitHub/NVD/local threat-intel parsing now skips malformed non-object entries instead of throwing `'str' object has no attribute 'get'`
+  - **Fixed:** Security Center status payload now carries profile scan notes explicitly, so target-level failures remain visible after refresh
+  - **Changed:** Security Center UI now distinguishes "scan succeeded but refresh failed" from a real scan failure
+  - **Verified:** local threat-intel bundle refresh completed with NVD + GitHub + local fallback rows after the parser hardening
+
+- [x] 2026-04-02 — fix(metrics+docs): verified operator data lineage and removed decorative dashboard fallback signals
+  - **Fixed:** `GET /api/v1/integration/sites` now returns real per-site visitor, event, and blocked-visitor aggregates instead of placeholder zeroes
+  - **Fixed:** Overview hotspot, enforcement, and investigation cards now render backend-derived payloads only and fall back to explicit empty states when data is absent
+  - **Fixed:** Overview now computes real visitor and unique-user trend deltas while leaving blocked trend empty until a comparable historical metric exists
+  - **Changed:** operator user list now surfaces active-device counts from live sessions rather than a hardcoded zero
+  - **Changed:** README, API, architecture, logic, install, deploy, workflow, and frontend docs now document the real data-path rules and verification checklist
+
+- [x] 2026-04-02 — feat(security-settings): completed the Security & Detection settings surface and aligned the coordinated summary
+  - **Added:** runtime controls for risk modifier weights, fingerprint signal weights, proxy/VPN/datacenter edge actions, country watchlists, and provider / ASN keyword watchlists
+  - **Added:** pageview network-intelligence incidents for proxy, VPN, datacenter, timezone mismatch, language mismatch, country-rule, and provider-rule matches
+  - **Changed:** Settings -> Security & Detection now saves runtime and anti-evasion posture together, and the coordinated settings summary now treats Network Intelligence and Device Identity as fully live
+  - **Changed:** gateway and tracker access checks now honor configured network-intelligence challenge/block actions before origin forwarding
+
+- [x] 2026-04-02 — feat(notifications): escalation rules plus webhook test and delivery log landed after the v1.6.0 cut
+  - **Added:** `notification_deliveries` persistence with migration `0017` for SMTP/webhook send history, including failure state and escalation attempt metadata
+  - **Added:** `POST /api/v1/settings/webhooks/test` and `GET /api/v1/settings/notifications/deliveries` for operator verification and troubleshooting
+  - **Added:** custom event matrix routing across `high_severity_incident`, `evasion_detected`, `spam_detected`, `block_triggered`, and `new_user`
+  - **Changed:** Settings -> Notifications & Messaging now exposes matrix-based routing, escalation policy controls, webhook test sends, and a live delivery log beside SMTP config
 
 - [x] 2026-04-02 — feat(gateway-dashboard): shipped proxy analytics on the Overview dashboard and closed the last v1.6.0 item before release prep
   - **Added:** structured `gateway_allow`, `gateway_challenge`, `gateway_block`, and `gateway_challenge_result` events for proxy analytics

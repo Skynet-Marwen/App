@@ -5,6 +5,7 @@ import ThemeBrandingSection from './ThemeBrandingSection'
 import ThemePreviewCard from './ThemePreviewCard'
 import ThemeRoleSurfaceSection from './ThemeRoleSurfaceSection'
 import ThemeSurfaceSection from './ThemeSurfaceSection'
+import ThemeWidgetSection from './ThemeWidgetSection'
 
 function JsonTextarea({ label, value, onChange, error, rows = 7, placeholder }) {
   return (
@@ -55,6 +56,7 @@ export default function ThemeEditorModal({
   const isEdit = mode === 'edit'
   const colors = parseJson(form.colorsText, '{}')
   const layout = parseJson(form.layoutText, '{}')
+  const widgets = parseJson(form.widgetsText, '[]')
   const branding = parseJson(form.brandingText, 'null') || {}
 
   const handleSubmit = async (event) => {
@@ -82,6 +84,10 @@ export default function ThemeEditorModal({
 
   const handleBrandingChange = (key, value) => {
     setForm((prev) => ({ ...prev, brandingText: updateJsonText(prev.brandingText, 'null', (next) => { next[key] = value }) }))
+  }
+
+  const handleWidgetsChange = (nextWidgets) => {
+    setForm((prev) => ({ ...prev, widgetsText: JSON.stringify(nextWidgets, null, 2) }))
   }
 
   const handleUploadLogo = async (file) => {
@@ -157,6 +163,11 @@ export default function ThemeEditorModal({
 
           <ThemeRoleSurfaceSection layout={layout} onLayoutChange={handleLayoutChange} />
 
+          <ThemeWidgetSection
+            widgets={widgets}
+            onWidgetsChange={handleWidgetsChange}
+          />
+
           <JsonTextarea label="Colors JSON" value={form.colorsText} onChange={(event) => setForm((prev) => ({ ...prev, colorsText: event.target.value }))} error={fieldErrors.colorsText} placeholder='{"primary":"#06b6d4","background":"#0b1120"}' />
           <JsonTextarea label="Layout JSON" value={form.layoutText} onChange={(event) => setForm((prev) => ({ ...prev, layoutText: event.target.value }))} error={fieldErrors.layoutText} placeholder='{"density":"comfortable","mode":"dark"}' />
           <JsonTextarea label="Widgets JSON" value={form.widgetsText} onChange={(event) => setForm((prev) => ({ ...prev, widgetsText: event.target.value }))} error={fieldErrors.widgetsText} placeholder='["traffic-heatmap","priority-investigations"]' />
@@ -194,7 +205,7 @@ export default function ThemeEditorModal({
                 is_active: form.is_active,
                 colors,
                 layout,
-                widgets: parseJson(form.widgetsText, '[]'),
+                widgets,
                 branding,
               }}
             />

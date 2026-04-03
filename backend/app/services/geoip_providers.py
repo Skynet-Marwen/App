@@ -10,7 +10,7 @@ import geoip2.errors
 from ..core.config import settings as cfg
 from ..core.redis import get_redis
 
-_IPAPI_URL = "http://ip-api.com/json/{ip}?fields=status,country,countryCode,city,timezone"
+_IPAPI_URL = "http://ip-api.com/json/{ip}?fields=status,country,countryCode,city,timezone,isp,org,as,hosting,proxy"
 _CACHE_TTL = 86400  # 24 h
 
 # --- local reader state (reset after mmdb upload) ---
@@ -72,6 +72,11 @@ async def lookup_ipapi(ip: str) -> dict:
         "country_flag": _flag(code),
         "city": data.get("city", ""),
         "timezone": data.get("timezone", "") or "",
+        "isp": data.get("isp", "") or "",
+        "org": data.get("org", "") or "",
+        "as": data.get("as", "") or "",
+        "hosting": bool(data.get("hosting")),
+        "proxy": bool(data.get("proxy")),
     }
     try:
         await redis.setex(cache_key, _CACHE_TTL, json.dumps(result))
@@ -94,6 +99,11 @@ def lookup_local(ip: str) -> dict:
             "country_flag": _flag(code),
             "city": record.city.name or "",
             "timezone": record.location.time_zone or "",
+            "isp": "",
+            "org": "",
+            "as": "",
+            "hosting": False,
+            "proxy": False,
         }
     except Exception:
         return {}

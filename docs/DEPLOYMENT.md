@@ -163,3 +163,13 @@ local SMB sync -> ssh to Synology -> docker compose pull/build/up -> /api/health
 - SMB deploys need either working GIO SMB support on the dev machine or a pre-mounted share path configured with `sync.mount_path`.
 - Native Python deployments are designed for `systemd` first; non-systemd process managers should use `restart_strategy: command`.
 - Theme logo delivery now rides on `/api/v1/themes/{id}/logo`, so public edges only need `/api/` forwarded to the backend; no extra static `theme-assets` path is required.
+
+## Post-Deploy Smoke Checklist
+
+Run these after every production deploy:
+
+1. Open Overview and confirm hotspot, investigation, and enforcement widgets either show real backend data or an explicit empty state.
+2. Open Integration and confirm site cards show non-placeholder visitor/event counts for active tracked apps.
+3. Trigger a manual Security Center rescan and confirm the UI either reports success or lists per-site scan errors instead of a generic failure.
+4. Confirm realtime HUD updates through websocket or polling fallback.
+5. Confirm operator list counts active devices from live sessions instead of a fixed zero.

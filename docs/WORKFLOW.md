@@ -93,6 +93,7 @@ git checkout dev && git merge master && git push origin dev
 - Must pass: lint, build, tests.
 - At least one approval required before merge to `master`.
 - Squash merge preferred for feature branches. Merge commit for releases.
+- Operational dashboards must not ship synthetic fallback counts or trends disguised as live data.
 
 ---
 
@@ -121,6 +122,13 @@ git pull origin dev
 ```
 
 UI/IA work that changes operator behavior should land with doc updates in the same PR: `README.md`, `docs/ARCHITECTURE.md`, `docs/API.md`, and `frontend/README.md` at minimum.
+
+Release and hotfix verification should also include:
+
+- Overview widgets show backend-derived metrics or explicit empty states only.
+- Integration site stats are non-placeholder for active tracked traffic.
+- Security Center scan reports partial failures per site instead of collapsing into a generic error.
+- Access & Network policy accepts only the expected hosts/origins and only trusts forwarded client IP headers when proxy trust is enabled.
 
 ### What the CLI guarantees
 

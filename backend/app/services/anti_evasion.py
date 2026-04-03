@@ -14,7 +14,15 @@ from .anti_evasion_config import get_anti_evasion_config
 from .bot_detection import detect_click_farm, detect_crawler_signature, detect_headless_signals
 from .dnsbl import lookup_ip as dnsbl_lookup_ip
 from .form_spam import assess_form_submission
-from .incident_notifications import dispatch_incident_notifications
+from .incident_notifications import dispatch_incident_notifications, dispatch_notification_event
+from .network_intel import (
+    is_datacenter_provider,
+    is_vpn_provider,
+    language_country_mismatch,
+    match_country_rule,
+    match_provider_rule,
+)
+from .runtime_config import runtime_settings
 
 RISK_POINTS = {
     "bot": 30,
@@ -52,11 +60,13 @@ async def _safe_run(coro) -> None:
 
 async def _run_pageview_checks(context: dict) -> None:
     config = get_anti_evasion_config()
+    runtime = runtime_settings()
     redis = get_redis()
     incidents = []
     async with AsyncSessionLocal() as db:
         device = await _get_device(db, context.get("device_id"))
         risk = 0
+        geo = context.get("geo") or {}
         if config.get("bot_detection") and _looks_like_bot(context.get("user_agent")):
             risk += RISK_POINTS["bot"]
             incident = await _emit_incident(db, redis, "BOT_DETECTED", "Bot-like user-agent detected", context, "high")
@@ -130,6 +140,107 @@ async def _run_pageview_checks(context: dict) -> None:
                 )
                 if incident:
                     incidents.append(incident)
+        if config.get("proxy_detection") and geo.get("proxy"):
+            risk += 35
+            incident = await _emit_incident(
+                db,
+                redis,
+                "PROXY_DETECTED",
+                "Network intelligence provider marked this IP as proxy traffic",
+                {**context, "details": {"provider": geo.get("isp") or geo.get("org"), "proxy": True}},
+                "high",
+            )
+            if incident:
+                incidents.append(incident)
+        if config.get("vpn_detection") and is_vpn_provider(geo):
+            risk += 40
+            incident = await _emit_incident(
+                db,
+                redis,
+                "VPN_DETECTED",
+                "Upstream provider metadata matches a VPN-style egress network",
+                {**context, "details": {"provider": geo.get("isp") or geo.get("org"), "as": geo.get("as")}},
+                "high",
+            )
+            if incident:
+                incidents.append(incident)
+        if config.get("datacenter_detection") and is_datacenter_provider(geo):
+            risk += 45
+            incident = await _emit_incident(
+                db,
+                redis,
+                "DATACENTER_SOURCE",
+                "Traffic appears to originate from a hosting or datacenter provider",
+                {**context, "details": {"provider": geo.get("isp") or geo.get("org"), "as": geo.get("as"), "hosting": bool(geo.get("hosting"))}},
+                "high",
+            )
+            if incident:
+                incidents.append(incident)
+        if config.get("timezone_mismatch") and context.get("fingerprint_drift", {}).get("clock_skew_detected"):
+            risk += 15
+            incident = await _emit_incident(
+                db,
+                redis,
+                "TIMEZONE_MISMATCH",
+                "Client timezone offset does not align with GeoIP timezone expectation",
+                {
+                    **context,
+                    "details": {
+                        "clock_skew_minutes": context.get("fingerprint_drift", {}).get("clock_skew_minutes"),
+                        "geo_timezone": geo.get("timezone"),
+                        "client_timezone": context.get("timezone"),
+                    },
+                },
+                "medium",
+            )
+            if incident:
+                incidents.append(incident)
+        if config.get("language_mismatch") and language_country_mismatch(context.get("language"), geo.get("country_code")):
+            risk += 10
+            incident = await _emit_incident(
+                db,
+                redis,
+                "LANGUAGE_MISMATCH",
+                "Browser language region does not align with the GeoIP country code",
+                {
+                    **context,
+                    "details": {
+                        "language": context.get("language"),
+                        "country_code": geo.get("country_code"),
+                    },
+                },
+                "medium",
+            )
+            if incident:
+                incidents.append(incident)
+        country_rule = match_country_rule(runtime, geo)
+        if country_rule:
+            severity = "critical" if country_rule.get("action") == "block" else "high" if country_rule.get("action") == "challenge" else "medium"
+            risk += 20 if severity == "medium" else 35 if severity == "high" else 50
+            incident = await _emit_incident(
+                db,
+                redis,
+                "GEO_RULE_MATCH",
+                "Configured country watchlist matched this request",
+                {**context, "details": country_rule},
+                severity,
+            )
+            if incident:
+                incidents.append(incident)
+        provider_rule = match_provider_rule(runtime, geo)
+        if provider_rule:
+            severity = "critical" if provider_rule.get("action") == "block" else "high" if provider_rule.get("action") == "challenge" else "medium"
+            risk += 20 if severity == "medium" else 35 if severity == "high" else 50
+            incident = await _emit_incident(
+                db,
+                redis,
+                "PROVIDER_RULE_MATCH",
+                "Configured provider / ASN keyword watchlist matched this request",
+                {**context, "details": provider_rule},
+                severity,
+            )
+            if incident:
+                incidents.append(incident)
         risk += await _apply_multi_account_risk(db, redis, context, config, incidents)
         if device:
             device.risk_score = min(100, max(device.risk_score or 0, risk))
@@ -407,10 +518,33 @@ def _serialize_incident(incident: Incident) -> dict:
 
 
 def _dispatch_notifications(incidents: list[Incident]) -> None:
-    if incidents:
-        dispatch_incident_notifications([_serialize_incident(incident) for incident in incidents])
+    if not incidents:
+        return
+    serialized = [_serialize_incident(incident) for incident in incidents]
+    dispatch_incident_notifications(serialized)
+    for incident in serialized:
+        event_key = _notification_event_for_incident(incident.get("type"))
+        dispatch_notification_event(
+            event_key,
+            {"incident": incident, "target": incident.get("target")},
+            subject=f"SkyNet Notification — {incident.get('type', 'incident')}",
+            severity=incident.get("severity") or "medium",
+            incident_id=incident.get("id"),
+        )
 
 
 def _looks_like_bot(user_agent: str | None) -> bool:
     ua = (user_agent or "").lower()
     return any(token in ua for token in ("bot", "crawler", "spider", "headless"))
+
+
+def _notification_event_for_incident(incident_type: str | None) -> str:
+    incident = str(incident_type or "").upper()
+    if incident in {
+        "SPAM_DETECTED",
+        "FORM_HONEYPOT_TRIGGERED",
+        "FORM_SUBMISSION_VELOCITY",
+        "FORM_CONTENT_DUPLICATED",
+    }:
+        return "spam_detected"
+    return "evasion_detected"

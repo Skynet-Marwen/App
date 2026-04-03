@@ -10,6 +10,7 @@ from ...models.device import Device
 from ...models.visitor import Visitor
 from ...schemas.device import DeviceGroupListResponse, DeviceListResponse, DeviceOut, LinkRequest
 from ...services.audit import log_action, request_ip
+from ...services.incident_notifications import dispatch_notification_event
 from ...services.device_identity import RECENT_IP_WINDOW_DAYS, group_devices, isoformat
 
 router = APIRouter(prefix="/devices", tags=["devices"])
@@ -274,6 +275,17 @@ async def block_device(
         v.status = "blocked"
     log_action(db, action="BLOCK_DEVICE", actor_id=current.id, target_type="device", target_id=d.id, ip=request_ip(request))
     await db.commit()
+    dispatch_notification_event(
+        "block_triggered",
+        {
+            "target_type": "device",
+            "target_id": d.id,
+            "target": d.fingerprint or d.id,
+            "actor": current.username,
+        },
+        subject="SkyNet Notification — Device Blocked",
+        severity="medium",
+    )
     return {"message": "Blocked"}
 
 

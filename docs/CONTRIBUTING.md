@@ -53,6 +53,7 @@ npm run dev             # → http://localhost:5173
 - **No inline secrets** — read from `process.env` / `os.environ`.
 - **No `SELECT *`** — explicit column selection only.
 - **Pydantic schemas** in `backend/app/schemas/` — not inline in routes.
+- **No synthetic operator metrics** — if data is unavailable, show an empty state instead of invented counts, hotspots, or trends.
 
 ### Git Rules
 

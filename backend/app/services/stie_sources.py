@@ -90,8 +90,13 @@ def _extract_references(cve: dict) -> list[str]:
 
 def _parse_nvd(payload: dict) -> list[dict]:
     rows: list[dict] = []
-    for item in payload.get("vulnerabilities", []):
+    vulnerabilities = payload.get("vulnerabilities", []) if isinstance(payload, dict) else []
+    for item in vulnerabilities:
+        if not isinstance(item, dict):
+            continue
         cve = item.get("cve", {})
+        if not isinstance(cve, dict):
+            continue
         cve_id = cve.get("id")
         if not cve_id:
             continue
@@ -116,13 +121,22 @@ def _parse_github(payload: object) -> list[dict]:
     advisories = payload if isinstance(payload, list) else []
     rows: list[dict] = []
     for item in advisories:
+        if not isinstance(item, dict):
+            continue
         advisory_id = item.get("cve_id") or item.get("ghsa_id")
         if not advisory_id:
             continue
         severity_name = (item.get("severity") or "medium").lower()
         affected: set[str] = set()
-        for vuln in item.get("vulnerabilities", []):
+        vulnerabilities = item.get("vulnerabilities", [])
+        if not isinstance(vulnerabilities, list):
+            vulnerabilities = []
+        for vuln in vulnerabilities:
+            if not isinstance(vuln, dict):
+                continue
             package = vuln.get("package") or {}
+            if not isinstance(package, dict):
+                package = {}
             ecosystem = package.get("ecosystem")
             name = package.get("name")
             if ecosystem:
@@ -137,7 +151,11 @@ def _parse_github(payload: object) -> list[dict]:
                 "severity_label": severity_name,
                 "affected_software": sorted(affected),
                 "description": item.get("summary") or item.get("description") or "",
-                "references": [ref.get("url") for ref in item.get("references", []) if ref.get("url")],
+                "references": [
+                    ref.get("url")
+                    for ref in (item.get("references", []) if isinstance(item.get("references", []), list) else [])
+                    if isinstance(ref, dict) and ref.get("url")
+                ],
                 "published_at": item.get("published_at"),
                 "updated_at": item.get("updated_at"),
             }
@@ -147,6 +165,8 @@ def _parse_github(payload: object) -> list[dict]:
 
 def load_local_fallback() -> list[dict]:
     data = json.loads(_seed_path().read_text(encoding="utf-8"))
+    if not isinstance(data, list):
+        return []
     return [
         {
             **item,
@@ -154,6 +174,7 @@ def load_local_fallback() -> list[dict]:
             "updated_at": item.get("updated_at"),
         }
         for item in data
+        if isinstance(item, dict) and item.get("id")
     ]
 
 
@@ -178,17 +199,24 @@ def fetch_threat_feed_bundle() -> tuple[list[dict], dict]:
 
     deduped: dict[str, dict] = {}
     for row in rows:
-        deduped.setdefault(row["id"], row)
+        if not isinstance(row, dict):
+            errors.append(f"invalid_row_type:{type(row).__name__}")
+            continue
+        row_id = row.get("id")
+        if not row_id:
+            errors.append("invalid_row_missing_id")
+            continue
+        deduped.setdefault(str(row_id), row)
 
     if not deduped:
         local_rows = load_local_fallback()
         for row in local_rows:
-            deduped.setdefault(row["id"], row)
+            deduped.setdefault(str(row["id"]), row)
         sources["local"] = len(local_rows)
     elif sources["local"] == 0:
         local_rows = load_local_fallback()
         for row in local_rows:
-            deduped.setdefault(row["id"], row)
+            deduped.setdefault(str(row["id"]), row)
         sources["local"] = len(local_rows)
 
     return list(deduped.values()), {"sources": sources, "errors": errors}

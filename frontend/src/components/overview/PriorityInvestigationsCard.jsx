@@ -15,17 +15,8 @@ const tagVariant = (tag) => {
   return 'default'
 }
 
-export default function PriorityInvestigationsCard({ investigations = [], fallbackIncidents = [], onInspect }) {
-  const items = investigations.length > 0
-    ? investigations
-    : fallbackIncidents.map((incident) => ({
-        ...incident,
-        status: 'open',
-        target_type: 'system',
-        target_label: incident.title,
-        repeat_count: 1,
-        state_tags: ['observed'],
-      }))
+export default function PriorityInvestigationsCard({ investigations = [], onInspect }) {
+  const items = investigations
 
   return (
     <Card>

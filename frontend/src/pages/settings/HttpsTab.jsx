@@ -21,6 +21,35 @@ const CERTIFICATE_OPTIONS = [
   { value: 'uploaded', label: 'Upload existing certificate' },
 ]
 
+function MultilineField({ label, hint, value, onChange, placeholder, rows = 4 }) {
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-xs text-gray-500 font-mono uppercase tracking-wider">{label}</label>
+      <textarea
+        rows={rows}
+        value={value}
+        placeholder={placeholder}
+        onChange={onChange}
+        className="w-full resize-none rounded-lg border border-cyan-500/15 px-3 py-2 text-sm text-gray-200 font-mono placeholder-gray-600 focus:border-cyan-500/60 focus:outline-none"
+        style={{ background: 'rgba(0,0,0,0.6)' }}
+      />
+      {hint ? <p className="text-xs text-gray-600 font-mono">{hint}</p> : null}
+    </div>
+  )
+}
+
+function listToText(value) {
+  return Array.isArray(value) ? value.join('\n') : (value || '')
+}
+
+function textToList(value) {
+  return String(value || '')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
 function AssetStatus({ label, asset }) {
   return (
     <div className="rounded-lg border border-cyan-500/10 bg-black/20 px-3 py-2.5">
@@ -75,10 +104,10 @@ export default function HttpsTab({ settings, setSettings }) {
       const res = await settingsApi.update(s)
       setSettings(res.data)
       setSaved(true)
-      setMessage('HTTPS settings saved.')
+      setMessage('Access & Network settings saved.')
       setTimeout(() => setSaved(false), 2000)
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to save HTTPS settings')
+      setError(err.response?.data?.detail || 'Failed to save Access & Network settings')
     } finally {
       setSaving(false)
     }
@@ -162,7 +191,7 @@ export default function HttpsTab({ settings, setSettings }) {
           <div className="divide-y divide-gray-800">
             <Toggle
               label="Trust Proxy Headers"
-              description="Use X-Forwarded-Host and X-Forwarded-Proto from a trusted proxy or tunnel."
+              description="Use forwarded host, scheme, and client IP headers only when requests come from a proxy or tunnel you control."
               checked={!!s.trust_proxy_headers}
               onChange={(v) => setSettings({ ...s, trust_proxy_headers: v })}
             />
@@ -268,6 +297,121 @@ export default function HttpsTab({ settings, setSettings }) {
       </Card>
 
       <Card>
+        <CardHeader>
+          <p className="text-xs font-mono font-medium text-cyan-400 uppercase tracking-widest">Domains & Browser Trust</p>
+          <p className="text-xs text-gray-500">Control which hosts may serve SkyNet and which browser origins may call the API.</p>
+        </CardHeader>
+        <div className="space-y-4">
+          <MultilineField
+            label="Allowed Domains"
+            hint="Optional. One host per line. Leave empty to allow any host. Wildcards like *.skynet.tn are supported."
+            placeholder={'skynet.tn\nadmin.skynet.tn\n*.trusted-edge.local'}
+            value={listToText(s.allowed_domains)}
+            onChange={(event) => setSettings({ ...s, allowed_domains: textToList(event.target.value) })}
+          />
+          <MultilineField
+            label="CORS Allowed Origins"
+            hint="One origin per line, for example https://admin.skynet.tn. Use * to allow any origin."
+            placeholder={'https://skynet.tn\nhttps://admin.skynet.tn'}
+            value={listToText(s.cors_allowed_origins)}
+            onChange={(event) => setSettings({ ...s, cors_allowed_origins: textToList(event.target.value) })}
+          />
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <MultilineField
+              label="Allowed Methods"
+              hint="Use * to mirror all requested methods."
+              placeholder={'GET\nPOST\nPUT\nDELETE'}
+              rows={3}
+              value={listToText(s.cors_allowed_methods)}
+              onChange={(event) => setSettings({ ...s, cors_allowed_methods: textToList(event.target.value) })}
+            />
+            <MultilineField
+              label="Allowed Headers"
+              hint="Use * to mirror requested headers on preflight."
+              placeholder={'Authorization\nContent-Type\nX-SkyNet-Key'}
+              rows={3}
+              value={listToText(s.cors_allowed_headers)}
+              onChange={(event) => setSettings({ ...s, cors_allowed_headers: textToList(event.target.value) })}
+            />
+          </div>
+          <Toggle
+            label="Allow CORS credentials"
+            description="Echo the request origin instead of * so authenticated browser requests remain valid."
+            checked={!!s.cors_allow_credentials}
+            onChange={(value) => setSettings({ ...s, cors_allow_credentials: value })}
+          />
+          <div className="flex justify-end">
+            <Button loading={saving} icon={saved ? CheckCircle : Save} onClick={handleSave}>
+              {saved ? 'Saved!' : 'Save Domain Policy'}
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <p className="text-xs font-mono font-medium text-cyan-400 uppercase tracking-widest">IP Policy & Rate Limits</p>
+          <p className="text-xs text-gray-500">Apply coarse edge restrictions before the request enters auth, tracking, or gateway logic.</p>
+        </CardHeader>
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <MultilineField
+              label="IP Allowlist"
+              hint="Optional. One IP or CIDR per line. When set, all other IPs are denied."
+              placeholder={'10.0.0.0/24\n203.0.113.10'}
+              value={listToText(s.network_ip_allowlist)}
+              onChange={(event) => setSettings({ ...s, network_ip_allowlist: textToList(event.target.value) })}
+            />
+            <MultilineField
+              label="IP Denylist"
+              hint="One IP or CIDR per line. These requests are rejected before application processing."
+              placeholder={'198.51.100.0/24\n203.0.113.55'}
+              value={listToText(s.network_ip_denylist)}
+              onChange={(event) => setSettings({ ...s, network_ip_denylist: textToList(event.target.value) })}
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <Input
+              label="Default req/min"
+              type="number"
+              min="1"
+              value={s.rate_limit_default_per_minute ?? 300}
+              onChange={(event) => setSettings({ ...s, rate_limit_default_per_minute: Number(event.target.value) || 300 })}
+            />
+            <Input
+              label="Track req/min"
+              type="number"
+              min="1"
+              value={s.rate_limit_track_per_minute ?? 200}
+              onChange={(event) => setSettings({ ...s, rate_limit_track_per_minute: Number(event.target.value) || 200 })}
+            />
+            <Input
+              label="Auth req/min"
+              type="number"
+              min="1"
+              value={s.rate_limit_auth_per_minute ?? 30}
+              onChange={(event) => setSettings({ ...s, rate_limit_auth_per_minute: Number(event.target.value) || 30 })}
+            />
+            <Input
+              label="Login req/min"
+              type="number"
+              min="1"
+              value={s.rate_limit_auth_login_per_minute ?? 10}
+              onChange={(event) => setSettings({ ...s, rate_limit_auth_login_per_minute: Number(event.target.value) || 10 })}
+            />
+          </div>
+          <Alert type="info">
+            These limits are now enforced from runtime settings using Redis-backed counters. Track routes, auth routes, and all other requests each use their own per-IP bucket.
+          </Alert>
+          <div className="flex justify-end">
+            <Button loading={saving} icon={saved ? CheckCircle : Save} onClick={handleSave}>
+              {saved ? 'Saved!' : 'Save Network Policy'}
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      <Card>
         <CardHeader action={<Button variant="ghost" size="sm" icon={RefreshCw} loading={loadingStatus} onClick={loadStatus}>Refresh</Button>}>
           <p className="text-xs font-mono font-medium text-cyan-400 uppercase tracking-widest">Certificate Files</p>
         </CardHeader>
@@ -346,6 +490,9 @@ export default function HttpsTab({ settings, setSettings }) {
               {gatewayStatus.upstream?.status_code ? ` Upstream status: ${gatewayStatus.upstream.status_code}.` : ''}
             </Alert>
           ) : null}
+          <Alert type="info">
+            Gateway requests inherit the Access & Network domain policy first: allowed domains, trusted proxy handling, IP allow/deny lists, and runtime rate limits all run before proxy forwarding.
+          </Alert>
           <div className="flex justify-end">
             <Button loading={saving} icon={saved ? CheckCircle : Save} onClick={handleSave}>
               {saved ? 'Saved!' : 'Save Gateway Settings'}

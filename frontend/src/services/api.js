@@ -65,6 +65,13 @@ export const usersApi = {
   revokeSession: (id, sessionId) => api.delete(`/users/${id}/sessions/${sessionId}`),
 }
 
+export const tenantsApi = {
+  list: (params) => api.get('/tenants', { params }),
+  create: (data) => api.post('/tenants', data),
+  update: (id, data) => api.put(`/tenants/${id}`, data),
+  delete: (id) => api.delete(`/tenants/${id}`),
+}
+
 // --- Devices ---
 export const devicesApi = {
   list: (params) => api.get('/devices', { params }),
@@ -109,6 +116,9 @@ export const integrationApi = {
 export const systemApi = {
   info: () => api.get('/system/info'),
   bootstrapStatus: () => api.get('/system/bootstrap-status'),
+  diagnostics: () => api.get('/system/diagnostics'),
+  reloadRuntime: () => api.post('/system/maintenance/reload-runtime'),
+  resetOnboarding: () => api.post('/system/maintenance/reset-onboarding'),
 }
 
 export const searchApi = {
@@ -125,6 +135,9 @@ export const settingsApi = {
   createBackup: (data) => api.post('/settings/backups', data),
   downloadBackup: (filename) => api.get(`/settings/backups/${filename}/download`, { responseType: 'blob' }),
   restoreBackup: (filename, data) => api.post(`/settings/backups/${filename}/restore`, data),
+  storageStatus: () => api.get('/settings/storage/status'),
+  purgeStorage: () => api.post('/settings/storage/purge'),
+  archiveStorage: () => api.post('/settings/storage/archive', {}, { responseType: 'blob' }),
   restoreUploadedBackup: ({ file, mode, services, password }) => {
     const form = new FormData()
     form.append('file', file)
@@ -149,9 +162,14 @@ export const settingsApi = {
     form.append('file', file)
     return api.post('/settings/geoip/upload', form)
   },
+  integrationsStatus: () => api.get('/settings/integrations/status'),
+  testIntegrationConnector: (data) => api.post('/settings/integrations/test', data),
+  refreshThreatIntel: () => api.post('/settings/integrations/threat-intel/refresh'),
   // SMTP
   updateSmtp: (data) => api.put('/settings/smtp', data),
   testSmtp: (data) => api.post('/settings/smtp/test', data),
+  testWebhook: (data) => api.post('/settings/webhooks/test', data),
+  notificationDeliveries: (params) => api.get('/settings/notifications/deliveries', { params }),
 }
 
 // --- Themes ---

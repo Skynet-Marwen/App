@@ -125,12 +125,28 @@ SKYNET evolves from observer to active enforcement gateway.
 - [x] Form spam: honeypot fields, submission velocity, content deduplication
 - [x] DNSBL integration (submitter IP vs public abuse databases)
 - [x] Gateway dashboard: traffic overview, bot %, latency, challenge analytics
+- [x] Operator metric hardening: real per-site integration stats and no synthetic Overview fallback signals
+
+---
+
+## Post-v1.6 Settings Surface Completion `Unreleased Branch`
+Close the remaining planned/partial settings-surface gaps before the next release train.
+
+- [x] Superadmin tier for owner-grade operator control
+- [x] Tenant account registry with host mapping and default-theme linkage
+- [x] Tenant-bound operator assignments in Authentication & Identity
+- [x] Advanced theme layout zones (shell mode, width, sticky header, sidebar width)
+- [x] Fixed vs document-scroll shell behavior in the runtime dashboard
+- [x] Curated dashboard widget selection in the theme editor
+- [x] Storage health, lifecycle cleanup, and retention archive tooling in Data & Storage
+- [x] Integration API governance, threat-intel refresh, and SIEM/monitoring connectors in Integrations
 
 ---
 
 ## v2.0.0 — Multi-Tenancy `Target: 2027`
 Support multiple organizations on one SkyNet instance.
 
+- [x] Tenant registry groundwork in settings (`superadmin`, tenant records, operator assignment, tenant theme defaults)
 - [ ] Tenant isolation (organizations, members, roles)
 - [ ] Per-tenant site management
 - [ ] Per-tenant billing hooks

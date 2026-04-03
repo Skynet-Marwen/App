@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { authApi } from '../services/api'
+import { authApi, settingsApi } from '../services/api'
+import { DEFAULT_UI_VISIBILITY, mergeUiVisibility } from '../services/uiVisibility'
 
 export const useAuthStore = create(
   persist(
@@ -18,7 +19,11 @@ export const useAuthStore = create(
       },
 
       logout: async () => {
-        try { await authApi.logout() } catch (_) {}
+        try {
+          await authApi.logout()
+        } catch {
+          return null
+        }
         localStorage.removeItem('skynet_token')
         set({ user: null, token: null, isAuthenticated: false })
       },
@@ -46,4 +51,35 @@ export const useUIStore = create((set) => ({
 
   statsRange: '24h',
   setStatsRange: (range) => set({ statsRange: range }),
+}))
+
+export const useRuntimeSettingsStore = create((set, get) => ({
+  developerModeEnabled: false,
+  featureFlags: {},
+  uiVisibility: DEFAULT_UI_VISIBILITY,
+  runtimeLoaded: false,
+  runtimeLoading: false,
+
+  applyRuntimeSettings: (settings = {}) =>
+    set({
+      developerModeEnabled: !!settings.developer_mode_enabled,
+      featureFlags: settings.feature_flags || {},
+      uiVisibility: mergeUiVisibility(settings.ui_visibility),
+      runtimeLoaded: true,
+    }),
+
+  fetchRuntimeSettings: async (force = false) => {
+    if (get().runtimeLoading) return
+    if (!force && get().runtimeLoaded) return
+
+    set({ runtimeLoading: true })
+    try {
+      const response = await settingsApi.get()
+      get().applyRuntimeSettings(response.data)
+    } catch {
+      set({ runtimeLoaded: true })
+    } finally {
+      set({ runtimeLoading: false })
+    }
+  },
 }))

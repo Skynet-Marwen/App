@@ -8,12 +8,12 @@ const LANES = [
   { key: 'observed', label: 'Observed', color: 'rgba(34,197,94,0.72)', border: 'border-green-500/15', Icon: Waves, text: 'text-green-400' },
 ]
 
-export default function EnforcementPressureCard({ pressure, fallbackChart = [], loading }) {
+export default function EnforcementPressureCard({ pressure, loading }) {
   const totals = pressure?.totals ?? {
-    blocked: fallbackChart.reduce((sum, item) => sum + (item.count ?? 0), 0),
+    blocked: 0,
     challenged: 0,
     rate_limited: 0,
-    observed: fallbackChart.reduce((sum, item) => sum + (item.count ?? 0), 0),
+    observed: 0,
   }
   const summaries = pressure?.summaries ?? []
   const maxValue = Math.max(...LANES.map((lane) => totals[lane.key] ?? 0), 1)
@@ -59,7 +59,6 @@ export default function EnforcementPressureCard({ pressure, fallbackChart = [], 
                   style={{
                     width: `${((totals[lane.key] ?? 0) / maxValue) * 100}%`,
                     background: lane.color,
-                    boxShadow: `0 0 10px ${lane.color}`,
                   }}
                 />
               </div>

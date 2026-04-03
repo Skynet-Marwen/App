@@ -1,11 +1,9 @@
 """
-Rate limiting — Redis-backed sliding window via slowapi + limits.
+Legacy slowapi limiter wiring.
 
-Limits (per CLAUDE.md §8):
-  /api/v1/track/*       200 req / minute / IP
-  /api/v1/auth/login     10 req / minute / IP
-  /api/v1/auth/*         30 req / minute / IP
-  All other routes      300 req / minute / IP (default)
+The active request limits now live in Access & Network runtime settings and are
+enforced centrally by AccessNetworkMiddleware. This module is retained for the
+typed 429 handler and compatibility with any future decorator-based limits.
 """
 from fastapi import Request
 from fastapi.responses import JSONResponse

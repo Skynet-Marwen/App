@@ -7,6 +7,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.theme import Theme
+from ..models.tenant import Tenant
 from ..models.user import User
 from ..models.user_profile import UserProfile
 from .runtime_config import runtime_settings
@@ -248,7 +249,18 @@ async def resolve_user_theme(db: AsyncSession, user: User, tenant_hint: str | No
         resolved_source = "default"
 
     if resolved_source == "default":
-        dynamic_theme, dynamic_reason = await _resolve_dynamic_theme(db, tenant_hint=tenant_hint)
+        tenant_context = None
+        tenant = await db.get(Tenant, user.tenant_id) if getattr(user, "tenant_id", None) else None
+        if tenant:
+            tenant_context = tenant.primary_host or tenant.slug
+            if str(runtime_settings().get("theme_dynamic_strategy") or "risk") == "tenant" and tenant.default_theme_id:
+                tenant_theme = await db.get(Theme, tenant.default_theme_id)
+                if _is_valid_theme_payload(tenant_theme):
+                    resolved_theme = tenant_theme
+                    resolved_source = "dynamic"
+                    fallback_reason = f"dynamic_tenant_account:{tenant.slug}"
+
+        dynamic_theme, dynamic_reason = await _resolve_dynamic_theme(db, tenant_hint=tenant_hint or tenant_context)
         if dynamic_theme:
             resolved_theme = dynamic_theme
             resolved_source = "dynamic"

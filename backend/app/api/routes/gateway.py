@@ -31,8 +31,11 @@ from ...services.device_fingerprint import verify_device_cookie
 from ...services.dnsbl import lookup_ip as dnsbl_lookup_ip
 from ...services.gateway_analytics import record_gateway_challenge_result, record_gateway_event
 from ...services.jwks_validator import extract_bearer, validate_external_token
+from ...services.network_intel import filter_detection_matches, highest_priority_action, network_detection_matches
+from ...services.response_policy import evaluate_response_rules, strongest_action
 from ...services.risk_engine import enforcement_action
 from ...services.runtime_config import runtime_settings
+from ...core.geoip import lookup as geoip_lookup
 
 
 router = APIRouter(prefix="/gateway", tags=["gateway"])
@@ -87,6 +90,41 @@ async def _decision(db: AsyncSession, request: Request, fp: str | None, dc: str 
         return {"action": "allow", "reason": "challenge_bypass", "ip": ip}
 
     cfg = get_anti_evasion_config()
+    geo = await geoip_lookup(ip)
+    device = await _device_for_request(db, request, fp, dc)
+    auto_defense = bool(runtime_settings().get("enable_auto_defense"))
+    rule_decision = await evaluate_response_rules(
+        db,
+        ip=ip,
+        geo=geo,
+        device=device,
+        user_agent=request.headers.get("user-agent", ""),
+    )
+    rule_action = None
+    if rule_decision:
+        rule_action = str(rule_decision.get("action") or "block")
+        if rule_action == "rate_limit" and not bool(runtime_settings().get("response_slowdown_enabled", True)):
+            rule_action = "challenge"
+        if not auto_defense and rule_action in {"block", "challenge", "rate_limit"}:
+            return {
+                "action": rule_action,
+                "reason": "blocking_rule",
+                "rule_id": rule_decision.get("rule_id"),
+                "device_id": device.id if device else None,
+                "ip": ip,
+            }
+
+    network_match = highest_priority_action(
+        filter_detection_matches(
+            network_detection_matches(runtime_settings(), geo),
+            cfg,
+        )
+    )
+    if network_match:
+        action = str(network_match.get("action") or "observe")
+        if action in {"challenge", "block"}:
+            return {"action": action, "reason": str(network_match.get("kind") or "network_intel"), "ip": ip}
+
     if cfg.get("dnsbl_enabled"):
         dnsbl = await dnsbl_lookup_ip(
             ip,
@@ -97,7 +135,6 @@ async def _decision(db: AsyncSession, request: Request, fp: str | None, dc: str 
             action = str(cfg.get("dnsbl_action") or "challenge")
             return {"action": action, "reason": "dnsbl", "ip": ip, "dnsbl": dnsbl}
 
-    device = await _device_for_request(db, request, fp, dc)
     if device and device.status == "blocked":
         return {"action": "block", "reason": "blocked_device", "device_id": device.id}
 
@@ -108,6 +145,13 @@ async def _decision(db: AsyncSession, request: Request, fp: str | None, dc: str 
     if action == "allow" and device:
         action = enforcement_action(min(float(device.risk_score or 0) / 100.0, 1.0))
         reason = "device_risk"
+    elif auto_defense and device:
+        action = strongest_action(action, enforcement_action(min(float(device.risk_score or 0) / 100.0, 1.0)))
+
+    if auto_defense and rule_action:
+        action = strongest_action(rule_action, action)
+        if action != "allow":
+            reason = "adaptive_defense"
 
     return {
         "action": action,
@@ -273,6 +317,25 @@ async def proxy_request(
         )
         await db.commit()
         return build_challenge_response(challenge=challenge, request_id=request_id, accept_html=_prefers_html(request))
+    if decision["action"] == "rate_limit":
+        retry_after = int(runtime_settings().get("response_slowdown_retry_after_sec", 30) or 30)
+        await record_gateway_event(
+            db,
+            decision="rate_limit",
+            reason=decision["reason"],
+            request_id=request_id,
+            latency_ms=(time.perf_counter() - started) * 1000,
+            request_path=request.url.path,
+            method=request.method,
+            site_id=cfg["site_id"],
+        )
+        await db.commit()
+        return Response(
+            content='{"rate_limited":true,"request_id":"%s","reason":"%s","retry_after":%s}' % (request_id, decision["reason"], retry_after),
+            media_type="application/json",
+            status_code=429,
+            headers={"X-SkyNet-Decision": "rate_limit", "X-SkyNet-Request-Id": request_id, "Retry-After": str(retry_after)},
+        )
 
     target_url = urljoin(f"{cfg['target_origin']}/", path)
     if request.url.query:

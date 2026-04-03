@@ -32,7 +32,12 @@ const DEFAULT_THEME_FORM = {
     radius: 'xl',
     mode: 'dark',
     sidebar: 'expanded',
+    sidebar_width: 'standard',
+    shell_mode: 'fixed',
+    content_width: 'regular',
+    header_sticky: true,
     nav_style: 'stacked',
+    topbar: 'default',
     header_alignment: 'left',
     footer_enabled: true,
     logo_size: 'md',
@@ -85,7 +90,7 @@ function parseJsonField(value, fieldName) {
     }
 
     return { value: parsed }
-  } catch (_) {
+  } catch {
     return { error: `Invalid JSON in ${fieldName}.` }
   }
 }

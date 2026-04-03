@@ -19,7 +19,10 @@ export function useBlocking() {
       setRules(rulesRes.data)
       setIps(ipsRes.data.items)
       setIpTotal(ipsRes.data.total)
-    } catch (_) {
+    } catch {
+      setRules([])
+      setIps([])
+      setIpTotal(0)
     } finally {
       setLoading(false)
     }

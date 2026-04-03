@@ -5,8 +5,8 @@ export { Alert, EmptyState, Spinner } from './extras'
 // ─── Card ─────────────────────────────────────────────────────────────────────
 export function Card({ children, className = '' }) {
   return (
-    <div className={`relative overflow-hidden rounded-xl border border-cyan-500/10 animate-border-breathe ${className}`}
-      style={{ background: 'var(--theme-panel-bg)', borderColor: 'var(--theme-panel-border)', boxShadow: '0 0 24px var(--theme-panel-glow)', backdropFilter: 'blur(10px)' }}>
+    <div className={`relative overflow-hidden rounded-xl border border-cyan-500/10 ${className}`}
+      style={{ background: 'var(--theme-panel-bg)', borderColor: 'var(--theme-panel-border)', boxShadow: '0 10px 30px rgba(0, 0, 0, 0.18)', backdropFilter: 'blur(10px)' }}>
       <div className="absolute inset-0 pointer-events-none rounded-xl"
         style={{ backgroundImage: 'repeating-linear-gradient(0deg,rgba(255,255,255,0.018) 0px,rgba(255,255,255,0.018) 1px,transparent 1px,transparent 4px)' }} />
       <span className="absolute top-0 left-0 w-3 h-3 border-t border-l border-cyan-500/40 z-10 pointer-events-none" />
@@ -29,12 +29,12 @@ export function CardHeader({ children, action }) {
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────
 const COLORS = {
-  cyan:   { t: 'text-cyan-400',   bg: 'bg-cyan-400/10',   b: 'border-cyan-500/25',   glow: 'rgba(6,182,212,0.45)' },
-  green:  { t: 'text-green-400',  bg: 'bg-green-400/10',  b: 'border-green-500/25',  glow: 'rgba(34,197,94,0.45)' },
-  red:    { t: 'text-red-400',    bg: 'bg-red-400/10',    b: 'border-red-500/25',    glow: 'rgba(239,68,68,0.45)' },
-  yellow: { t: 'text-yellow-400', bg: 'bg-yellow-400/10', b: 'border-yellow-500/25', glow: 'rgba(234,179,8,0.45)' },
-  purple: { t: 'text-purple-400', bg: 'bg-purple-400/10', b: 'border-purple-500/25', glow: 'rgba(168,85,247,0.45)' },
-  blue:   { t: 'text-blue-400',   bg: 'bg-blue-400/10',   b: 'border-blue-500/25',   glow: 'rgba(96,165,250,0.45)' },
+  cyan:   { t: 'text-cyan-400',   bg: 'bg-cyan-400/10',   b: 'border-cyan-500/25' },
+  green:  { t: 'text-green-400',  bg: 'bg-green-400/10',  b: 'border-green-500/25' },
+  red:    { t: 'text-red-400',    bg: 'bg-red-400/10',    b: 'border-red-500/25' },
+  yellow: { t: 'text-yellow-400', bg: 'bg-yellow-400/10', b: 'border-yellow-500/25' },
+  purple: { t: 'text-purple-400', bg: 'bg-purple-400/10', b: 'border-purple-500/25' },
+  blue:   { t: 'text-blue-400',   bg: 'bg-blue-400/10',   b: 'border-blue-500/25' },
 }
 
 export function StatCard({ label, value, rawValue, change, icon: Icon, color = 'cyan', loading }) {
@@ -59,7 +59,7 @@ export function StatCard({ label, value, rawValue, change, icon: Icon, color = '
   const displayStr = typeof rawValue === 'number' && !loading ? displayed.toLocaleString() : value
 
   return (
-    <div className={`relative overflow-hidden rounded-xl border ${C.b} animate-border-breathe`}
+    <div className={`relative overflow-hidden rounded-xl border ${C.b}`}
       style={{ background: 'rgba(0,0,0,0.62)', backdropFilter: 'blur(10px)' }}>
       <div className="absolute inset-0 pointer-events-none"
         style={{ backgroundImage: 'repeating-linear-gradient(0deg,rgba(255,255,255,0.018) 0px,rgba(255,255,255,0.018) 1px,transparent 1px,transparent 4px)' }} />
@@ -73,7 +73,7 @@ export function StatCard({ label, value, rawValue, change, icon: Icon, color = '
           {loading ? (
             <div className="h-7 w-20 bg-gray-800/60 rounded animate-pulse" />
           ) : (
-            <p key={displayStr} className={`text-2xl font-bold font-mono ${C.t} neon-text-cyan animate-count-slide`}>
+            <p key={displayStr} className={`text-2xl font-bold font-mono ${C.t} animate-count-slide`}>
               {displayStr}
             </p>
           )}
@@ -84,8 +84,7 @@ export function StatCard({ label, value, rawValue, change, icon: Icon, color = '
           )}
         </div>
         {Icon && (
-          <div className={`p-2 rounded-lg ${C.bg} border ${C.b} flex-shrink-0`}
-            style={{ boxShadow: `0 0 14px ${C.glow}` }}>
+          <div className={`p-2 rounded-lg ${C.bg} border ${C.b} flex-shrink-0`}>
             <Icon size={16} className={C.t} />
           </div>
         )}
@@ -246,7 +245,7 @@ export function Modal({
       <div className={`relative min-h-full flex justify-center ${fullHeight ? 'items-stretch' : 'items-center'}`}>
         <div
           className={`relative w-full ${width} flex flex-col overflow-hidden rounded-2xl border border-cyan-500/15 shadow-2xl ${fullHeight ? 'h-[calc(100dvh-1.5rem)] sm:h-[calc(100dvh-2rem)] lg:h-[calc(100dvh-3rem)]' : 'max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)]'} ${panelClassName}`}
-          style={{ background: 'var(--theme-panel)', borderColor: 'var(--theme-panel-border)', boxShadow: '0 0 32px var(--theme-panel-glow)', backdropFilter: 'blur(16px)' }}
+          style={{ background: 'var(--theme-panel)', borderColor: 'var(--theme-panel-border)', boxShadow: '0 20px 48px rgba(0, 0, 0, 0.35)', backdropFilter: 'blur(16px)' }}
         >
           <span className="absolute top-0 left-0 w-4 h-4 border-t border-l border-cyan-500/50 rounded-tl-2xl" />
           <span className="absolute top-0 right-0 w-4 h-4 border-t border-r border-cyan-500/50 rounded-tr-2xl" />
@@ -305,15 +304,21 @@ export function Select({ label, error, options = [], className = '', ...props })
 }
 
 // ─── Toggle ───────────────────────────────────────────────────────────────────
-export function Toggle({ checked, onChange, label, description }) {
+export function Toggle({ checked, onChange, label, description, disabled = false }) {
   return (
-    <div className="flex items-center justify-between py-3">
+    <div className={`flex items-center justify-between gap-3 py-3 ${disabled ? 'opacity-60' : ''}`}>
       <div>
         {label && <p className="text-sm font-mono font-medium text-gray-300">{label}</p>}
         {description && <p className="text-xs text-gray-600 mt-0.5 font-mono">{description}</p>}
       </div>
-      <button type="button" onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${checked ? 'bg-cyan-500' : 'bg-gray-800 border border-gray-700'}`}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => !disabled && onChange(!checked)}
+        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+          checked ? 'bg-cyan-500' : 'bg-gray-800 border border-gray-700'
+        } ${disabled ? 'cursor-not-allowed' : ''}`}
+      >
         <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${checked ? 'translate-x-5' : 'translate-x-1'}`} />
       </button>
     </div>

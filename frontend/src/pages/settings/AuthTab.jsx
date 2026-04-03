@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Save, CheckCircle, Plus, Trash2 } from 'lucide-react'
 import { Alert, Card, CardHeader, Button, Input, Toggle } from '../../components/ui/index'
-import { identityApi, settingsApi } from '../../services/api'
+import { identityApi, settingsApi, themesApi } from '../../services/api'
+import { useTenants } from '../../hooks/useTenants'
+import { useAuthStore } from '../../store/useAppStore'
 import AuthOperatorsPanel from './AuthOperatorsPanel'
+import AuthTenantsPanel from './AuthTenantsPanel'
 
 const EMPTY_PROVIDER = {
   name: '',
@@ -14,12 +17,16 @@ const EMPTY_PROVIDER = {
 }
 
 export default function AuthTab({ settings, setSettings }) {
+  const currentUser = useAuthStore((state) => state.user)
+  const isSuperadmin = currentUser?.role === 'superadmin'
   const [saving, setSaving] = useState(false)
   const [saved, setSaved]   = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncStatus, setSyncStatus] = useState(null)
   const [syncError, setSyncError] = useState('')
   const [syncMessage, setSyncMessage] = useState('')
+  const [themes, setThemes] = useState([])
+  const { tenants, loading: tenantsLoading, createTenant, updateTenant, deleteTenant } = useTenants()
 
   const s = settings
   const providers = Array.isArray(s.idp_providers) && s.idp_providers.length
@@ -43,13 +50,19 @@ export default function AuthTab({ settings, setSettings }) {
     try {
       const res = await identityApi.keycloakSyncStatus()
       setSyncStatus(res.data)
-    } catch (_) {
+    } catch {
       setSyncStatus(null)
     }
   }
 
   useEffect(() => {
     loadSyncStatus()
+  }, [])
+
+  useEffect(() => {
+    themesApi.list().then((res) => {
+      setThemes(Array.isArray(res.data) ? res.data.filter((theme) => theme.is_active !== false) : [])
+    }).catch(() => setThemes([]))
   }, [])
 
   const handleSave = async () => {
@@ -327,8 +340,20 @@ export default function AuthTab({ settings, setSettings }) {
         </div>
       </Card>
 
+      <AuthTenantsPanel
+        tenants={tenants}
+        loading={tenantsLoading}
+        themes={themes}
+        createTenant={createTenant}
+        updateTenant={updateTenant}
+        deleteTenant={deleteTenant}
+      />
+
       {/* ── Operators List ───────────────────────────────────────── */}
-      <AuthOperatorsPanel />
+      <AuthOperatorsPanel
+        tenants={tenants}
+        canManageSuperadmin={isSuperadmin}
+      />
 
     </div>
   )

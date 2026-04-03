@@ -9,6 +9,7 @@ from ..services.sessions import require_session, touch_session
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer_scheme = HTTPBearer(auto_error=False)
+ADMIN_ROLES = {"admin", "superadmin"}
 
 
 def hash_password(password: str) -> str:
@@ -29,6 +30,14 @@ def create_access_token(data: dict, expires_minutes: Optional[int] = None) -> st
 
 def decode_token(token: str) -> dict:
     return jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
+
+
+def is_superadmin(user) -> bool:
+    return bool(user) and str(getattr(user, "role", "")).lower() == "superadmin"
+
+
+def is_admin_user(user) -> bool:
+    return bool(user) and str(getattr(user, "role", "")).lower() in ADMIN_ROLES
 
 
 async def get_current_user(
@@ -61,3 +70,15 @@ async def get_current_user(
         user._token = credentials.credentials
         user._request = request
         return user
+
+
+async def require_admin_user(current=Depends(get_current_user)):
+    if not is_admin_user(current):
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    return current
+
+
+async def require_superadmin_user(current=Depends(get_current_user)):
+    if not is_superadmin(current):
+        raise HTTPException(status_code=403, detail="Superadmin privileges required")
+    return current

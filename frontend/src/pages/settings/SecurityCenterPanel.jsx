@@ -27,6 +27,8 @@ export default function SecurityCenterPanel({ isAdmin }) {
     scanning,
     actingId,
     error,
+    scanSummary,
+    scanSummaryTone,
     refresh,
     runScan,
     ignoreFinding,
@@ -159,6 +161,19 @@ export default function SecurityCenterPanel({ isAdmin }) {
         {error ? (
           <div className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</div>
         ) : null}
+        {!error && scanSummary ? (
+          <div
+            className={`mb-4 rounded-xl px-4 py-3 text-sm ${
+              scanSummaryTone === 'success'
+                ? 'border border-emerald-500/20 bg-emerald-500/10 text-emerald-200'
+                : scanSummaryTone === 'warning'
+                  ? 'border border-yellow-500/20 bg-yellow-500/10 text-yellow-100'
+                  : 'border border-cyan-500/20 bg-cyan-500/10 text-cyan-100'
+            }`}
+          >
+            {scanSummary}
+          </div>
+        ) : null}
 
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-4">
           <MetricCard icon={Sparkles} label="Threat intel" value={status?.threat_intel_entries ?? 0} accent="text-cyan-300" loading={loading} />
@@ -200,6 +215,9 @@ export default function SecurityCenterPanel({ isAdmin }) {
                   <Badge key={`${profile.id}-${item}`} variant="default">{item}</Badge>
                 ))}
               </div>
+              {profile.notes ? (
+                <p className="mt-3 text-xs text-gray-400">{profile.notes}</p>
+              ) : null}
             </div>
           ))}
           {!loading && !(status?.profiles || []).length ? (
@@ -233,12 +251,14 @@ export default function SecurityCenterPanel({ isAdmin }) {
   )
 }
 
-function MetricCard({ icon: Icon, label, value, accent, loading }) {
+function MetricCard({ icon, label, value, accent, loading }) {
+  const IconComponent = icon
+
   return (
     <div className="rounded-xl border border-cyan-500/10 bg-black/25 p-4">
       <div className="flex items-center justify-between gap-3">
         <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-gray-500">{label}</p>
-        <Icon size={16} className={accent} />
+        <IconComponent size={16} className={accent} />
       </div>
       {loading ? (
         <div className="mt-3 h-8 w-16 animate-pulse rounded bg-white/5" />

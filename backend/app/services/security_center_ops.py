@@ -37,6 +37,11 @@ def load_json(value: str, fallback):
         return fallback
 
 
+def _load_list_json(value: str) -> list:
+    parsed = load_json(value, [])
+    return parsed if isinstance(parsed, list) else []
+
+
 async def get_security_status(db: AsyncSession) -> dict:
     cfg = security_settings()
     profiles = list((await db.execute(select(TargetProfile).order_by(TargetProfile.last_scanned_at.desc()).limit(10))).scalars())
@@ -63,10 +68,11 @@ async def get_security_status(db: AsyncSession) -> dict:
                 "site_id": item.site_id,
                 "base_url": item.base_url,
                 "detected_server": item.detected_server,
-                "frameworks": load_json(item.frameworks, []),
-                "technologies": load_json(item.technologies, []),
+                "frameworks": _load_list_json(item.frameworks),
+                "technologies": _load_list_json(item.technologies),
                 "scan_status": item.scan_status,
                 "last_scanned_at": item.last_scanned_at,
+                "notes": item.notes,
             }
             for item in profiles
         ],

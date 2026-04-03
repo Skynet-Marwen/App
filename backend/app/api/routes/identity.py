@@ -14,7 +14,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.database import get_db
-from ...core.security import get_current_user
+from ...core.security import get_current_user, is_admin_user
 from ...models.user import User
 from ...models.identity_link import IdentityLink
 from ...models.user_profile import UserProfile
@@ -323,7 +323,7 @@ async def set_enhanced_audit(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    if current.role != "admin":
+    if not is_admin_user(current):
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Admin role required"})
 
     profile = await db.scalar(

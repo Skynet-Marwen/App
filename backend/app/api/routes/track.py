@@ -1,7 +1,6 @@
 import json
 import uuid
 from fastapi import APIRouter, Request, Header, HTTPException, Query
-from app.middleware.rate_limit import limiter
 from sqlalchemy import select, text
 from ...core.database import AsyncSessionLocal
 from ...models.site import Site
@@ -27,6 +26,8 @@ from ...services.device_fingerprint import (
 from ...services.device_identity import update_device_metadata
 from ...services.dnsbl import lookup_ip as dnsbl_lookup_ip
 from ...services.jwks_validator import validate_external_token, extract_bearer
+from ...services.network_intel import filter_detection_matches, highest_priority_action, network_detection_matches
+from ...services.response_policy import evaluate_response_rules, strongest_action
 from ...services.identity_service import upsert_profile
 from ...services.risk_engine import enforcement_action, recompute as recompute_risk
 from ...services.runtime_config import runtime_settings
@@ -34,6 +35,54 @@ from datetime import datetime, timezone
 from typing import Optional
 from ...core.ip_utils import get_client_ip
 router = APIRouter(prefix="/track", tags=["tracker"])
+
+
+async def _upsert_activity_visitor(
+    db,
+    *,
+    site_id: str | None,
+    device: Device | None,
+    ip: str,
+    geo: dict,
+    user_agent: str,
+    event_type: str,
+) -> Visitor | None:
+    if not site_id:
+        return None
+    site = await db.get(Site, site_id)
+    if not site or not site.active:
+        return None
+
+    visitor_query = select(Visitor).where(Visitor.ip == ip, Visitor.site_id == site_id)
+    if device:
+        visitor_query = visitor_query.where(Visitor.device_id == device.id)
+    visitor = await db.scalar(visitor_query)
+    if not visitor:
+        browser, os_name, device_type = parse_user_agent(user_agent)
+        visitor = Visitor(
+            id=str(uuid.uuid4()),
+            ip=ip,
+            site_id=site_id,
+            country=geo.get("country") or None,
+            country_code=geo.get("country_code") or None,
+            country_flag=geo.get("country_flag") or None,
+            city=geo.get("city") or None,
+            isp=geo.get("isp") or geo.get("org") or geo.get("as") or None,
+            device_id=device.id if device else None,
+            browser=browser or None,
+            os=os_name or None,
+            device_type=device_type or None,
+            user_agent=user_agent or None,
+        )
+        db.add(visitor)
+
+    visitor.last_seen = datetime.now(timezone.utc)
+    if device:
+        visitor.device_id = device.id
+    visitor.user_agent = user_agent or visitor.user_agent
+    if event_type == "pageview":
+        visitor.page_views = (visitor.page_views or 0) + 1
+    return visitor
 
 
 def parse_user_agent(ua_string: str) -> tuple[Optional[str], Optional[str], Optional[str]]:
@@ -150,6 +199,8 @@ async def resolve_api_key(header_key: Optional[str], query_key: Optional[str]) -
     return key
 
 async def validate_site_key(api_key: str) -> Site:
+    if not runtime_settings().get("integration_api_access_enabled", True):
+        raise HTTPException(403, "Integration API access is disabled")
     async with AsyncSessionLocal() as db:
         s = await db.scalar(select(Site).where(Site.api_key == api_key, Site.active == True))
         if not s:
@@ -173,7 +224,6 @@ def _challenge_cookie_valid(request: Request, subject: str) -> bool:
     return verify_bypass_cookie(request.cookies.get("_skynet_challenge"), subject)
 
 @router.get("/check-access")
-@limiter.limit("200/minute")
 async def check_access(
     request: Request,
     key: Optional[str] = Query(None),
@@ -193,6 +243,7 @@ async def check_access(
         blocked_device = False
         blocked_visitor = False
         challenge_device = None
+        geo = None
         if not blocked_ip:
             blocked_visitor = await db.scalar(
                 select(Visitor.id).where(Visitor.ip == ip, Visitor.status == "blocked")
@@ -211,6 +262,65 @@ async def check_access(
             if _challenge_cookie_valid(request, ip) or verify_bypass_cookie(ct, ip):
                 return {"blocked": False}
 
+            geo = await geoip_lookup(ip)
+            rule_decision = await evaluate_response_rules(
+                db,
+                ip=ip,
+                geo=geo,
+                device=challenge_device,
+                user_agent=request.headers.get("user-agent", ""),
+            )
+            rule_action = None
+            if rule_decision:
+                rule_action = str(rule_decision["action"] or "block")
+                if rule_action == "block":
+                    return {"blocked": True, "reason": "blocking_rule", "rule_id": rule_decision.get("rule_id")}
+                if rule_action == "rate_limit" and not bool(runtime_settings().get("enable_auto_defense")):
+                    return {
+                        "blocked": False,
+                        "rate_limited": True,
+                        "retry_after": int(runtime_settings().get("response_slowdown_retry_after_sec", 30) or 30),
+                        "reason": "blocking_rule",
+                        "rule_id": rule_decision.get("rule_id"),
+                    }
+                if challenge_cfg.get("challenge_enabled") and rule_action == "challenge" and not bool(runtime_settings().get("enable_auto_defense")):
+                    challenge = await create_challenge_token(
+                        subject=ip,
+                        request_id=str(uuid.uuid4())[:8].upper(),
+                        next_url=request.headers.get("referer") or "/",
+                        reason="blocking_rule",
+                    )
+                    return {
+                        "blocked": False,
+                        "challenge": True,
+                        "challenge_type": challenge["type"],
+                        "challenge_url": f"/api/v1/gateway/challenge/{challenge['token']}",
+                        "difficulty": challenge["difficulty"],
+                        "honeypot_field": challenge["honeypot_field"],
+                        "rule_id": rule_decision.get("rule_id"),
+                    }
+
+            network_match = highest_priority_action(filter_detection_matches(network_detection_matches(runtime_settings(), geo), challenge_cfg))
+            if network_match:
+                action = str(network_match.get("action") or "observe")
+                if action == "block":
+                    return {"blocked": True, "reason": network_match.get("kind") or "network_intel"}
+                if challenge_cfg.get("challenge_enabled") and action == "challenge":
+                    challenge = await create_challenge_token(
+                        subject=ip,
+                        request_id=str(uuid.uuid4())[:8].upper(),
+                        next_url=request.headers.get("referer") or "/",
+                        reason=str(network_match.get("kind") or "network_intel"),
+                    )
+                    return {
+                        "blocked": False,
+                        "challenge": True,
+                        "challenge_type": challenge["type"],
+                        "challenge_url": f"/api/v1/gateway/challenge/{challenge['token']}",
+                        "difficulty": challenge["difficulty"],
+                        "honeypot_field": challenge["honeypot_field"],
+                    }
+
             dnsbl_decision = None
             if challenge_cfg.get("dnsbl_enabled"):
                 dnsbl = await dnsbl_lookup_ip(
@@ -227,18 +337,30 @@ async def check_access(
             device_action = None
             if challenge_device:
                 device_action = enforcement_action(min(float(challenge_device.risk_score or 0) / 100.0, 1.0))
+            dnsbl_action = dnsbl_decision["action"] if dnsbl_decision else None
+            effective_action = strongest_action(
+                rule_action,
+                dnsbl_action,
+                device_action,
+            ) if bool(runtime_settings().get("enable_auto_defense")) else None
 
-            if dnsbl_decision and dnsbl_decision["action"] == "block":
-                return {"blocked": True, "reason": "dnsbl"}
-            if challenge_cfg.get("challenge_enabled") and (
-                (dnsbl_decision and dnsbl_decision["action"] == "challenge")
-                or device_action == "challenge"
-            ):
+            if (effective_action if effective_action else dnsbl_action) == "block":
+                return {"blocked": True, "reason": "adaptive_defense" if effective_action else "dnsbl"}
+            if not effective_action and rule_action == "rate_limit":
+                return {
+                    "blocked": False,
+                    "rate_limited": True,
+                    "retry_after": int(runtime_settings().get("response_slowdown_retry_after_sec", 30) or 30),
+                    "reason": "blocking_rule",
+                    "rule_id": rule_decision.get("rule_id") if rule_decision else None,
+                }
+            challenge_source = effective_action if effective_action else ("challenge" if ((dnsbl_action == "challenge") or (device_action == "challenge") or (rule_action == "challenge")) else None)
+            if challenge_cfg.get("challenge_enabled") and challenge_source == "challenge":
                 challenge = await create_challenge_token(
                     subject=ip,
                     request_id=str(uuid.uuid4())[:8].upper(),
                     next_url=request.headers.get("referer") or "/",
-                    reason="dnsbl" if dnsbl_decision else "device_risk",
+                    reason="adaptive_defense" if effective_action else "dnsbl" if dnsbl_decision else "device_risk" if device_action == "challenge" else "blocking_rule",
                 )
                 return {
                     "blocked": False,
@@ -246,7 +368,14 @@ async def check_access(
                     "challenge_type": challenge["type"],
                     "challenge_url": f"/api/v1/gateway/challenge/{challenge['token']}",
                     "difficulty": challenge["difficulty"],
-                    "honeypot_field": challenge["honeypot_field"],
+                        "honeypot_field": challenge["honeypot_field"],
+                }
+            if effective_action == "rate_limit":
+                return {
+                    "blocked": False,
+                    "rate_limited": True,
+                    "retry_after": int(runtime_settings().get("response_slowdown_retry_after_sec", 30) or 30),
+                    "reason": "adaptive_defense",
                 }
             return {"blocked": False}
         cfg = await db.get(BlockPageConfig, 1)
@@ -270,7 +399,6 @@ async def check_access(
 
 
 @router.post("/device-context")
-@limiter.limit("200/minute")
 async def resolve_device_context(
     payload: DeviceContextPayload,
     request: Request,
@@ -317,7 +445,6 @@ async def resolve_device_context(
     return response
 
 @router.post("/pageview")
-@limiter.limit("200/minute")
 async def track_pageview(
     payload: PageviewPayload,
     request: Request,
@@ -363,6 +490,7 @@ async def track_pageview(
                 country_code=geo.get("country_code") or None,
                 country_flag=geo.get("country_flag") or None,
                 city=geo.get("city") or None,
+                isp=geo.get("isp") or geo.get("org") or geo.get("as") or None,
                 device_id=device.id if device else None,
                 linked_user=device.linked_user if device else None,
             )
@@ -400,6 +528,9 @@ async def track_pageview(
             "webgl_hash": payload.webgl_hash,
             "fingerprint_traits": payload.fingerprint_traits,
             "fingerprint_drift": assessment,
+            "language": payload.language,
+            "timezone": payload.timezone,
+            "geo": geo,
             "session_id": payload.session_id,
             "ip": ip,
             "user_agent": ua_string,
@@ -417,7 +548,6 @@ async def track_pageview(
     }
 
 @router.post("/event")
-@limiter.limit("200/minute")
 async def track_event(
     payload: EventPayload,
     request: Request,
@@ -466,7 +596,6 @@ async def track_event(
     return {"ok": True}
 
 @router.post("/identify")
-@limiter.limit("200/minute")
 async def identify_user(
     payload: IdentifyPayload,
     request: Request,
@@ -501,7 +630,6 @@ async def identify_user(
     return {"ok": True}
 
 @router.post("/activity")
-@limiter.limit("200/minute")
 async def track_activity(
     payload: ActivityPayload,
     request: Request,
@@ -516,8 +644,17 @@ async def track_activity(
     ip = get_client_ip(request)
     geo = await geoip_lookup(ip)
     country = geo.get("country_code") or None
+    user_agent = request.headers.get("user-agent", "")
 
     async with AsyncSessionLocal() as db:
+        resolved_site_id = payload.site_id
+        if not resolved_site_id and payload.site_key:
+            resolved_site = await db.scalar(
+                select(Site).where(Site.api_key == payload.site_key, Site.active == True)
+            )
+            if resolved_site:
+                resolved_site_id = resolved_site.id
+
         # Check if user is blocked at profile level
         from ...models.user_profile import UserProfile
         from sqlalchemy import select as sa_select
@@ -536,6 +673,29 @@ async def track_activity(
             country=country,
         )
 
+        device = await db.get(Device, payload.fingerprint_id) if payload.fingerprint_id else None
+        visitor = await _upsert_activity_visitor(
+            db,
+            site_id=resolved_site_id,
+            device=device,
+            ip=ip,
+            geo=geo,
+            user_agent=user_agent,
+            event_type=payload.event_type,
+        )
+
+        if device:
+            await identity_service.link_device(
+                db,
+                external_user_id=external_user_id,
+                fingerprint_id=device.id,
+                visitor_id=visitor.id if visitor else None,
+                platform=payload.platform or "web",
+                ip=ip,
+                id_provider=claims.get("__skynet_id_provider", "keycloak"),
+            )
+            profile.total_devices = await identity_service.count_user_devices(db, external_user_id)
+
         created_at = datetime.now(timezone.utc)
         travel_flag = await detect_impossible_travel(
             db,
@@ -551,7 +711,7 @@ async def track_activity(
             external_user_id=external_user_id,
             event_type=payload.event_type,
             platform=payload.platform,
-            site_id=payload.site_id,
+            site_id=resolved_site_id,
             fingerprint_id=payload.fingerprint_id,
             ip=ip,
             country=country,
@@ -561,6 +721,30 @@ async def track_activity(
             created_at=created_at,
         )
         db.add(event)
+
+        if payload.event_type == "pageview" and resolved_site_id:
+            db.add(
+                Event(
+                    id=str(uuid.uuid4()),
+                    site_id=resolved_site_id,
+                    visitor_id=visitor.id if visitor else None,
+                    device_id=device.id if device else None,
+                    user_id=None,
+                    event_type="pageview",
+                    page_url=payload.page_url,
+                    properties=json.dumps(
+                        {
+                            "source": "track_activity",
+                            "external_user_id": external_user_id,
+                            "session_id": payload.session_id or claims.get("session_state"),
+                        },
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ),
+                    ip=ip,
+                    created_at=created_at,
+                )
+            )
 
         # Enhanced audit: store full snapshot in properties
         if profile and profile.enhanced_audit and not event.properties:

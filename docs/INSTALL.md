@@ -1,6 +1,6 @@
 # SkyNet — Self-Hosted Installation Guide
 
-> Last updated: 2026-04-02 — shipped app version `1.6.0`
+> Last updated: 2026-04-03 — shipped app version `1.6.9`
 
 ---
 
@@ -96,6 +96,13 @@ Persistent operator assets live under `backend/data/`:
 - `backend/data/certs/` — self-signed and uploaded HTTPS certificate material
 
 Keep that directory on persistent storage in every deployment target.
+
+Redis is not optional in practical deployments. It backs:
+
+- operator sessions and active-session device counts
+- rate limits
+- challenge tokens and bypass cookies
+- realtime snapshots and anti-abuse sliding windows
 
 ---
 
@@ -193,6 +200,11 @@ The dashboard settings workspace is now grouped into 9 operator domains:
 9. System & Debug
 
 Theme creation, branding, logo upload, and per-user theme selection now live under **Settings → UI / Theme Engine**.
+Host allowlisting, CORS browser trust, proxy-header trust, IP allow/deny lists, and runtime rate limits now live under **Settings → Access & Network**.
+Superadmin creation, tenant accounts, tenant-bound operators, Keycloak/JWKS provider settings, and Keycloak realm sync now live under **Settings → Authentication & Identity**.
+Shell mode, content width, sidebar width, sticky header, and dashboard widget controls now live under **Settings → UI / Theme Engine**.
+Storage health, retention archive export, and on-demand lifecycle cleanup now live under **Settings → Data & Storage**.
+Integration API access, API-key prefixing, SIEM / monitoring connectors, and threat-intel refresh now live under **Settings → Integrations**.
 
 ---
 
@@ -237,6 +249,15 @@ The default Synology target now uses SMB file sync for the release payload and S
 4. Run `./skynet --dry-run deploy synology` to confirm the mount + sync path.
 
 If your Linux desktop cannot open SMB shares through `gio`, mount the share once in the file manager and set `sync.mount_path` in `infra/targets.json` to that mounted folder.
+
+## Post-Install Validation
+
+After first boot, verify these in the dashboard:
+
+1. Overview shows real totals and no decorative fallback metrics when data is missing.
+2. Integration site cards show real visitor/event counts after tracker traffic starts.
+3. Security Center manual scan completes or reports per-site errors inline instead of a generic failure.
+4. Users page shows active-device counts derived from live operator sessions.
 
 ### Registry v2 on Synology
 

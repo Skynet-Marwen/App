@@ -53,7 +53,9 @@ export function useAntiEvasion() {
       ])
       setConfig({ ...DEFAULT_CONFIG, ...configRes.data })
       setIncidents(incidentsRes.data.items ?? [])
-    } catch (_) {
+    } catch {
+      setConfig(DEFAULT_CONFIG)
+      setIncidents([])
     } finally {
       setLoading(false)
     }

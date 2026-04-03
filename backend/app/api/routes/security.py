@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.database import get_db
-from ...core.security import get_current_user
+from ...core.security import require_admin_user
 from ...models.user import User
 from ...schemas.security import (
     SecurityActionResponse,
@@ -20,16 +20,10 @@ from ...services.security_center_ops import apply_recommendation, get_security_s
 router = APIRouter(prefix="/security", tags=["security"])
 
 
-def require_security_admin(current: User = Depends(get_current_user)) -> User:
-    if current.role != "admin":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required")
-    return current
-
-
 @router.get("/status", response_model=SecurityStatusResponse)
 async def security_status(
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_security_admin),
+    _: object = Depends(require_admin_user),
 ):
     return await get_security_status(db)
 
@@ -37,7 +31,7 @@ async def security_status(
 @router.get("/findings", response_model=list[SecurityFindingOut])
 async def security_findings(
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_security_admin),
+    _: object = Depends(require_admin_user),
 ):
     return await list_findings(db)
 
@@ -45,7 +39,7 @@ async def security_findings(
 @router.get("/recommendations", response_model=list[SecurityRecommendationOut])
 async def security_recommendations(
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_security_admin),
+    _: object = Depends(require_admin_user),
 ):
     return await list_recommendations(db)
 
@@ -55,14 +49,18 @@ async def trigger_security_scan(
     body: SecurityScanRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current: User = Depends(require_security_admin),
+    current: User = Depends(require_admin_user),
 ):
-    summary = await run_security_scan(
-        db,
-        force=True,
-        site_id=body.site_id,
-        refresh_intel_first=body.refresh_intel,
-    )
+    try:
+        summary = await run_security_scan(
+            db,
+            force=True,
+            site_id=body.site_id,
+            refresh_intel_first=body.refresh_intel,
+        )
+    except Exception as exc:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Security scan failed unexpectedly: {exc}") from exc
     log_action(
         db,
         action="RUN_SECURITY_SCAN",
@@ -81,7 +79,7 @@ async def ignore_security_finding(
     finding_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current: User = Depends(require_security_admin),
+    current: User = Depends(require_admin_user),
 ):
     try:
         await ignore_finding(db, finding_id)
@@ -104,7 +102,7 @@ async def apply_security_recommendation(
     recommendation_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current: User = Depends(require_security_admin),
+    current: User = Depends(require_admin_user),
 ):
     try:
         await apply_recommendation(db, recommendation_id)

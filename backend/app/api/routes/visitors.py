@@ -8,6 +8,7 @@ from ...models.visitor import Visitor
 from ...models.device import Device
 from ...schemas.visitor import BlockRequest
 from ...services.audit import log_action, request_ip
+from ...services.incident_notifications import dispatch_notification_event
 
 router = APIRouter(prefix="/visitors", tags=["visitors"])
 
@@ -95,6 +96,18 @@ async def block_visitor(
             device.status = "blocked"
     log_action(db, action="BLOCK_VISITOR", actor_id=current.id, target_type="visitor", target_id=v.id, ip=request_ip(request), extra={"reason": body.reason})
     await db.commit()
+    dispatch_notification_event(
+        "block_triggered",
+        {
+            "target_type": "visitor",
+            "target_id": v.id,
+            "target": v.ip or v.id,
+            "reason": body.reason,
+            "actor": current.username,
+        },
+        subject="SkyNet Notification — Visitor Blocked",
+        severity="medium",
+    )
     return {"message": "Blocked"}
 
 

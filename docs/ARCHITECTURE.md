@@ -1,7 +1,7 @@
 # SkyNet — Architecture
 
 > Living document. Update on every structural change.
-> Last updated: 2026-04-02 — runtime app version `1.6.0`
+> Last updated: 2026-04-03 — runtime app version `1.6.9`
 
 ---
 
@@ -56,6 +56,7 @@
 - An external OIDC/JWKS provider issues JWT tokens to end-users of *protected applications*.
 - SKYNET validates those tokens via JWKS — it never proxies login.
 - SKYNET operator login is always local (username + bcrypt + JWT).
+- SKYNET now distinguishes global `superadmin` operators from tenant-bound operators in the settings control plane.
 - External IdP outage does not affect operator access.
 - The local Keycloak container is optional and profile-gated in `docker-compose.yml`; external OIDC/JWKS providers are valid too.
 - The public `APP_BASE_URL` may be HTTPS even when backend/frontend containers talk plain HTTP internally.
@@ -246,6 +247,28 @@ FastAPI /stats/overview
   └─ 8. Return `gateway_dashboard` for the operator Overview widget
 ```
 
+### 9b. Overview + Integration Data Lineage
+```
+PostgreSQL
+  ├─ visitors       → total visitors, top countries, per-site visitor counts
+  ├─ events         → heatmap, per-site event counts, gateway analytics
+  ├─ incidents      → evasion attempts, investigations, threat hotspots
+  ├─ blocked_ips    → blocked posture and blocked-attempt counters
+  ├─ devices        → blocked device posture
+  └─ user_profiles  → risk leaderboard
+
+FastAPI
+  ├─ GET /stats/overview
+  └─ GET /integration/sites
+
+React
+  ├─ Overview widgets render backend payloads as-is
+  └─ Integration cards render per-site aggregate stats as-is
+```
+
+Design rule:
+- If the backend does not have a trustworthy metric, the frontend must show an empty or unavailable state instead of synthesizing placeholder hotspot, investigation, or enforcement values.
+
 ### 10. Theme Resolution Flow
 ```
 Browser login / app bootstrap
@@ -260,10 +283,20 @@ FastAPI /user/theme
 
 Frontend theme engine
   ├─ 7. apply CSS variables
-  ├─ 8. apply shell layout metadata (body/header/nav/footer/panel)
+  ├─ 8. apply shell layout metadata (body/header/nav/footer/panel, shell mode, width, sticky header)
   ├─ 9. apply optional role-based shell surface rules from layout.role_surfaces
-  ├─ 10. update branding/title/logo surfaces
-  └─ 11. allow instant runtime switching without reload
+  ├─ 10. apply widget-set rules to Overview cards
+  ├─ 11. update branding/title/logo surfaces
+  └─ 12. allow instant runtime switching without reload
+```
+
+### 10a. Tenant Control Plane Flow
+```
+Settings -> Authentication & Identity
+  ├─ 1. Superadmin manages /api/v1/tenants
+  ├─ 2. Admin or superadmin manages /api/v1/users with optional tenant_id
+  ├─ 3. /auth/me and /users now carry tenant metadata back to the frontend
+  └─ 4. Theme resolution may inherit a tenant default theme for default-theme operators
 ```
 
 ### 10b. Theme Package Flow
@@ -278,15 +311,44 @@ FastAPI theme package route
   └─ 5. return a typed package/import response
 ```
 
-### 9c. Activity Retention Flow
+### 9c. Storage Retention + Archive Flow
 ```
 Runtime settings
-  └─ 1. event_retention_days stored in runtime_config
+  └─ 1. visitor/event/incident retention + anonymize_ips stored in runtime_config
 
 STIE maintenance loop
   ├─ 2. read runtime_settings()
-  ├─ 3. prune_activity_events() deletes expired activity_events rows
-  └─ 4. log pruning counts when rows are removed
+  ├─ 3. run_storage_purge() deletes expired events/activity rows, prunes resolved incidents, and anonymizes or deletes stale visitors
+  ├─ 4. Settings -> Data & Storage can also trigger purge or export the current retention archive on demand
+  └─ 5. log pruning counts when rows are removed
+```
+
+### 9e. Integration Connector Flow
+```
+Settings -> Integrations
+  ├─ 1. operator configures API access, SIEM webhook, monitoring webhook, and threat-intel refresh controls
+  └─ 2. runtime_config stores connector URLs, encrypted secrets, event lists, and integration-specific rate limits
+
+FastAPI
+  ├─ 3. /track/* rejects site API keys when integration_api_access_enabled=false
+  ├─ 4. /integration/sites create/regenerate operations honor the runtime API-key prefix
+  ├─ 5. incident_notifications fan out selected events into SIEM / monitoring connectors
+  └─ 6. notification_deliveries stores connector send history beside webhook / SMTP records
+```
+
+### 9d. Access & Network Enforcement Flow
+```
+Operator updates Settings -> Access & Network
+  └─ 1. PUT /api/v1/settings stores allowed_domains, CORS policy, IP lists, and rate buckets in runtime_config
+
+HTTP request enters FastAPI
+  ├─ 2. AccessNetworkMiddleware reads runtime_settings()
+  ├─ 3. host allowlist check rejects disallowed Host / X-Forwarded-Host values
+  ├─ 4. get_client_ip() only trusts forwarded IP headers when trust_proxy_headers=true
+  ├─ 5. IP allowlist / denylist gate the request before auth, tracking, or gateway logic
+  ├─ 6. Redis-backed per-IP counters enforce runtime request limits by route class
+  ├─ 7. dynamic CORS policy handles preflight and response headers
+  └─ 8. request continues into API, tracker, or gateway handlers
 ```
 
 ---
@@ -301,12 +363,24 @@ users
   email           VARCHAR(255) UNIQUE
   username        VARCHAR(100) UNIQUE
   hashed_password VARCHAR(255)
-  role            ENUM(admin, moderator, user)
+  role            ENUM(superadmin, admin, moderator, user)
   status          ENUM(active, blocked, pending)
+  tenant_id       UUID FK → tenants.id nullable
   theme_id        VARCHAR(100) FK → themes.id nullable
   theme_source    VARCHAR(20)  ← default | user
   last_login      TIMESTAMPTZ
   created_at      TIMESTAMPTZ
+
+tenants
+  id               UUID PK
+  name             VARCHAR(120) UNIQUE
+  slug             VARCHAR(80) UNIQUE
+  primary_host     VARCHAR(255) nullable
+  description      TEXT nullable
+  default_theme_id VARCHAR(100) FK → themes.id nullable
+  is_active        BOOLEAN
+  created_at       TIMESTAMPTZ
+  updated_at       TIMESTAMPTZ
 ```
 
 ### Tracking Tables

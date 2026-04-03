@@ -21,7 +21,8 @@ from app.core.database import Base          # noqa: E402
 from app.models import (                    # noqa: E402, F401
     user, visitor, device, site, event, blocking, incident, block_page_config,
     theme, identity_link, user_profile, risk_event, activity_event, anomaly_flag,
-    threat_intel, target_profile, security_finding, security_recommendation,
+    threat_intel, target_profile, security_finding, security_recommendation, tenant,
+    notification_delivery,
 )
 
 target_metadata = Base.metadata

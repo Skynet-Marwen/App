@@ -9,9 +9,12 @@
  * @property {string} id
  * @property {string} email
  * @property {string} username
- * @property {'admin'|'moderator'|'user'} role
+ * @property {'superadmin'|'admin'|'moderator'|'user'} role
  * @property {'active'|'blocked'|'pending'} status
  * @property {string|null} keycloak_id
+ * @property {string|null} tenant_id
+ * @property {string|null} tenant_name
+ * @property {string|null} tenant_slug
  * @property {string|null} last_login
  * @property {string} created_at
  * @property {number} devices_count

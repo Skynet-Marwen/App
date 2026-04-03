@@ -10,7 +10,8 @@ export function useSites() {
     try {
       const res = await integrationApi.sites()
       setSites(res.data)
-    } catch (_) {
+    } catch {
+      setSites([])
     } finally {
       setLoading(false)
     }

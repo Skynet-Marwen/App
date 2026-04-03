@@ -10,14 +10,17 @@ export function useSecurityCenter(enabled) {
   const [scanning, setScanning] = useState(false)
   const [actingId, setActingId] = useState('')
   const [error, setError] = useState('')
+  const [scanSummary, setScanSummary] = useState('')
+  const [scanSummaryTone, setScanSummaryTone] = useState('info')
 
   const refresh = useCallback(async () => {
     if (!enabled) {
       setLoading(false)
-      return
+      return false
     }
     setLoading(true)
     setError('')
+    let ok = true
     try {
       const [statusRes, findingsRes, recommendationsRes] = await Promise.all([
         securityApi.status(),
@@ -28,10 +31,12 @@ export function useSecurityCenter(enabled) {
       setFindings(findingsRes.data)
       setRecommendations(recommendationsRes.data)
     } catch (error_) {
+      ok = false
       setError(error_.response?.data?.detail || 'Failed to load Security Center')
     } finally {
       setLoading(false)
     }
+    return ok
   }, [enabled])
 
   useEffect(() => {
@@ -42,9 +47,26 @@ export function useSecurityCenter(enabled) {
     if (!enabled) return
     setScanning(true)
     setError('')
+    setScanSummary('')
     try {
-      await securityApi.scan({ refresh_intel: true })
-      await refresh()
+      const { data } = await securityApi.scan({ refresh_intel: true })
+      const refreshed = await refresh()
+      if (data.errors?.length) {
+        const first = data.errors[0]
+        const location = first.site_url || first.site_id || 'security scan'
+        const more = data.errors.length > 1 ? ` (+${data.errors.length - 1} more)` : ''
+        setScanSummary(`Scan completed with issues on ${location}: ${first.detail}${more}`)
+        setScanSummaryTone('warning')
+      } else if (!refreshed) {
+        setScanSummary('Scan completed, but Security Center failed to refresh. Use Refresh to reload the latest findings.')
+        setScanSummaryTone('warning')
+      } else if ((data.scanned_targets || 0) > 0) {
+        setScanSummary(`Scan completed for ${data.scanned_targets} target(s). ${data.findings_created || 0} finding(s) refreshed.`)
+        setScanSummaryTone('success')
+      } else {
+        setScanSummary('Scan completed, but no active protected sites were available to analyze.')
+        setScanSummaryTone('info')
+      }
     } catch (error_) {
       setError(error_.response?.data?.detail || 'Failed to run security scan')
     } finally {
@@ -88,6 +110,8 @@ export function useSecurityCenter(enabled) {
     scanning,
     actingId,
     error,
+    scanSummary,
+    scanSummaryTone,
     refresh,
     runScan,
     ignoreFinding,

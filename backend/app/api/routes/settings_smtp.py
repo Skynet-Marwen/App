@@ -88,7 +88,7 @@ async def reveal_smtp_password(
 ):
     """Return decrypted SMTP password. Restricted to admin.
     TODO: restrict to owner role once RBAC is implemented."""
-    if current.role not in ("admin",):
+    if current.role not in ("admin", "superadmin"):
         raise HTTPException(403, "Insufficient privileges")
     enc = _settings.get("smtp_password_enc", "")
     if not enc:

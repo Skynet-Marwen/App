@@ -14,7 +14,9 @@ export function useUsers() {
       const res = await usersApi.list({ page, search, page_size: 20 })
       setUsers(res.data.items)
       setTotal(res.data.total)
-    } catch (_) {
+    } catch {
+      setUsers([])
+      setTotal(0)
     } finally {
       setLoading(false)
     }

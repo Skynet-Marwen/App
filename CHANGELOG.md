@@ -9,11 +9,54 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
-### Added
-
 ### Changed
+- Settings now uses a compact sticky in-page sub-navigation bar that stays pinned under the header instead of treating section selectors like a secondary dashboard
+- Settings feature-status summary cards, coverage cards, capability chips, and roadmap/planning surfaces are now consistently hidden outside Developer Mode for a cleaner operator-facing configuration experience
+- Shared cards, stat surfaces, previews, and modal panels now use flatter professional styling instead of glow-heavy effects
 
 ### Fixed
+- `npm run lint` now passes again across the frontend after cleanup of empty catch blocks, unused JSX render variables, the notification-delivery hook dependency warning, and Vite config Node globals
+
+---
+
+## [1.6.9] - 2026-04-03
+
+### Added
+- Notification escalation rules for still-open high/critical incidents, including configurable delay, repeat count, and SMTP/webhook channel selection
+- `POST /api/v1/settings/webhooks/test` and `GET /api/v1/settings/notifications/deliveries` for operator-side webhook testing and notification delivery history
+- Per-event notification matrix routing for `high_severity_incident`, `evasion_detected`, `spam_detected`, `block_triggered`, and `new_user`
+- Security & Detection runtime now includes configurable risk modifier weights, fingerprint signal weights, proxy/VPN/datacenter edge actions, country watchlists, and provider / ASN keyword watchlists
+- Access & Network runtime now includes allowed domains, CORS origin/method/header policy, IP allow/deny lists, and per-route request-limit controls
+- Tenant account management with `/api/v1/tenants`, operator-to-tenant assignment, tenant default-theme linkage, and a guarded `superadmin` role
+- Theme shell controls for fixed vs document scroll mode, content width, sidebar width, topbar density, sticky-header behavior, and curated dashboard widget sets
+- Storage operations endpoints: `GET /api/v1/settings/storage/status`, `POST /api/v1/settings/storage/purge`, and `POST /api/v1/settings/storage/archive`
+- Retention cleanup now covers tracker events, authenticated activity events, resolved incidents, and stale visitors with optional IP anonymization
+- Integrations operations endpoints: `GET /api/v1/settings/integrations/status`, `POST /api/v1/settings/integrations/test`, and `POST /api/v1/settings/integrations/threat-intel/refresh`
+- Integration connector delivery for SIEM and monitoring webhooks with signed payloads and delivery logging through the shared notification pipeline
+
+### Changed
+- Settings -> Notifications & Messaging now exposes a real custom event matrix, escalation controls, webhook test sends, and a recent SMTP/webhook delivery log
+- The coordinated settings-surface summary now counts Notifications & Messaging from the same live capability granularity shown in the detailed domain card
+- Settings -> Security & Detection now saves runtime scoring plus anti-evasion posture together, and the coordinated summary reflects Network Intelligence and Device Identity as fully live
+- Settings -> Access & Network now exposes real host trust, browser trust, IP policy, and runtime rate-limit controls, and the coordinated summary now treats the whole section as live
+- The coordinated settings-surface summary now uses finer-grained capability buckets across Authentication, Theme, Data, Blocking, and System domains so the top status card better matches the detailed roadmap cards
+- Settings -> Authentication & Identity now treats superadmin, tenant accounts, and tenant-bound operators as live capabilities instead of roadmap placeholders
+- Settings -> UI / Theme Engine now treats layout zones, shell mode, and dashboard widget control as live capabilities instead of partial placeholders
+- Settings -> Data & Storage now exposes live storage health, cache pressure, retention archive export, and manual retention cleanup instead of roadmap placeholders
+- Settings -> Integrations now exposes live API-access governance, GeoIP status, threat-intel refresh, and SIEM/monitoring connector controls instead of roadmap placeholders
+- Site API key creation and regeneration now honor the runtime API-key prefix setting, and tracker/API traffic can be disabled globally from settings
+- Integration-specific routes now use their own runtime rate-limit bucket instead of falling into the generic default bucket
+- README and core project docs now explicitly distinguish backend-derived operator metrics from empty-state UX and document the current smoke-test workflow
+
+### Fixed
+- `GET /api/v1/integration/sites` no longer returns decorative zeroed site stats; it now aggregates real visitor, event, and blocked-visitor counts per site
+- Overview hotspot, investigation, and enforcement cards no longer synthesize fallback data from unrelated payloads when the backend has no true signal to show
+- Overview now computes real unique-user trends and avoids showing a fake blocked trend percentage
+- Operator user list no longer hardcodes zero active devices; it derives the count from live Redis-backed sessions
+- Security Center threat-intel refresh now tolerates malformed advisory rows instead of crashing with `'str' object has no attribute 'get'`
+- Security Center scan UX now distinguishes real scan failure from a post-scan refresh failure and preserves per-site scan notes in status payloads
+- Forwarded client IP headers are no longer trusted unless `Trust Proxy Headers` is enabled, so access policy and rate limits now match the configured edge trust model
+- Connector test sends now reuse the stored secret when the UI is showing the masked placeholder value instead of signing test payloads with the mask itself
 
 ---
 

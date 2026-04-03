@@ -1,6 +1,16 @@
 # SkyNet — Security Model
 
-> Last reviewed: 2026-04-02 — shipped app version `1.6.0`
+> Last reviewed: 2026-04-03 — shipped app version `1.6.9`
+
+---
+
+## Known Hardening Gaps (2026-04-03 Review)
+
+- Several high-impact operator routes currently accept any authenticated SKYNET user instead of consistently requiring admin or superadmin privileges. The intended boundary remains admin-only for settings, integration management, blocking controls, and maintenance surfaces.
+- The global webhook signing secret still lives as plaintext `webhook_secret` in runtime settings and is not masked the way `*_enc` secrets are. This should be treated as implementation debt, not as an accepted security posture.
+- `GET /api/v1/system/info` is currently public and exposes component version strings. This is useful for diagnostics, but it is broader than the intended operator-only system surface.
+
+These are active branch issues to fix, not approved long-term behavior.
 
 ---
 
@@ -8,7 +18,7 @@
 
 | Threat | Vector | Mitigation | Status |
 |--------|--------|-----------|--------|
-| Operator credential brute force | `POST /auth/login` | Rate limit: 10 req/min per IP (slowapi) | ✅ v1.1 |
+| Operator credential brute force | `POST /auth/login` | Runtime Redis-backed rate limit per IP (default 10 req/min) | ✅ |
 | JWT theft (operator) | XSS / network | Short expiry (24h) + Redis session revocation + HTTPS | ✅ |
 | JWT theft (external IdP) | XSS in protected app | SKYNET validates signature + expiry against configured JWKS providers | ✅ |
 | External token replay | Replayed expired token | `python-jose` validates `exp` claim on every request | ✅ |
@@ -17,11 +27,11 @@
 | Multi-account abuse | Same device → many users | `detect_multi_account()` → AnomalyFlag severity=high | ✅ v1.2 |
 | Impossible travel | Geo jump between sessions | activity_events IP+country delta check + anomaly flag + risk recompute | ✅ v1.3 |
 | API key leak | Exposed in client source | Per-site keys, revocable instantly, per-request logging | ✅ |
-| IP spoofing | X-Forwarded-For manipulation | Trusted proxy list in config | Planned |
+| IP spoofing | X-Forwarded-For manipulation | Forwarded IP headers only trusted when `trust_proxy_headers=true` | ✅ |
 | Fingerprint evasion | Private mode, canvas block | Multi-signal composite; flag absent signals | ✅ |
-| Device cookie tampering | User edits `_skynet_did` manually | HMAC-signed cookie verified server-side before use | ✅ unreleased |
-| Challenge bypass forgery | User crafts a fake gateway bypass token | Short-lived HMAC-signed bypass token validated against request subject | ✅ unreleased |
-| Fingerprint drift / browser upgrades | Legitimate signal changes across visits | Signed cookie continuity + fingerprint stability scoring | ✅ unreleased |
+| Device cookie tampering | User edits `_skynet_did` manually | HMAC-signed cookie verified server-side before use | ✅ v1.6 |
+| Challenge bypass forgery | User crafts a fake gateway bypass token | Short-lived HMAC-signed bypass token validated against request subject | ✅ v1.6 |
+| Fingerprint drift / browser upgrades | Legitimate signal changes across visits | Signed cookie continuity + fingerprint stability scoring | ✅ v1.6 |
 | CSRF | Cross-site form submission | Bearer token auth (not cookie-based) | ✅ |
 | SQL injection | User-supplied params | SQLAlchemy ORM + Pydantic validation | ✅ |
 | XSS via stored data | User-agent / URL fields | bleach HTML stripping on ingest; CSP headers | ✅ v1.1 |
@@ -30,6 +40,8 @@
 | Information leakage | Cross-origin referer | `Referrer-Policy: strict-origin-when-cross-origin` | ✅ v1.1 |
 | Secret exposure | `.env` committed to git | `.gitignore` enforced; `.env.example` as template | ✅ |
 | Insider threat | Admin account abuse | Write-only audit log for all state changes | ✅ v1.1 |
+| Operator lockout | Last owner account deleted/demoted/blocked | Superadmin guardrails prevent removing the final `superadmin` | ✅ |
+| Over-broad operator permissions | Non-admin operator can reach privileged settings/system actions | Route-level `require_admin_user` / `require_superadmin_user` enforcement | Known gap on active branch |
 | Malicious branding asset upload | Admin uploads oversized or unsafe theme file | MIME allowlist + 2 MB cap + backend-served logo route only | ✅ |
 | False same-device merge | Cross-browser similarity | Strict tuple grouping; exact fingerprint is block authority | ✅ v1.1 |
 | Container escape | Docker misconfiguration | Non-root user in containers (planned) | Planned v1.3 |
@@ -72,7 +84,9 @@ External IdP settings are configured at runtime via `Settings → Auth` and stor
 Gateway challenge bypass tokens also derive their signature from application secrets and expire quickly by design.
 
 SMTP passwords are stored as Fernet-encrypted ciphertext (`smtp_password_enc`) derived from `APP_SECRET_KEY`, and are only decrypted at send time or through the admin-only reveal endpoint.
+Integration connector secrets (`integration_siem_secret_enc`, `integration_monitoring_secret_enc`) are stored the same way and are only decrypted at send time or when an operator explicitly reuses the masked value during a connector test.
 Theme definitions and per-user theme assignments are stored in the database. Uploaded theme logos are stored under `backend/data/theme-assets/` and served through backend API routes.
+Current gap: the global webhook signing secret is still stored as plaintext runtime config (`webhook_secret`) and can be returned by `GET /settings`; it should be migrated to encrypted-at-rest storage with masked read semantics.
 
 ### Secret Rotation Procedure
 1. Generate new secret.
@@ -86,16 +100,18 @@ Theme definitions and per-user theme assignments are stored in the database. Upl
 
 ## Rate Limiting
 
-Implemented via `slowapi`.
+Implemented via runtime Redis-backed per-IP counters in `AccessNetworkMiddleware`.
 
 | Endpoint Group | Limit | Window | Key |
 |---------------|-------|--------|-----|
-| `POST /auth/login` | 10 req | 1 minute | remote IP |
-| `POST /auth/*` | 30 req | 1 minute | remote IP |
-| `POST /track/*` and `GET /track/check-access` | 200 req | 1 minute | remote IP |
-| All other routes | 300 req | 1 minute | remote IP |
+| `POST /auth/login` | `rate_limit_auth_login_per_minute` (default 10) | 1 minute | client IP |
+| `POST /auth/*` | `rate_limit_auth_per_minute` (default 30) | 1 minute | client IP |
+| `GET/POST /integration/*` and `POST /settings/integrations/*` | `rate_limit_integration_per_minute` (default 120) | 1 minute | client IP |
+| `POST /track/*` and `GET /track/check-access` | `rate_limit_track_per_minute` (default 200) | 1 minute | client IP |
+| All other HTTP routes | `rate_limit_default_per_minute` (default 300) | 1 minute | client IP |
 
 Rate limit exceeded: `HTTP 429` with `Retry-After` header.
+When `trust_proxy_headers=false`, the limiter keys off the raw TCP peer address and ignores `CF-Connecting-IP`, `X-Real-IP`, and `X-Forwarded-For`.
 
 ---
 
@@ -133,14 +149,20 @@ Rate limit exceeded: `HTTP 429` with `Retry-After` header.
 - `identity_links.external_user_id` (external IdP subject) is the enforcement key for identity/risk actions.
 - These two namespaces are intentionally separate — a blocked device does not auto-block the user profile, and vice versa.
 - `UserProfile.trust_level = blocked` currently affects protected-app identity flows and `/track/activity`; anonymous tracker pageviews are not yet hard-blocked by external-user profile state.
+- Site API keys are also governed by the runtime `integration_api_access_enabled` toggle, so operators can disable protected-app ingestion without deleting registered sites.
+- Security Center scans are safe-read oriented and now degrade per site: a single unreachable or broken target should produce an `error` scan status for that profile, not collapse the full scan run.
+- Threat-intel refresh used by Security Center is defensive against malformed upstream advisory rows; invalid entries are ignored so feed noise does not become a denial of scan visibility.
 
 ### Theme Administration Boundary
 - Theme CRUD, default-theme promotion, and logo upload/remove are admin-only operations.
 - Theme package export/import is admin-only and uses typed JSON documents rather than raw filesystem access.
 - Per-user theme selection is available to any authenticated operator via `/api/v1/user/theme`.
+- Tenant CRUD and `superadmin` promotion/demotion are superadmin-only operations.
+- Tenant-bound admins are constrained to their own tenant scope when managing operators through `/users`.
 - Uploaded theme logos are restricted to PNG, JPEG, WEBP, and GIF with a 2 MB maximum payload.
 - Uploaded logos are serialized as backend API URLs (`/api/v1/themes/{id}/logo`) rather than anonymous filesystem paths.
 - Role-based theme shell surfaces only affect navigation presentation; they do not grant or revoke backend permissions.
+- Current gap: a branch review on 2026-04-03 found that several settings, integration, blocking, and system endpoints still rely on generic operator auth in code instead of the stricter admin boundary described here.
 
 ---
 
@@ -181,6 +203,8 @@ Applied by `SecurityHeadersMiddleware` on every response.
 
 - All request bodies validated by Pydantic at the API boundary.
 - URL fields (`base_url`, `webhook_url`, legacy `keycloak_*`, and `idp_providers[*].jwks_url/issuer`): validated via `clean_url()` — scheme must be `http` or `https`.
+- Host policy fields such as `allowed_domains`: normalized to bare hostnames or wildcard host patterns before storage.
+- CORS policy fields such as `cors_allowed_origins`: normalized to exact origins or `*` before middleware evaluation.
 - String fields: strip whitespace, strip HTML via `bleach`.
 - IP fields: validated with Python `ipaddress` module.
 - `external_user_id` (external IdP subject): treated as opaque string — not parsed or interpreted by SKYNET.

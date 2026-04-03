@@ -4,14 +4,50 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.event import Event
 from ..services.runtime_config import runtime_settings
 
 
-_REQUEST_EVENT_TYPES = ("gateway_allow", "gateway_challenge", "gateway_block")
+_REQUEST_EVENT_TYPES = ("gateway_allow", "gateway_challenge", "gateway_block", "gateway_rate_limit")
+
+
+def _parse_event_properties(raw: str | None) -> dict:
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _coerce_float(value: object) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
+def _coerce_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            return None
+    return None
 
 
 async def record_gateway_event(
@@ -96,26 +132,22 @@ async def summarize_gateway_dashboard(
     total_requests = sum(current_counts.values())
     previous_total = sum(previous_counts.values())
 
-    latency_sql = text(
-        """
-        SELECT
-          AVG(NULLIF((CAST(properties AS jsonb)->>'latency_ms', '')::numeric)) AS avg_latency,
-          PERCENTILE_CONT(0.95) WITHIN GROUP (
-            ORDER BY NULLIF((CAST(properties AS jsonb)->>'latency_ms', '')::numeric)
-          ) AS p95_latency
-        FROM events
-        WHERE event_type = 'gateway_allow' AND created_at >= :since
-        """
+    gateway_allow_payloads = await _event_payloads(
+        db,
+        since=since,
+        event_type="gateway_allow",
     )
-    avg_latency = None
-    p95_latency = None
-    try:
-        latency_row = (await db.execute(latency_sql, {"since": since})).first()
-        if latency_row:
-            avg_latency = round(float(latency_row[0]), 2) if latency_row[0] is not None else None
-            p95_latency = round(float(latency_row[1]), 2) if latency_row[1] is not None else None
-    except Exception:
-        avg_latency = None
+    latencies = sorted(
+        coerced
+        for payload in gateway_allow_payloads
+        for coerced in [_coerce_float(payload.get("latency_ms"))]
+        if coerced is not None
+    )
+    avg_latency = round(sum(latencies) / len(latencies), 2) if latencies else None
+    if latencies:
+        p95_index = max(0, min(len(latencies) - 1, round((len(latencies) - 1) * 0.95)))
+        p95_latency = round(float(latencies[p95_index]), 2)
+    else:
         p95_latency = None
 
     challenge_breakdown = await _json_count(
@@ -139,13 +171,12 @@ async def summarize_gateway_dashboard(
         limit=4,
     )
 
-    upstream_errors = await db.scalar(
-        select(func.count()).select_from(Event).where(
-            Event.event_type == "gateway_allow",
-            Event.created_at >= since,
-            text("COALESCE(NULLIF((CAST(properties AS jsonb)->>'upstream_status', '')::int, 0), 0) >= 500"),
-        )
-    ) or 0
+    upstream_errors = sum(
+        1
+        for payload in gateway_allow_payloads
+        for status in [_coerce_int(payload.get("upstream_status"))]
+        if status is not None and status >= 500
+    )
 
     challenged = int(current_counts.get("gateway_challenge", 0))
     blocked = int(current_counts.get("gateway_block", 0))
@@ -168,6 +199,7 @@ async def summarize_gateway_dashboard(
             "allow": int(current_counts.get("gateway_allow", 0)),
             "challenge": challenged,
             "block": blocked,
+            "rate_limit": int(current_counts.get("gateway_rate_limit", 0)),
         },
         "challenge_outcomes": challenge_outcomes,
         "challenge_breakdown": challenge_breakdown,
@@ -196,30 +228,37 @@ async def _json_count(
     event_types: tuple[str, ...] | None = None,
     limit: int = 8,
 ) -> list[dict]:
+    payloads = await _event_payloads(
+        db,
+        since=since,
+        event_type=event_type,
+        event_types=event_types,
+    )
+    counts: dict[str, int] = {}
+    for payload in payloads:
+        value = payload.get(json_key)
+        label = str(value).strip() if value not in (None, "") else "unknown"
+        counts[label] = counts.get(label, 0) + 1
+    ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    return [{"label": label, "count": count} for label, count in ordered[:limit]]
+
+
+async def _event_payloads(
+    db: AsyncSession,
+    *,
+    since: datetime,
+    event_type: str | None = None,
+    event_types: tuple[str, ...] | None = None,
+) -> list[dict]:
+    query = select(Event.properties).where(Event.created_at >= since)
     if event_type:
-        where = "event_type = :event_type"
-        params: dict[str, object] = {"since": since, "event_type": event_type, "limit": limit}
+        query = query.where(Event.event_type == event_type)
     elif event_types:
-        quoted = ",".join(f"'{value}'" for value in event_types)
-        where = f"event_type IN ({quoted})"
-        params = {"since": since, "limit": limit}
+        query = query.where(Event.event_type.in_(event_types))
     else:
         return []
-    sql = text(
-        f"""
-        SELECT COALESCE(NULLIF(CAST(properties AS jsonb)->>'{json_key}', ''), 'unknown') AS label, COUNT(*) AS count
-        FROM events
-        WHERE {where} AND created_at >= :since
-        GROUP BY 1
-        ORDER BY count DESC, label ASC
-        LIMIT :limit
-        """
-    )
-    try:
-        rows = (await db.execute(sql, params)).fetchall()
-    except Exception:
-        return []
-    return [{"label": row[0], "count": int(row[1])} for row in rows]
+    rows = (await db.execute(query)).fetchall()
+    return [_parse_event_properties(row[0]) for row in rows]
 
 
 def _safe_ratio(current: int, previous: int) -> int:

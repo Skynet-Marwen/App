@@ -48,6 +48,18 @@ def _score_to_trust(score: float) -> str:
     return "blocked"
 
 
+def _modifier_weights() -> dict[str, float]:
+    configured = runtime_settings().get("risk_modifier_weights") or {}
+    merged = dict(_MODIFIERS)
+    if isinstance(configured, dict):
+        for key, default in _MODIFIERS.items():
+            try:
+                merged[key] = max(float(configured.get(key, default)), 0.0)
+            except (TypeError, ValueError):
+                merged[key] = default
+    return merged
+
+
 def _enforcement_thresholds() -> tuple[float, float, float]:
     settings = runtime_settings()
     flag = float(settings.get("risk_auto_flag_threshold", 0.60) or 0.60)
@@ -126,17 +138,18 @@ async def recompute(
             base = 0.0
 
         # 3. Apply modifiers
+        modifier_weights = _modifier_weights()
         modifier = 0.0
 
         # Shared device
         if any(d.shared_user_count and d.shared_user_count > 0 for d in devices):
-            modifier += _MODIFIERS["shared_device"]
+            modifier += modifier_weights["shared_device"]
 
         # New device (any link < 24h old)
         from datetime import timedelta
         cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
         if any(lk.linked_at > cutoff for lk in links):
-            modifier += _MODIFIERS["new_device"]
+            modifier += modifier_weights["new_device"]
 
         # Open anomaly flags
         open_flags = (
@@ -149,15 +162,15 @@ async def recompute(
         ).scalars().all()
         flag_types = set(open_flags)
         if "impossible_travel" in flag_types or "geo_jump" in flag_types:
-            modifier += _MODIFIERS["geo_jump"]
+            modifier += modifier_weights["geo_jump"]
         if "multi_account" in flag_types:
-            modifier += _MODIFIERS["multi_account"]
+            modifier += modifier_weights["multi_account"]
         if "behavior_drift" in flag_types:
-            modifier += _MODIFIERS["behavior_drift"]
+            modifier += modifier_weights["behavior_drift"]
 
         # Tor/VPN heuristic: device risk_score == 100
         if any(d.risk_score >= 100 for d in devices):
-            modifier += _MODIFIERS["tor_vpn"]
+            modifier += modifier_weights["tor_vpn"]
 
         new_score = min(base + modifier, 1.0)
 

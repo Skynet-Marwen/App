@@ -162,6 +162,21 @@ _INCIDENT = """
 </div>
 """
 
+_OP_ALERT = """
+<div style="font-family:monospace;background:#050505;color:#e5e7eb;padding:32px;
+            max-width:560px;margin:auto;border:1px solid #1f2937;border-radius:8px">
+  <p style="color:#22d3ee;font-size:18px;font-weight:700;margin:0 0 14px">
+    {instance_name} Notification</p>
+  <table style="width:100%;border-collapse:collapse;margin:0 0 16px">
+    <tr><td style="padding:6px 12px;color:#9ca3af">Event</td><td style="padding:6px 12px">{event_name}</td></tr>
+    <tr><td style="padding:6px 12px;color:#9ca3af">Severity</td><td style="padding:6px 12px">{severity}</td></tr>
+    <tr><td style="padding:6px 12px;color:#9ca3af">Target</td><td style="padding:6px 12px">{target}</td></tr>
+  </table>
+  <p style="margin:0 0 10px">{summary}</p>
+  <p style="margin:0;color:#6b7280;font-size:12px">{details}</p>
+</div>
+"""
+
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
@@ -205,3 +220,25 @@ async def send_incident_alert_email(to: str, incident: dict, instance_name: str)
         description=incident.get("description", "A high-severity incident was detected."),
     )
     await _send(to, f"{instance_name} Incident Alert — {incident.get('type', 'incident')}", html)
+
+
+async def send_operational_alert_email(
+    to: str,
+    *,
+    subject: str,
+    event_name: str,
+    summary: str,
+    details: str,
+    severity: str,
+    target: str,
+    instance_name: str,
+) -> None:
+    html = _OP_ALERT.format(
+        instance_name=instance_name,
+        event_name=event_name,
+        summary=summary,
+        details=details,
+        severity=severity,
+        target=target,
+    )
+    await _send(to, subject, html)

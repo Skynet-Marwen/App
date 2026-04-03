@@ -7,9 +7,9 @@ export const SETTINGS_SECTIONS = [
     capabilities: [
       { label: 'Risk Engine', status: 'live' },
       { label: 'Bot & Automation Detection', status: 'live' },
-      { label: 'Network Intelligence', status: 'partial' },
+      { label: 'Network Intelligence', status: 'live' },
       { label: 'Threat Intelligence', status: 'live' },
-      { label: 'Device Identity', status: 'partial' },
+      { label: 'Device Identity', status: 'live' },
     ],
   },
   {
@@ -19,9 +19,9 @@ export const SETTINGS_SECTIONS = [
     icon: 'network',
     capabilities: [
       { label: 'HTTPS & TLS', status: 'live' },
-      { label: 'Domains & Routing', status: 'planned' },
-      { label: 'IP Control', status: 'planned' },
-      { label: 'Rate Limiting', status: 'planned' },
+      { label: 'Domains & Routing', status: 'live' },
+      { label: 'IP Control', status: 'live' },
+      { label: 'Rate Limiting', status: 'live' },
     ],
   },
   {
@@ -31,8 +31,11 @@ export const SETTINGS_SECTIONS = [
     icon: 'lock',
     capabilities: [
       { label: 'Admin Access', status: 'live' },
-      { label: 'User System', status: 'planned' },
+      { label: 'Session Policy', status: 'live' },
       { label: 'SSO / External Auth', status: 'live' },
+      { label: 'Superadmin Tier', status: 'live' },
+      { label: 'Tenant Accounts', status: 'live' },
+      { label: 'Tenant User System', status: 'live' },
     ],
   },
   {
@@ -42,9 +45,11 @@ export const SETTINGS_SECTIONS = [
     icon: 'palette',
     capabilities: [
       { label: 'Theme Management', status: 'live' },
-      { label: 'Layout', status: 'partial' },
       { label: 'Branding', status: 'live' },
       { label: 'User Theme', status: 'live' },
+      { label: 'Layout', status: 'live' },
+      { label: 'Dynamic Themes', status: 'live' },
+      { label: 'Dashboard Widgets', status: 'live' },
     ],
   },
   {
@@ -54,9 +59,10 @@ export const SETTINGS_SECTIONS = [
     icon: 'database',
     capabilities: [
       { label: 'Retention', status: 'live' },
-      { label: 'Database', status: 'planned' },
-      { label: 'Data Lifecycle', status: 'planned' },
       { label: 'Backups', status: 'live' },
+      { label: 'Database Performance', status: 'live' },
+      { label: 'Cache & Indexing', status: 'live' },
+      { label: 'Data Lifecycle', status: 'live' },
     ],
   },
   {
@@ -66,9 +72,9 @@ export const SETTINGS_SECTIONS = [
     icon: 'plug',
     capabilities: [
       { label: 'GeoIP Provider', status: 'live' },
-      { label: 'API Access', status: 'planned' },
-      { label: 'External Services', status: 'planned' },
-      { label: 'Threat Intelligence', status: 'planned' },
+      { label: 'API Access', status: 'live' },
+      { label: 'External Services', status: 'live' },
+      { label: 'Threat Intelligence', status: 'live' },
     ],
   },
   {
@@ -78,8 +84,10 @@ export const SETTINGS_SECTIONS = [
     icon: 'bell',
     capabilities: [
       { label: 'SMTP', status: 'live' },
-      { label: 'Alerts', status: 'live' },
-      { label: 'Events', status: 'live' },
+      { label: 'Webhook Routing', status: 'live' },
+      { label: 'Custom Event Matrix', status: 'live' },
+      { label: 'Escalation Rules', status: 'live' },
+      { label: 'Delivery History', status: 'live' },
     ],
   },
   {
@@ -89,8 +97,9 @@ export const SETTINGS_SECTIONS = [
     icon: 'ban',
     capabilities: [
       { label: 'Block Page', status: 'live' },
-      { label: 'Response Strategy', status: 'planned' },
-      { label: 'Adaptive Defense', status: 'planned' },
+      { label: 'Challenge Response', status: 'live' },
+      { label: 'Slow Down Strategy', status: 'live' },
+      { label: 'Adaptive Defense', status: 'live' },
     ],
   },
   {
@@ -100,9 +109,11 @@ export const SETTINGS_SECTIONS = [
     icon: 'wrench',
     capabilities: [
       { label: 'General Runtime', status: 'live' },
-      { label: 'Logs', status: 'planned' },
-      { label: 'Debug Mode', status: 'planned' },
-      { label: 'Health Check', status: 'partial' },
+      { label: 'Health Check', status: 'live' },
+      { label: 'Live Monitoring', status: 'live' },
+      { label: 'Logs & Debug', status: 'live' },
+      { label: 'Feature Flags', status: 'live' },
+      { label: 'Maintenance Controls', status: 'live' },
     ],
   },
 ]

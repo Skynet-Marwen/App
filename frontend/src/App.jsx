@@ -42,11 +42,15 @@ function ProtectedRoute({ children }) {
       if (!authState.user) {
         try {
           await authState.fetchMe()
-        } catch (_) {}
+        } catch {
+          return
+        }
       }
       try {
         await loadThemeContext()
-      } catch (_) {}
+      } catch {
+        clearThemeState()
+      }
     })()
   }, [clearThemeState, isAuthenticated, isBootstrapped, loadThemeContext, loading, token])
 

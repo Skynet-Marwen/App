@@ -23,7 +23,9 @@ SkyNet is a **self-hosted security intelligence platform** that turns device fin
 - **Blocking engine** — block by IP, CIDR, country, ASN, user-agent, or device fingerprint
 - **Anti-evasion** — detect VPN, Tor, proxy, headless browsers, crawler signatures, click farms, DNSBL-listed IPs, form spam, and IP rotation
 - **Active gateway** — reverse proxy mode with allow/challenge/block decisions, challenge flows, and live gateway analytics on the Overview dashboard
-- **Theme engine** — admin-managed global themes, per-user theme selection, default theme assignment, branding/logo upload, and shell-level header/nav/footer/body control
+- **Access & network policy** — runtime-controlled allowed domains, browser CORS trust, trusted proxy handling, IP allow/deny lists, and per-IP request limits
+- **Authentication & identity control plane** — local operator auth, guarded `superadmin` tier, tenant accounts, and tenant-bound operator assignment for protected-app fleets
+- **Theme engine** — admin-managed global themes, per-user theme selection, tenant-aware defaults, branding/logo upload, shell-level header/nav/footer/body control, and curated widget sets
 - **Operator UX** — fixed desktop shell, viewport-aware settings/editor modals, and a domain-organized settings experience
 - **GeoIP enrichment** — country, city, flag emoji on every new visitor via `ip-api.com` by default or an uploaded local `.mmdb` database
 - **Embeddable tracker** — one `<script>` tag on any site, SDK for mobile/API
@@ -89,6 +91,20 @@ The admin console now groups settings into 9 domains instead of one long flat ta
 
 This keeps the shipped controls easy to find while leaving clear space for future SaaS, response-engine, and deep-risk features.
 
+Notifications & Messaging now includes SMTP delivery, signed webhook alerts, operator-side webhook test sends, escalation reminders for open incidents, and a recent delivery log for troubleshooting.
+Access & Network now includes real host allowlisting, CORS origin/method/header policy, trusted proxy-aware client IP extraction, IP allow/deny controls, and runtime rate-limit buckets for auth, tracking, and general API traffic.
+Authentication & Identity now includes a live `superadmin` tier, tenant account registry, and tenant-bound operator assignment; UI / Theme Engine now includes runtime shell-mode, width, sticky-header, and widget-set controls.
+Data & Storage now includes storage health, cache pressure, retention archive export, and retention cleanup actions; Integrations now includes API-access governance, threat-intel refresh, and live SIEM / monitoring connectors.
+
+## Operational Truths
+
+SkyNet now prefers explicit "no data yet" states over synthetic dashboard filler:
+
+- Overview hotspot, investigation, and enforcement widgets only render backend-derived signals.
+- Integration site cards show real per-site aggregates from `visitors`, `events`, and blocked visitors instead of placeholder zeroes.
+- Overview visitor and unique-user deltas are computed against the previous matching time window.
+- The blocked total is a point-in-time posture count, so the UI intentionally avoids a fake trend percentage for it until a comparable historical series exists.
+
 ---
 
 ## Theme Engine
@@ -97,9 +113,11 @@ SkyNet now includes a backend-backed operator theme engine:
 
 - global theme registry managed by admins
 - per-user theme override with backend persistence
+- tenant-level default theme linkage for default-theme operators
 - default theme assignment for newly created accounts
 - safe fallback to the active default when a stored theme is missing or inactive
-- granular shell styling for body, header, nav, footer, and panels
+- granular shell styling for body, header, nav, footer, panels, shell mode, content width, sticky header, and sidebar width
+- curated widget-set control for the Overview dashboard, with empty widget lists inheriting the platform default dashboard
 - uploaded logo branding served from `GET /api/v1/themes/{theme_id}/logo`
 
 Theme assets live under `backend/data/theme-assets/` and should be treated as persistent deployment data.
@@ -114,6 +132,9 @@ The current release also includes the newer device-identity and active-gateway f
 - richer browser entropy capture: hardware concurrency, device memory, connection type, touch points, plugin count, `performance.now()` resolution, and rAF jitter
 - per-device fingerprint confidence and stability scoring to measure how trustworthy and drift-resistant the collected signal set is
 - gateway request analytics: proxy traffic, bot pressure, latency, and challenge outcomes in Overview
+- Security Center manual scans now survive malformed upstream threat-intel rows and report target-level issues inline instead of collapsing into a generic scan failure
+- post-`1.6.0` settings completion for `superadmin`, tenant accounts, tenant-bound operators, and runtime theme shell/widget controls
+- post-`1.6.9` settings completion for storage lifecycle operations, integration API governance, and signed SIEM / monitoring connector delivery
 
 ---
 
@@ -192,5 +213,5 @@ You can also resolve the full device context manually through `POST /api/v1/trac
 
 ## Version
 
-Current shipped release: **v1.6.0**
+Current shipped release: **v1.6.9**
 Release history and feature milestones are tracked in [CHANGELOG.md](CHANGELOG.md).

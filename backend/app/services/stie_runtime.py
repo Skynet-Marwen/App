@@ -7,13 +7,12 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, select
 
 from ..core.database import AsyncSessionLocal
-from ..models.activity_event import ActivityEvent
 from ..models.target_profile import TargetProfile
 from ..models.threat_intel import ThreatIntel
-from .data_retention import prune_activity_events
 from .runtime_config import runtime_settings
 from .security_center import refresh_threat_intel, run_security_scan
 from .security_center_ops import security_settings
+from .storage_ops import run_storage_purge
 
 
 security_logger = logging.getLogger("skynet.security")
@@ -42,15 +41,10 @@ async def _maintenance_loop() -> None:
                         security_logger.info("STIE scan complete: %s targets, %s findings", summary["scanned_targets"], summary["findings_created"])
                         app_logger.info("STIE scan complete: %s targets", summary["scanned_targets"])
 
-                if await db.scalar(select(func.count(ActivityEvent.id))):
-                    pruned = await prune_activity_events(
-                        db,
-                        retention_days=retention_cfg.get("event_retention_days", 90),
-                        now=now,
-                    )
-                    if pruned:
-                        security_logger.info("Activity retention pruned %s expired events", pruned)
-                        app_logger.info("Activity retention pruned %s expired events", pruned)
+                purge_summary = await run_storage_purge(db)
+                if any(purge_summary.values()):
+                    security_logger.info("Storage retention maintenance: %s", purge_summary)
+                    app_logger.info("Storage retention maintenance: %s", purge_summary)
                 await db.commit()
         except asyncio.CancelledError:
             raise

@@ -1,5 +1,4 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import os
@@ -9,6 +8,7 @@ from app.core.database import init_db
 from app.core.redis import close_redis, init_redis
 from app.api import api_router
 from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
+from app.middleware.access_network import AccessNetworkMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.services.theme_assets import theme_assets_root
 from app.services.stie_runtime import start_security_runtime
@@ -66,6 +66,9 @@ async def _seed_runtime_settings_from_env():
         if settings.APP_HSTS_ENABLED and not _settings.get("hsts_enabled"):
             _settings["hsts_enabled"] = True
             changed = True
+        if settings.cors_origins_list and _settings.get("cors_allowed_origins") == DEFAULT_RUNTIME_SETTINGS["cors_allowed_origins"]:
+            _settings["cors_allowed_origins"] = settings.cors_origins_list
+            changed = True
         if settings.APP_HTTPS_PROVIDER == "caddy" and _settings.get("https_certificate_strategy") == DEFAULT_RUNTIME_SETTINGS["https_certificate_strategy"]:
             _settings["https_certificate_strategy"] = "letsencrypt_http"
             changed = True
@@ -119,20 +122,20 @@ async def create_default_admin():
     import uuid
 
     async with AsyncSessionLocal() as db:
-        existing = await db.scalar(select(User).where(User.role == "admin"))
+        existing = await db.scalar(select(User).where(User.role.in_(("superadmin", "admin"))))
         if not existing:
             admin = User(
                 id=str(uuid.uuid4()),
                 email="admin@skynet.local",
                 username="admin",
                 hashed_password=hash_password("admin"),
-                role="admin",
+                role="superadmin",
                 status="active",
             )
             db.add(admin)
             await assign_default_theme_to_user(db, admin)
             await db.commit()
-            print("✓ Default admin created: admin@skynet.local / admin")
+            print("✓ Default superadmin created: admin@skynet.local / admin")
 
 
 app = FastAPI(
@@ -146,14 +149,7 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 app.add_middleware(SecurityHeadersMiddleware)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app.add_middleware(AccessNetworkMiddleware)
 
 app.include_router(api_router)
 

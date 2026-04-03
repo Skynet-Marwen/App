@@ -6,7 +6,7 @@ from sqlalchemy import select
 from ...core.database import get_db
 from ...core.security import verify_password, create_access_token, get_current_user
 from ...models.user import User
-from ...middleware.rate_limit import limiter
+from ...models.tenant import Tenant
 from ...services.audit import log_action, request_ip
 from ...services.sanitize import clean_text
 from ...services.sessions import create_session, revoke_session
@@ -16,7 +16,6 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/login")
-@limiter.limit("10/minute")
 async def login(request: Request, form: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
     username = clean_text(form.username)
     result = await db.execute(
@@ -41,15 +40,23 @@ async def login(request: Request, form: OAuth2PasswordRequestForm = Depends(), d
     await create_session(user.id, session_id, request_ip(request), request.headers.get("user-agent"))
     log_action(db, action="LOGIN", actor_id=user.id, ip=request_ip(request))
     await db.commit()
+    tenant = await db.get(Tenant, user.tenant_id) if user.tenant_id else None
     return {
         "access_token": token,
         "token_type": "bearer",
-        "user": {"id": user.id, "email": user.email, "username": user.username, "role": user.role},
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "username": user.username,
+            "role": user.role,
+            "tenant_id": user.tenant_id,
+            "tenant_name": tenant.name if tenant else None,
+            "tenant_slug": tenant.slug if tenant else None,
+        },
     }
 
 
 @router.post("/logout")
-@limiter.limit("30/minute")
 async def logout(request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     log_action(db, action="LOGOUT", actor_id=current_user.id, ip=request_ip(request))
     await db.commit()
@@ -59,14 +66,21 @@ async def logout(request: Request, db: AsyncSession = Depends(get_db), current_u
 
 
 @router.get("/me")
-@limiter.limit("30/minute")
-async def me(request: Request, current_user: User = Depends(get_current_user)):
+async def me(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    tenant = await db.get(Tenant, current_user.tenant_id) if current_user.tenant_id else None
     return {
         "id": current_user.id,
         "email": current_user.email,
         "username": current_user.username,
         "role": current_user.role,
         "status": current_user.status,
+        "tenant_id": current_user.tenant_id,
+        "tenant_name": tenant.name if tenant else None,
+        "tenant_slug": tenant.slug if tenant else None,
         "theme_id": current_user.theme_id,
         "theme_source": current_user.theme_source,
     }

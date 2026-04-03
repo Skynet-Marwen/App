@@ -3,7 +3,7 @@ from typing import List
 
 
 class Settings(BaseSettings):
-    APP_VERSION: str = "1.6.0"
+    APP_VERSION: str = "1.6.9"
     APP_SECRET_KEY: str = "dev_secret_change_me"
     DEVICE_COOKIE_SECRET: str = ""
     APP_DEBUG: bool = True

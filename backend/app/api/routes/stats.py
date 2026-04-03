@@ -70,24 +70,28 @@ async def overview(
     since = now - timedelta(days=days)
     
     # Current period metrics
-    total_visitors = await db.scalar(select(func.count(func.distinct(Visitor.id))).where(Visitor.first_seen >= since)) or 0
-    total_blocked_entities = await db.scalar(select(func.count(BlockingRule.id))) or 0
-    total_blocked_entities += await db.scalar(select(func.count(BlockedIP.ip))) or 0
+    total_visitors = await db.scalar(select(func.count(func.distinct(Visitor.id))).where(Visitor.last_seen >= since)) or 0
     total_detected = await db.scalar(
         select(func.count()).select_from(Incident).where(Incident.detected_at >= since)
     ) or 0
     blocked_attempts = await db.scalar(
         select(func.sum(BlockedIP.hits)).select_from(BlockedIP)
     ) or 0
-    unique_users = await db.scalar(
+    linked_unique_users = await db.scalar(
         select(func.count(func.distinct(Visitor.linked_user))).where(
-            Visitor.first_seen >= since, Visitor.linked_user.isnot(None)
+            Visitor.last_seen >= since, Visitor.linked_user.isnot(None)
         )
     ) or 0
+    external_unique_users = await db.scalar(
+        select(func.count(func.distinct(UserProfile.external_user_id))).where(
+            UserProfile.last_seen >= since
+        )
+    ) or 0
+    unique_users = int(linked_unique_users) + int(external_unique_users)
     
     # Count devices
     total_devices = await db.scalar(
-        select(func.count(func.distinct(Visitor.device_id))).where(Visitor.first_seen >= since, Visitor.device_id.isnot(None))
+        select(func.count(func.distinct(Visitor.device_id))).where(Visitor.last_seen >= since, Visitor.device_id.isnot(None))
     ) or 0
 
     # Blocked count: blocked IPs + blocked visitors + blocked devices
@@ -113,23 +117,33 @@ async def overview(
         )
     ) or 0
     
-    # Previous period for comparison (7 days ago)
+    prev_linked_unique_users = await db.scalar(
+        select(func.count(func.distinct(Visitor.linked_user))).where(
+            Visitor.last_seen >= since - timedelta(days=days),
+            Visitor.last_seen < since,
+            Visitor.linked_user.isnot(None),
+        )
+    ) or 0
+    prev_external_unique_users = await db.scalar(
+        select(func.count(func.distinct(UserProfile.external_user_id))).where(
+            UserProfile.last_seen >= since - timedelta(days=days),
+            UserProfile.last_seen < since,
+        )
+    ) or 0
+    prev_unique_users = int(prev_linked_unique_users) + int(prev_external_unique_users)
+
+    # Previous period for comparison
     prev_since = since - timedelta(days=days)
     prev_visitors = await db.scalar(
         select(func.count(func.distinct(Visitor.id))).where(
-            Visitor.first_seen >= prev_since, Visitor.first_seen < since
-        )
-    ) or 1
-    prev_detected = await db.scalar(
-        select(func.count()).select_from(Incident).where(
-            Incident.detected_at >= prev_since, Incident.detected_at < since
+            Visitor.last_seen >= prev_since, Visitor.last_seen < since
         )
     ) or 0
-    prev_detected = prev_detected or 1
-    
-    # Calculate percentage changes
-    visitors_change = round(((total_visitors - prev_visitors) / prev_visitors * 100)) if prev_visitors else 0
-    blocked_change = round(((total_detected - prev_detected) / prev_detected * 100)) if prev_detected else 0
+
+    # Calculate percentage changes only for metrics backed by comparable periods.
+    visitors_change = _safe_ratio(int(total_visitors), int(prev_visitors))
+    users_change = _safe_ratio(int(unique_users), int(prev_unique_users))
+    blocked_change = None
     
     # Traffic heatmap — dynamic bucketing by range
     _bucket_cfg = {
@@ -473,11 +487,14 @@ async def overview(
         }
         for profile, flag_count, flag_type in leaderboard_rows
     ]
-    gateway_dashboard = await summarize_gateway_dashboard(
-        db,
-        since=since,
-        prev_since=prev_since,
-    )
+    try:
+        gateway_dashboard = await summarize_gateway_dashboard(
+            db,
+            since=since,
+            prev_since=prev_since,
+        )
+    except Exception:
+        gateway_dashboard = None
 
     return {
         "total_visitors": total_visitors,
@@ -487,7 +504,7 @@ async def overview(
         "evasion_attempts": evasion_attempts,
         "spam_detected": spam_events,
         "visitors_change": visitors_change,
-        "users_change": 0,
+        "users_change": users_change,
         "blocked_change": blocked_change,
         "traffic_heatmap": traffic_heatmap,
         "top_countries": top_countries,

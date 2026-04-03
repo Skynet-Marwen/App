@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from .runtime_config import runtime_settings
+
 
 FINGERPRINT_VERSION = 1
 COOKIE_VERSION = "v1"
@@ -29,6 +31,18 @@ _WEIGHTS = {
     "clock_resolution_ms": 0.05,
     "raf_jitter_score": 0.05,
 }
+
+
+def _weights() -> dict[str, float]:
+    configured = runtime_settings().get("fingerprint_signal_weights") or {}
+    merged = dict(_WEIGHTS)
+    if isinstance(configured, dict):
+        for key, default in _WEIGHTS.items():
+            try:
+                merged[key] = max(float(configured.get(key, default)), 0.0)
+            except (TypeError, ValueError):
+                merged[key] = default
+    return merged
 
 
 def _secret() -> str:
@@ -87,18 +101,20 @@ def build_snapshot(
 
 
 def compute_confidence(snapshot: dict[str, Any]) -> float:
-    total = sum(_WEIGHTS.values())
-    observed = sum(weight for key, weight in _WEIGHTS.items() if snapshot.get(key) not in (None, "", []))
+    weights = _weights()
+    total = sum(weights.values())
+    observed = sum(weight for key, weight in weights.items() if snapshot.get(key) not in (None, "", []))
     return round(observed / total, 4) if total else 0.0
 
 
 def compute_composite_hash(snapshot: dict[str, Any]) -> str:
+    weights = _weights()
     weighted_parts: list[str] = []
-    for key in sorted(_WEIGHTS.keys()):
+    for key in sorted(weights.keys()):
         value = snapshot.get(key)
         if value in (None, "", []):
             continue
-        weight = int(round(_WEIGHTS[key] * 1000))
+        weight = int(round(weights[key] * 1000))
         weighted_parts.append(f"{key}={json.dumps(value, sort_keys=True, separators=(',', ':'))}@{weight}")
     raw = "||".join(weighted_parts)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
@@ -112,7 +128,7 @@ def compute_stability(previous: dict[str, Any] | None, current: dict[str, Any]) 
     retained = 0.0
     comparable = 0.0
 
-    for key, weight in _WEIGHTS.items():
+    for key, weight in _weights().items():
         old_value = previous.get(key)
         new_value = current.get(key)
         if old_value in (None, "", []) or new_value in (None, "", []):
