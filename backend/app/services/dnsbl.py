@@ -15,6 +15,21 @@ def _normalize_providers(value) -> list[str]:
     return []
 
 
+def _normalize_country_codes(value) -> set[str]:
+    if isinstance(value, str):
+        items = value.split(",")
+    elif isinstance(value, (list, tuple, set)):
+        items = value
+    else:
+        return set()
+    normalized = set()
+    for item in items:
+        code = str(item or "").strip().upper()
+        if code:
+            normalized.add(code)
+    return normalized
+
+
 def _reverse_ipv4(ip: str) -> str | None:
     try:
         parsed = ipaddress.ip_address(ip)
@@ -47,6 +62,14 @@ async def lookup_ip(ip: str | None, providers, ttl_sec: int = 900) -> dict:
 
     await redis.set(cache_key, ",".join(hits) if hits else "0", ex=max(int(ttl_sec or 900), 60))
     return {"listed": bool(hits), "providers": hits}
+
+
+def should_soft_fail_dnsbl(country_code: str | None, config: dict | None = None) -> bool:
+    code = str(country_code or "").strip().upper()
+    if not code:
+        return False
+    config = config or {}
+    return code in _normalize_country_codes(config.get("dnsbl_soft_fail_country_codes"))
 
 
 async def _is_listed(reverse_ip: str, provider: str) -> bool:

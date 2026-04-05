@@ -1,20 +1,44 @@
 from __future__ import annotations
 
 import hashlib
+import re
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from itertools import combinations
 from typing import Any
 
 
-MATCH_VERSION = 2
+MATCH_VERSION = 3
 RECENT_IP_WINDOW_DAYS = 30
 PROBABLE_MOBILE_THRESHOLD = 0.70
 MAX_PROBABLE_GROUP_SIZE = 4
 STRICT_LABEL = "Same Device (Cross-Browser)"
 PROBABLE_MOBILE_LABEL = "Same Phone (Probable)"
 EXACT_LABEL = "Exact Only"
-STRICT_EVIDENCE = ["matched screen + timezone + language"]
+STRICT_EVIDENCE = ["matched device profile + timezone + language"]
 EXACT_EVIDENCE = ["single exact fingerprint"]
+_GENERIC_ANDROID_MODEL_TOKENS = {"", "k", "linux", "android", "mobile", "wv"}
+_ANDROID_VENDOR_PREFIXES = [
+    ("SM-", "Samsung"),
+    ("GT-", "Samsung"),
+    ("SGH-", "Samsung"),
+    ("SCH-", "Samsung"),
+    ("Pixel", "Google"),
+    ("Redmi", "Xiaomi"),
+    ("POCO", "Xiaomi"),
+    ("Mi ", "Xiaomi"),
+    ("MIX ", "Xiaomi"),
+    ("CPH", "OPPO"),
+    ("RMX", "realme"),
+    ("VOG-", "Huawei"),
+    ("LYA-", "Huawei"),
+    ("ELS-", "Huawei"),
+    ("ANA-", "Huawei"),
+    ("MAR-", "Huawei"),
+]
+_KNOWN_MODEL_PREFIXES = [
+    ("SM-G998", "Galaxy S21 Ultra"),
+]
 
 
 def isoformat(dt: datetime | None) -> str | None:
@@ -92,12 +116,18 @@ def build_match_key(
     screen_resolution: str | None,
     timezone_name: str | None,
     language: str | None,
+    *,
+    os_name: str | None = None,
+    device_type: str | None = None,
 ) -> str | None:
     """
     Cross-browser device key: groups Chrome/Firefox/Edge/Safari on the same
     physical device into one group.
 
-    Key signals: screen_resolution + timezone + language.
+    Key signals:
+    - mobile-class devices: normalized form factor + aspect bucket + mobile OS family + timezone + language
+    - desktop-class devices: raw screen_resolution + timezone + language
+
     webgl_hash is intentionally excluded — Firefox blocks WEBGL_debug_renderer_info
     by default, which would break cross-browser grouping.
 
@@ -108,7 +138,28 @@ def build_match_key(
     normalized_language = normalize_language(language)
     if not all([screen_resolution, timezone_name, normalized_language]):
         return None
-    raw = "||".join([screen_resolution, timezone_name, normalized_language])
+
+    os_family = normalize_os_family(os_name)
+    size_class = screen_size_class(screen_resolution)
+    aspect_bucket = screen_aspect_bucket(screen_resolution)
+    is_mobile_profile = os_family in {"Android", "iOS"} or device_type == "mobile"
+
+    if is_mobile_profile:
+        if not all([os_family, size_class]) or aspect_bucket is None:
+            return None
+        raw = "||".join(
+            [
+                "mobile_profile",
+                os_family,
+                size_class,
+                str(aspect_bucket),
+                timezone_name,
+                normalized_language,
+            ]
+        )
+    else:
+        raw = "||".join([screen_resolution, timezone_name, normalized_language])
+
     digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
     return f"strict:v{MATCH_VERSION}:{digest}"
 
@@ -119,6 +170,8 @@ def apply_device_match(device: Any) -> None:
         device.screen_resolution,
         device.timezone,
         device.language,
+        os_name=device.os,
+        device_type=device.type,
     )
     device.match_key = match_key
     device.match_version = MATCH_VERSION if match_key else None
@@ -154,10 +207,179 @@ def _visitor_value(visitor: Any, key: str) -> Any:
     return getattr(visitor, key, None)
 
 
-def _build_device_payload(device: Any, visitor_count: int) -> dict[str, Any]:
+def _counter_choice(counter: Counter[str]) -> str | None:
+    if not counter:
+        return None
+    return counter.most_common(1)[0][0]
+
+
+def _clean_android_model_token(token: str | None) -> str | None:
+    if not token:
+        return None
+    candidate = re.sub(r"\s+Build/.*$", "", str(token)).strip(" ;,()[]")
+    if not candidate or candidate.lower() in _GENERIC_ANDROID_MODEL_TOKENS:
+        return None
+    return candidate
+
+
+def extract_device_model_from_user_agent(user_agent: str | None) -> str | None:
+    ua = str(user_agent or "").strip()
+    if not ua:
+        return None
+    lowered = ua.lower()
+    if "iphone" in lowered:
+        return "iPhone"
+    if "ipad" in lowered:
+        return "iPad"
+    android_match = re.search(r"\(([^)]*android[^)]*)\)", ua, flags=re.IGNORECASE)
+    if not android_match:
+        return None
+    segments = [segment.strip() for segment in android_match.group(1).split(";")]
+    android_index = next((index for index, segment in enumerate(segments) if "android" in segment.lower()), None)
+    if android_index is None:
+        return None
+    for segment in segments[android_index + 1:]:
+        cleaned = _clean_android_model_token(segment)
+        if cleaned:
+            return cleaned
+    return None
+
+
+def infer_device_vendor(model: str | None, os_name: str | None = None) -> str | None:
+    if model in {"iPhone", "iPad"}:
+        return "Apple"
+    if model:
+        for prefix, vendor in _ANDROID_VENDOR_PREFIXES:
+            if str(model).startswith(prefix):
+                return vendor
+    lowered_os = str(os_name or "").lower()
+    if lowered_os.startswith("android"):
+        return "Android"
+    if lowered_os.startswith("ios"):
+        return "Apple"
+    return None
+
+
+def prettify_device_model(model: str | None) -> str | None:
+    if not model:
+        return None
+    for prefix, label in _KNOWN_MODEL_PREFIXES:
+        if str(model).startswith(prefix):
+            return f"{label} ({model})"
+    return model
+
+
+def fallback_device_name(*, os_name: str | None, device_type: str | None, screen_resolution: str | None) -> str:
+    os_family = normalize_os_family(os_name)
+    size_class = screen_size_class(screen_resolution)
+    if os_family == "iOS" and device_type == "tablet":
+        return "iPad"
+    if os_family == "iOS":
+        return "iPhone"
+    if os_family == "Android":
+        if device_type == "tablet" or size_class == "tablet":
+            return "Android tablet"
+        return "Android phone"
+    lowered_os = str(os_name or "").lower()
+    if "windows" in lowered_os:
+        return "Windows desktop"
+    if "mac" in lowered_os:
+        return "Mac desktop"
+    if "linux" in lowered_os:
+        return "Linux device"
+    if device_type == "tablet":
+        return "Tablet"
+    if device_type == "mobile":
+        return "Mobile device"
+    return "Unknown device"
+
+
+def infer_device_descriptor(device: Any, visitors: list[Any] | None = None) -> dict[str, str | None]:
+    visitors = visitors or []
+    model_counter: Counter[str] = Counter()
+    vendor_counter: Counter[str] = Counter()
+    os_counter: Counter[str] = Counter()
+    type_counter: Counter[str] = Counter()
+
+    for visitor in visitors:
+        visitor_os = _visitor_value(visitor, "os")
+        visitor_type = _visitor_value(visitor, "device_type")
+        if visitor_os:
+            os_counter[str(visitor_os)] += 1
+        if visitor_type:
+            type_counter[str(visitor_type)] += 1
+        model = extract_device_model_from_user_agent(_visitor_value(visitor, "user_agent"))
+        if model:
+            model_counter[model] += 1
+            vendor = infer_device_vendor(model, visitor_os or getattr(device, "os", None))
+            if vendor:
+                vendor_counter[vendor] += 1
+
+    resolved_os = _counter_choice(os_counter) or getattr(device, "os", None)
+    resolved_type = _counter_choice(type_counter) or getattr(device, "type", None)
+    probable_model = _counter_choice(model_counter)
+    probable_vendor = _counter_choice(vendor_counter) or infer_device_vendor(probable_model, resolved_os)
+    pretty_model = prettify_device_model(probable_model)
+
+    if pretty_model:
+        if probable_vendor and probable_vendor.lower() not in pretty_model.lower():
+            display_name = f"{probable_vendor} {pretty_model}"
+        else:
+            display_name = pretty_model
+    else:
+        display_name = fallback_device_name(
+            os_name=resolved_os,
+            device_type=resolved_type,
+            screen_resolution=getattr(device, "screen_resolution", None),
+        )
+
+    return {
+        "display_name": display_name,
+        "probable_model": probable_model,
+        "probable_vendor": probable_vendor,
+    }
+
+
+def infer_group_descriptor(devices: list[Any], visitors_by_device: dict[str, list[Any]] | None = None) -> dict[str, str | None]:
+    visitors_by_device = visitors_by_device or {}
+    model_counter: Counter[str] = Counter()
+    vendor_counter: Counter[str] = Counter()
+    label_counter: Counter[str] = Counter()
+
+    for device in devices:
+        descriptor = infer_device_descriptor(device, visitors_by_device.get(getattr(device, "id", ""), []))
+        if descriptor.get("probable_model"):
+            model_counter[str(descriptor["probable_model"])] += 1
+        if descriptor.get("probable_vendor"):
+            vendor_counter[str(descriptor["probable_vendor"])] += 1
+        if descriptor.get("display_name"):
+            label_counter[str(descriptor["display_name"])] += 1
+
+    probable_model = _counter_choice(model_counter)
+    probable_vendor = _counter_choice(vendor_counter)
+    if probable_model:
+        pretty_model = prettify_device_model(probable_model)
+        if probable_vendor and probable_vendor.lower() not in str(pretty_model).lower():
+            display_name = f"{probable_vendor} {pretty_model}"
+        else:
+            display_name = pretty_model
+    else:
+        display_name = _counter_choice(label_counter) or "Unknown device"
+
+    return {
+        "display_name": display_name,
+        "probable_model": probable_model,
+        "probable_vendor": probable_vendor,
+    }
+
+
+def _build_device_payload(device: Any, visitor_count: int, descriptor: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": device.id,
         "fingerprint": device.fingerprint,
+        "display_name": descriptor.get("display_name"),
+        "probable_model": descriptor.get("probable_model"),
+        "probable_vendor": descriptor.get("probable_vendor"),
         "browser": device.browser,
         "os": device.os,
         "risk_score": device.risk_score,
@@ -190,6 +412,8 @@ def _init_group(
         "first_seen_raw": None,
         "last_seen_raw": None,
         "devices": [],
+        "raw_devices": [],
+        "visitors_by_device": {},
     }
 
 
@@ -203,10 +427,14 @@ def _append_device_to_group(entry: dict[str, Any], device: Any, visitor_count: i
         entry["first_seen_raw"] = device.first_seen
     if device.last_seen and (entry["last_seen_raw"] is None or device.last_seen > entry["last_seen_raw"]):
         entry["last_seen_raw"] = device.last_seen
-    entry["devices"].append(_build_device_payload(device, visitor_count))
+    entry["raw_devices"].append(device)
+    descriptor = infer_device_descriptor(device, entry["visitors_by_device"].get(device.id, []))
+    entry["devices"].append(_build_device_payload(device, visitor_count, descriptor))
 
 
 def _finalize_group(entry: dict[str, Any]) -> dict[str, Any]:
+    devices_for_name = entry.pop("raw_devices")
+    visitors_by_device = entry.pop("visitors_by_device")
     linked_users = entry.pop("linked_users")
     statuses = entry.pop("statuses")
     if len(statuses) == 1:
@@ -225,6 +453,7 @@ def _finalize_group(entry: dict[str, Any]) -> dict[str, Any]:
     entry["status"] = status
     entry["linked_user_state"] = linked_user_state
     entry["linked_user"] = linked_user
+    entry.update(infer_group_descriptor(devices_for_name, visitors_by_device))
     entry["first_seen"] = isoformat(entry.pop("first_seen_raw"))
     entry["last_seen"] = isoformat(entry.pop("last_seen_raw"))
     entry["devices"].sort(key=lambda item: item["last_seen"] or "", reverse=True)
@@ -458,6 +687,7 @@ def group_devices(
             match_label=STRICT_LABEL,
             match_evidence=STRICT_EVIDENCE,
         )
+        entry["visitors_by_device"] = recent_visitors_by_device
         for device, visitor_count in members:
             assigned_ids.add(device.id)
             _append_device_to_group(entry, device, visitor_count)
@@ -496,6 +726,7 @@ def group_devices(
             match_label=PROBABLE_MOBILE_LABEL,
             match_evidence=evidence,
         )
+        entry["visitors_by_device"] = recent_visitors_by_device
         for device_id in clique["device_ids"]:
             device, visitor_count = device_map[device_id]
             assigned_ids.add(device_id)
@@ -512,6 +743,7 @@ def group_devices(
             match_label=EXACT_LABEL,
             match_evidence=EXACT_EVIDENCE,
         )
+        entry["visitors_by_device"] = recent_visitors_by_device
         _append_device_to_group(entry, device, visitor_count)
         grouped.append(_finalize_group(entry))
 

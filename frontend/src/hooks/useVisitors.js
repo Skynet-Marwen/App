@@ -46,6 +46,11 @@ export function useVisitors({ page = 1, search = '' } = {}) {
     await refresh()
   }, [refresh])
 
+  const loadVisitor = useCallback(async (id) => {
+    const res = await visitorsApi.get(id)
+    return res.data
+  }, [])
+
   return {
     visitors,
     total,
@@ -55,6 +60,7 @@ export function useVisitors({ page = 1, search = '' } = {}) {
     blockVisitors,
     unblockVisitor,
     deleteVisitor,
+    loadVisitor,
     pageSize: DEFAULT_PAGE_SIZE,
   }
 }

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select
 from ...core.database import get_db
-from ...core.security import get_current_user
+from ...core.security import get_current_user, require_admin_user
 from ...models.event import Event
 from ...models.user import User
 from ...models.site import Site
@@ -80,7 +80,7 @@ async def list_sites(db: AsyncSession = Depends(get_db), _: User = Depends(get_c
 
 
 @router.post("/sites")
-async def create_site(body: CreateSiteRequest, request: Request, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
+async def create_site(body: CreateSiteRequest, request: Request, db: AsyncSession = Depends(get_db), current: User = Depends(require_admin_user)):
     site = Site(id=str(uuid.uuid4()), **body.model_dump())
     site.api_key = _generate_site_api_key()
     db.add(site)
@@ -90,7 +90,7 @@ async def create_site(body: CreateSiteRequest, request: Request, db: AsyncSessio
 
 
 @router.delete("/sites/{site_id}")
-async def delete_site(site_id: str, request: Request, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
+async def delete_site(site_id: str, request: Request, db: AsyncSession = Depends(get_db), current: User = Depends(require_admin_user)):
     s = await db.get(Site, site_id)
     if not s:
         raise HTTPException(404, "Not found")
@@ -101,7 +101,7 @@ async def delete_site(site_id: str, request: Request, db: AsyncSession = Depends
 
 
 @router.post("/sites/{site_id}/regenerate-key")
-async def regenerate_key(site_id: str, request: Request, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
+async def regenerate_key(site_id: str, request: Request, db: AsyncSession = Depends(get_db), current: User = Depends(require_admin_user)):
     s = await db.get(Site, site_id)
     if not s:
         raise HTTPException(404, "Not found")
@@ -117,16 +117,6 @@ async def tracker_script(site_id: str = Query(...), db: AsyncSession = Depends(g
     if not s:
         raise HTTPException(404, "Site not found")
     origin = public_base_url()
-    script = f"""<!-- SkyNet Tracker (SkyNet.getDeviceId() available after load) -->
-<script>
-  (function(s,k,y,n,e,t){{
-    s._skynet=s._skynet||{{}};
-    s._skynet.key='{s.api_key}';
-    var a=y.createElement('script');
-    a.async=1;
-    a.src=n+'/tracker/skynet.js';
-    var b=y.getElementsByTagName('script')[0];
-    b.parentNode.insertBefore(a,b);
-  }})(window,document,document,'{origin}');
-</script>"""
+    script = f"""<!-- SkyNet Tracker (blocker-resistant path; SkyNet.getDeviceId() available after load) -->
+<script async src="{origin}/s/{s.api_key}.js"></script>"""
     return {"script": script}

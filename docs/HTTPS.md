@@ -1,6 +1,6 @@
 # SkyNet — HTTPS Deployment Modes
 
-> Last updated: 2026-04-02
+> Last updated: 2026-04-05
 
 SkyNet should treat HTTPS as an edge concern.
 The dashboard, tracker, and API can stay on internal HTTP while a trusted edge handles certificates and public access.
@@ -21,6 +21,7 @@ That URL is used for:
 - email/login links
 - browser mixed-content safety
 - HSTS host matching
+- blocker-resistant public tracker paths such as `/s/<site_key>.js`
 
 Do not set `APP_BASE_URL` to an internal container address like `http://backend:8000`.
 
@@ -116,6 +117,7 @@ Notes:
 - no inbound port forwarding is required
 - Cloudflare provides the public certificate
 - SkyNet continues to use internal HTTP between containers
+- if Cloudflare Web Analytics injects `static.cloudflareinsights.com/beacon.min.js` and client networks block it, that error is edge-side noise rather than a SkyNet tracker failure
 
 ---
 
@@ -175,6 +177,8 @@ Important:
 - Let's Encrypt HTTP challenge works automatically with the bundled Caddy edge profile once the public hostname resolves to the host and ports 80/443 are reachable
 - Let's Encrypt DNS settings are stored in SkyNet, but DNS issuance still needs an ACME-capable DNS client or custom Caddy build at the edge
 - `Trust Proxy Headers` now also controls whether forwarded client IP headers are accepted for rate limiting, tracking, and gateway decisions
+- public edges should forward `/ads.js`, the blocker-resistant tracker paths `/s/*` and `/w/*`, and the legacy `/tracker/*` and `/api/*` routes to the backend
+- apps running on plain HTTP LAN origins can avoid cross-origin challenge and tracker problems by proxying SkyNet through their own origin instead of sending browsers directly to the public SkyNet hostname
 
 ---
 

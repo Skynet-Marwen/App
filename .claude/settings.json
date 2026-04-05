@@ -34,7 +34,9 @@
       "Bash(source backend/.env)",
       "Bash(grep -n \"^$\\\\|^\\\\[2026\" /home/marwen/SkyNet/CoAgentLOG.md)",
       "Read(//home/marwen/SkyNet/**)",
-      "Bash(grep -h \"@router\\\\.\" /home/marwen/SkyNet/backend/app/api/routes/*.py)"
+      "Bash(grep -h \"@router\\\\.\" /home/marwen/SkyNet/backend/app/api/routes/*.py)",
+      "Bash(wc -l /home/marwen/SkyNet/frontend/src/pages/*.jsx /home/marwen/SkyNet/frontend/src/pages/**/*.jsx)",
+      "Bash(wc -l /home/marwen/SkyNet/backend/app/api/routes/users.py /home/marwen/SkyNet/backend/app/core/*.py /home/marwen/SkyNet/backend/app/services/runtime_config.py)"
     ]
   }
 }

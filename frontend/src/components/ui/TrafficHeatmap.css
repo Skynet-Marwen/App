@@ -49,6 +49,15 @@
   box-shadow: var(--cell-hover-glow);
 }
 
+.traffic-heatmap__cell--compact::before,
+.traffic-heatmap__cell--compact::after {
+  display: none;
+}
+
+.traffic-heatmap__cell--compact.traffic-heatmap__cell--interactive:hover {
+  transform: scale(1.08);
+}
+
 @keyframes traffic-heatmap-nebula {
   0% {
     transform: translate3d(var(--drift-start, -3px), -4%, 0) scale(0.9);

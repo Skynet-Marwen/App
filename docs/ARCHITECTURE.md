@@ -1,7 +1,7 @@
 # SkyNet — Architecture
 
 > Living document. Update on every structural change.
-> Last updated: 2026-04-03 — runtime app version `1.6.9`
+> Last updated: 2026-04-05 — runtime app version `1.7.1`
 
 ---
 
@@ -18,7 +18,8 @@
            ▼                        ▼                    ▼
 ┌──────────────────────────────────────────────────────────────────────┐
 │              EDGE HTTPS (Caddy / Nginx / Tunnel / LB)                │
-│       Public TLS, hostname routing, optional tunnel termination       │
+│ Public TLS, hostname routing, /ads.js bait route, /s/* + /w/* paths,│
+│                  optional tunnel termination                         │
 └───────┬──────────────────────────────────────────────┬───────────────┘
         │ /api/*  /tracker/*  /docs                     │ /* (frontend)
         ▼                                              ▼
@@ -83,18 +84,18 @@
 
 ## Data Flows
 
-### 1. Visitor Tracking Flow (Public — X-SkyNet-Key)
+### 1. Visitor Tracking Flow (Public — Site API Key)
 ```
 Browser
   │
-  ├─ 1. Loads skynet.js (served by FastAPI /tracker/ static)
+  ├─ 1. Loads tracker from `/s/{site_key}.js` (preferred) or legacy `/tracker/skynet.js`
   ├─ 2. Collects signals: canvas hash, WebGL hash, screen, timezone, language, UA,
   │      signed device cookie, navigator entropy, timing entropy
-  └─ 3. POST /api/v1/track/pageview
-           Header: X-SkyNet-Key: <site_api_key>
+  └─ 3. POST `/w/{site_key}/p` (preferred) or legacy `/api/v1/track/pageview`
+           Site API key acts as a public integration identifier, not an operator secret
 
 FastAPI /track/pageview
-  ├─ 4. Validate X-SkyNet-Key → resolve Site
+  ├─ 4. Validate site API key (header/query or edge path) → resolve Site
   ├─ 5. Check BlockedIP → if blocked: increment hits, return 403
   ├─ 6. Parse UA → browser / os / device_type
   ├─ 7. Upsert Device (by signed cookie or exact fingerprint) → enrich metadata + match_key
@@ -103,6 +104,9 @@ FastAPI /track/pageview
   ├─ 10. Upsert Visitor (site_id + device_id + ip)
   ├─ 11. Insert Event record
   └─ 12. Dispatch async anti-evasion checks (background)
+           ├─ Heuristic checks (bot, headless, VPN, DNSBL, entropy, …)
+           ├─ WebRTC leak check (_check_webrtc_leak → WEBRTC_VPN_BYPASS +35)
+           └─ ML anomaly score (Isolation Forest, additive +0..15, feature-flagged)
 ```
 
 ### 2. Identity Linking Flow (External IdP JWT)
@@ -114,7 +118,7 @@ Protected App
   │      (internally: POST /api/v1/track/device-context)
   └─ 3. POST /api/v1/identity/link
            Authorization: Bearer <external_jwt>
-           Body: { fingerprint_id, platform, site_id }
+           Body: { fingerprint_id, platform }
 
 FastAPI /identity/link
   ├─ 4. jwks_validator: fetch JWKS (cached 5 min) → validate signature/expiry/issuer
@@ -136,8 +140,8 @@ Protected app acts on response:
 ```
 Browser
   │
-  ├─ 1. tracker/skynet.js builds raw fingerprint + browser metadata
-  ├─ 2. POST /api/v1/track/device-context   (Site API key auth)
+  ├─ 1. `tracker/skynet.js` builds raw fingerprint + browser metadata
+  ├─ 2. POST `/w/{site_key}/d` (preferred) or `/api/v1/track/device-context`
   │      Body: { fingerprint, canvas_hash, webgl_hash, screen, language, timezone, session_id,
   │              device_cookie, fingerprint_traits, page_url }
   │
@@ -166,7 +170,7 @@ FastAPI /track/activity
   ├─ 1. Validate JWT → extract sub
   ├─ 2. Check UserProfile.trust_level == "blocked" → 200 { blocked: true }
   ├─ 3. Insert ActivityEvent
-  └─ 4. If enhanced_audit: store full device snapshot in properties
+  └─ 4. If enhanced_audit: store targeted extra audit metadata on the event when properties are otherwise empty
 ```
 
 ### 4. Risk Recomputation Flow
@@ -247,6 +251,20 @@ FastAPI /stats/overview
   └─ 8. Return `gateway_dashboard` for the operator Overview widget
 ```
 
+### 9c. First-Party Relay Pattern (Mouwaten-style)
+```
+Protected App (same origin)
+  ├─ 1. Serves local bootstrap config without exposing the raw SkyNet site_key
+  ├─ 2. Serves relayed tracker JS from its own origin
+  ├─ 3. Proxies tracker writes, identity linking, activity writes, and challenge pages
+  └─ 4. Forwards the real site_key server-side to SkyNet
+
+Benefits
+  - avoids cross-origin tracker failures
+  - reduces adblock/uBlock path matching issues
+  - keeps the raw SkyNet site API key out of the public browser bootstrap config
+```
+
 ### 9b. Overview + Integration Data Lineage
 ```
 PostgreSQL
@@ -321,6 +339,20 @@ STIE maintenance loop
   ├─ 3. run_storage_purge() deletes expired events/activity rows, prunes resolved incidents, and anonymizes or deletes stale visitors
   ├─ 4. Settings -> Data & Storage can also trigger purge or export the current retention archive on demand
   └─ 5. log pruning counts when rows are removed
+```
+
+### 9d. Intelligence Delete Cleanup Flow
+```
+Operator delete action
+  ├─ 1. DELETE /visitors/{id} OR DELETE /devices/{id} OR DELETE /identity/{external_user_id}
+  └─ 2. routes delegate graph cleanup to services/intelligence_cleanup.py
+
+Cleanup service
+  ├─ 3. remove or detach related identity_links
+  ├─ 4. remove related anomaly_flags and device-bound/user-bound incidents where the target entity no longer exists
+  ├─ 5. preserve historical timeline rows by nulling selected references such as events.device_id or activity_events.fingerprint_id where appropriate
+  ├─ 6. rebalance remaining device ownership and prune orphaned devices when they lose every child visitor and identity link
+  └─ 7. recompute affected external-user profiles so Portal User Intelligence counters and posture stay consistent
 ```
 
 ### 9e. Integration Connector Flow

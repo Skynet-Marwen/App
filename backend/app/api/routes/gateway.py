@@ -28,7 +28,7 @@ from ...services.challenge_service import (
     verify_pow_solution,
 )
 from ...services.device_fingerprint import verify_device_cookie
-from ...services.dnsbl import lookup_ip as dnsbl_lookup_ip
+from ...services.dnsbl import lookup_ip as dnsbl_lookup_ip, should_soft_fail_dnsbl
 from ...services.gateway_analytics import record_gateway_challenge_result, record_gateway_event
 from ...services.jwks_validator import extract_bearer, validate_external_token
 from ...services.network_intel import filter_detection_matches, highest_priority_action, network_detection_matches
@@ -132,6 +132,8 @@ async def _decision(db: AsyncSession, request: Request, fp: str | None, dc: str 
             ttl_sec=int(cfg.get("dnsbl_cache_ttl_sec", 900) or 900),
         )
         if dnsbl.get("listed"):
+            if should_soft_fail_dnsbl((geo or {}).get("country_code"), cfg):
+                return {"action": "allow", "reason": "dnsbl_soft_fail", "ip": ip, "dnsbl": dnsbl}
             action = str(cfg.get("dnsbl_action") or "challenge")
             return {"action": action, "reason": "dnsbl", "ip": ip, "dnsbl": dnsbl}
 

@@ -34,6 +34,7 @@ DEFAULT_RUNTIME_SETTINGS = {
         "advanced_diagnostics": False,
         "maintenance_console": False,
         "response_ladder": True,
+        "ml_anomaly_detection": False,
     },
     "ui_visibility": {
         "settings": {
@@ -85,7 +86,7 @@ DEFAULT_RUNTIME_SETTINGS = {
     "integration_monitoring_secret_enc": "",
     "integration_monitoring_events": ["high_severity_incident", "spam_detected", "block_triggered"],
     "webhook_url": "",
-    "webhook_secret": "",
+    "webhook_secret_enc": "",
     "webhook_events": {},
     "notification_event_matrix": {
         "high_severity_incident": {"label": "High Severity Incident", "webhook": True, "smtp": True, "escalate": True},
@@ -148,6 +149,18 @@ DEFAULT_RUNTIME_SETTINGS = {
         "multi_account": 0.25,
         "behavior_drift": 0.15,
     },
+    "group_escalation_enabled": False,
+    "group_recent_window_hours": 24,
+    "group_history_window_days": 30,
+    "group_behavior_burst_window_minutes": 30,
+    "group_behavior_similarity_threshold": 1.75,
+    "group_escalation_weights": {
+        "same_device_risky_visitors": 0.22,
+        "strict_group_risky_siblings": 0.18,
+        "coordinated_behavior": 0.20,
+        "repeated_group_spike": 0.12,
+        "multi_device_suspicious_parent": 0.16,
+    },
     "fingerprint_clock_skew_tolerance_minutes": 90,
     "fingerprint_signal_weights": {
         "canvas_hash": 0.16,
@@ -208,6 +221,9 @@ DEFAULT_ANTI_EVASION_CONFIG = {
     "audio_fingerprint": True,
     "timezone_mismatch": True,
     "language_mismatch": True,
+    "language_mismatch_allowed_languages_by_country": {
+        "TN": ["ar", "fr", "en"],
+    },
     "cookie_evasion": True,
     "ip_rotation_detection": True,
     "challenge_enabled": True,
@@ -222,12 +238,21 @@ DEFAULT_ANTI_EVASION_CONFIG = {
     "form_submission_velocity_window_sec": 300,
     "form_content_dedupe_threshold": 3,
     "form_content_dedupe_window_sec": 1800,
+    "adblocker_detection": False,   # keep opt-in until script-tag probe is revalidated in production
+    "adblocker_action": "flag",
+    "dns_filter_detection": True,
+    "dns_filter_action": "flag",
+    "isp_resolution_detection": False,
+    "isp_unresolved_action": "observe",
     "dnsbl_enabled": False,
     "dnsbl_providers": ["zen.spamhaus.org", "bl.spamcop.net"],
     "dnsbl_action": "challenge",
     "dnsbl_cache_ttl_sec": 900,
+    "dnsbl_soft_fail_country_codes": ["TN"],
+    "dnsbl_soft_fail_risk_points": 8,
     "max_accounts_per_device": 3,
     "max_accounts_per_ip": 5,
+    "webrtc_leak_detection": True,
 }
 
 _settings_cache = dict(DEFAULT_RUNTIME_SETTINGS)

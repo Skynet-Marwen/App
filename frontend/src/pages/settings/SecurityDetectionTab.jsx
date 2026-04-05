@@ -11,8 +11,11 @@ const DETECTION_TOGGLES = [
   { key: 'tor_detection', label: 'Tor Detection', description: 'Keep Tor detection enabled alongside the broader network policy hooks.' },
   { key: 'proxy_detection', label: 'Proxy Detection', description: 'Use upstream proxy signals when the GeoIP/network provider exposes them.' },
   { key: 'datacenter_detection', label: 'Datacenter Detection', description: 'Identify hosting/cloud traffic and apply the configured network policy.' },
+  { key: 'adblocker_detection', label: 'Adblocker Signals', description: 'Use same-origin bait resources and DOM probes to catch browser-side filtering.' },
+  { key: 'dns_filter_detection', label: 'DNS Filter Signals', description: 'Use remote ad-domain probes to heuristically flag DNS/network ad filtering.' },
+  { key: 'isp_resolution_detection', label: 'ISP Resolution Checks', description: 'Raise low-noise incidents when GeoIP cannot resolve a stable provider label.' },
   { key: 'timezone_mismatch', label: 'Timezone Mismatch', description: 'Raise incidents when browser offset and GeoIP timezone diverge beyond tolerance.' },
-  { key: 'language_mismatch', label: 'Language Mismatch', description: 'Flag sessions whose browser locale region contradicts GeoIP country.' },
+  { key: 'language_mismatch', label: 'Language Mismatch', description: 'Flag sessions whose browser language looks unusual for the GeoIP country after country-specific allowances are applied.' },
 ]
 
 const DEVICE_IDENTITY_TOGGLES = [

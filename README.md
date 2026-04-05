@@ -19,14 +19,14 @@ SkyNet is a **self-hosted security intelligence platform** that turns device fin
 - **Risk history** — time-series snapshots of each user's risk score with spike auto-detection
 - **Anomaly flags** — multi-account abuse, impossible travel, new devices, headless browsers, geo jumps
 - **Activity timeline** — structured login/pageview/custom events per authenticated user
-- **Enhanced audit mode** — deep event logging for flagged high-risk users
+- **Enhanced audit mode** — extra authenticated-activity audit metadata for investigated users
 - **Blocking engine** — block by IP, CIDR, country, ASN, user-agent, or device fingerprint
-- **Anti-evasion** — detect VPN, Tor, proxy, headless browsers, crawler signatures, click farms, DNSBL-listed IPs, form spam, and IP rotation
+- **Anti-evasion** — detect VPN, Tor, proxy, headless browsers, crawler signatures, click farms, DNSBL-listed IPs, form spam, and IP rotation, with regional DNSBL soft-fail support for noisy dynamic-IP markets
 - **Active gateway** — reverse proxy mode with allow/challenge/block decisions, challenge flows, and live gateway analytics on the Overview dashboard
 - **Access & network policy** — runtime-controlled allowed domains, browser CORS trust, trusted proxy handling, IP allow/deny lists, and per-IP request limits
 - **Authentication & identity control plane** — local operator auth, guarded `superadmin` tier, tenant accounts, and tenant-bound operator assignment for protected-app fleets
 - **Theme engine** — admin-managed global themes, per-user theme selection, tenant-aware defaults, branding/logo upload, shell-level header/nav/footer/body control, and curated widget sets
-- **Operator UX** — fixed desktop shell, viewport-aware settings/editor modals, and a domain-organized settings experience
+- **Operator UX** — fixed desktop shell, viewport-aware settings/editor modals, a domain-organized settings experience, and a compact overview layout with symmetric fixed-height analyst cards
 - **GeoIP enrichment** — country, city, flag emoji on every new visitor via `ip-api.com` by default or an uploaded local `.mmdb` database
 - **Embeddable tracker** — one `<script>` tag on any site, SDK for mobile/API
 
@@ -135,18 +135,27 @@ The current release also includes the newer device-identity and active-gateway f
 - Security Center manual scans now survive malformed upstream threat-intel rows and report target-level issues inline instead of collapsing into a generic scan failure
 - post-`1.6.0` settings completion for `superadmin`, tenant accounts, tenant-bound operators, and runtime theme shell/widget controls
 - post-`1.6.9` settings completion for storage lifecycle operations, integration API governance, and signed SIEM / monitoring connector delivery
+- post-`1.6.10` group-parent escalation orchestration plus DNSBL soft-fail defaults for dynamic-IP regions such as Tunisia
+- post-`1.7.1` anti-evasion language-mismatch softening for multilingual countries: Tunisia now treats Arabic, French, and English device/browser language settings as locally normal
+- post-`1.6.10` overview-density pass: compact stat strip, shorter traffic heatmap, lightweight Threat Hotspots ranking bars instead of the animated globe, and fixed-height scrollable analyst cards for cleaner same-row symmetry
+- Mouwaten-style first-party relay support: same-origin tracker bootstrapping, same-origin challenge flow, and no raw SkyNet site key in the public bootstrap config
+- visitor attribution and browser classification hardening: better shared-network separation, stronger desktop/mobile detection, and tighter visitor-to-device/user ownership reconciliation
+- intelligence delete cleanup: visitor, device, and external-user deletion now clear related indicators and recompute affected Portal User Intelligence profiles instead of leaving stale devices, flags, or counts behind
 
 ---
 
 ## Embed the Tracker
 
 ```html
-<script>window._skynet = { key: 'YOUR_SITE_API_KEY' };</script>
-<script async src="https://skynet.yourdomain.com/tracker/skynet.js"></script>
+<script async src="https://skynet.yourdomain.com/s/YOUR_SITE_API_KEY.js"></script>
 ```
 
-Get your API key from **Integration → Add Site** in the dashboard.
+Get your site API key from **Integration → Add Site** in the dashboard.
+Use the stealth `/s/<site_key>.js` path by default; it is the blocker-resistant public loader and injects the matching `/w/<site_key>/*` ingest paths automatically.
+Direct browser deployments should also expose the same-origin bait route `/ads.js` to SkyNet so the tracker can distinguish browser-level ad/tracker blocking from upstream DNS/network filtering.
+The site API key is a public integration identifier, not an operator secret. For aggressive blocker environments, proxy the tracker through the protected app's own domain so the browser never sees the raw SkyNet site key at all.
 The bundled tracker now also maintains a signed first-party `_skynet_did` cookie so device continuity can survive moderate fingerprint drift.
+Browser-side adblock detection remains opt-in in Anti-Evasion settings until the new script-tag probe is revalidated on production traffic; DNS-filter detection can stay enabled independently.
 
 ---
 
@@ -154,6 +163,7 @@ The bundled tracker now also maintains a signed first-party `_skynet_did` cookie
 
 After a user authenticates in your app via any configured external OIDC/JWKS provider, send their token to SKYNET.
 `fingerprint_id` means the SKYNET device UUID (`devices.id`), not the raw tracker fingerprint string. The bundled tracker now exposes that UUID helper directly in the browser via `SkyNet.getDeviceId()`.
+For direct browser integration, call SkyNet itself. For blocker-sensitive or plain-HTTP app environments, proxy these calls through your own backend or edge and keep the site API key server-side.
 
 ```js
 // After the tracker has loaded:
@@ -213,5 +223,5 @@ You can also resolve the full device context manually through `POST /api/v1/trac
 
 ## Version
 
-Current shipped release: **v1.6.9**
+Current shipped release: **v1.7.1**
 Release history and feature milestones are tracked in [CHANGELOG.md](CHANGELOG.md).

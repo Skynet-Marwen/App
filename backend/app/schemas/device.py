@@ -4,11 +4,15 @@ from typing import Optional, List
 
 class LinkRequest(BaseModel):
     user_id: str
+    external_user_id: Optional[str] = None  # Keycloak sub — if provided, also creates IdentityLink
 
 
 class DeviceOut(BaseModel):
     id: str
     fingerprint: str
+    display_name: Optional[str] = None
+    probable_model: Optional[str] = None
+    probable_vendor: Optional[str] = None
     match_key: Optional[str] = None
     match_version: Optional[int] = None
     type: Optional[str] = None
@@ -31,6 +35,7 @@ class DeviceOut(BaseModel):
     visitor_count: int = 0
     first_seen: str
     last_seen: str
+    tracking_signals: Optional[dict] = None
 
 
 class DeviceListResponse(BaseModel):
@@ -41,6 +46,9 @@ class DeviceListResponse(BaseModel):
 class DeviceGroupChildOut(BaseModel):
     id: str
     fingerprint: str
+    display_name: Optional[str] = None
+    probable_model: Optional[str] = None
+    probable_vendor: Optional[str] = None
     browser: Optional[str] = None
     os: Optional[str] = None
     risk_score: int = 0
@@ -53,6 +61,9 @@ class DeviceGroupChildOut(BaseModel):
 
 class DeviceGroupOut(BaseModel):
     group_id: str
+    display_name: Optional[str] = None
+    probable_model: Optional[str] = None
+    probable_vendor: Optional[str] = None
     match_key: Optional[str] = None
     match_strength: str
     match_label: str

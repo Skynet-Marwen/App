@@ -37,12 +37,17 @@
  * @property {string} first_seen
  * @property {string} last_seen
  * @property {string|null} linked_user
+ * @property {string|null} external_user_id
+ * @property {Object|null} [tracking_signals]
  */
 
 /**
  * @typedef {Object} Device
  * @property {string} id
  * @property {string} fingerprint
+ * @property {string|null} display_name
+ * @property {string|null} probable_model
+ * @property {string|null} probable_vendor
  * @property {string|null} match_key
  * @property {number|null} match_version
  * @property {string|null} type
@@ -59,12 +64,16 @@
  * @property {number} visitor_count
  * @property {string} first_seen
  * @property {string} last_seen
+ * @property {Object|null} [tracking_signals]
  */
 
 /**
  * @typedef {Object} DeviceGroupChild
  * @property {string} id
  * @property {string} fingerprint
+ * @property {string|null} display_name
+ * @property {string|null} probable_model
+ * @property {string|null} probable_vendor
  * @property {string|null} browser
  * @property {string|null} os
  * @property {number} risk_score
@@ -78,6 +87,9 @@
 /**
  * @typedef {Object} DeviceGroup
  * @property {string} group_id
+ * @property {string|null} display_name
+ * @property {string|null} probable_model
+ * @property {string|null} probable_vendor
  * @property {string|null} match_key
  * @property {'strict'|'probable_mobile'|'exact'} match_strength
  * @property {string} match_label
@@ -201,6 +213,7 @@
  * @property {string|null} last_country
  * @property {boolean} enhanced_audit
  * @property {number} [open_flags_count]
+ * @property {Object|null} [tracking_signals]
  */
 
 /**
@@ -208,9 +221,27 @@
  * @property {string} id
  * @property {string|null} fingerprint_id
  * @property {string} platform
+ * @property {Object|null} [tracking_signals]
  * @property {string|null} ip
  * @property {string|null} linked_at
  * @property {string|null} last_seen_at
+ */
+
+/**
+ * @typedef {Object} PortalUserVisitor
+ * @property {string} id
+ * @property {string|null} site_id
+ * @property {string|null} device_id
+ * @property {string} ip
+ * @property {string|null} country
+ * @property {string|null} country_flag
+ * @property {string|null} browser
+ * @property {string|null} os
+ * @property {number} page_views
+ * @property {string} status
+ * @property {string|null} first_seen
+ * @property {string|null} last_seen
+ * @property {Object|null} [tracking_signals]
  */
 
 /**

@@ -1,7 +1,7 @@
 # SkyNet — API Reference
 
 > Version: v1 | Base URL: `/api/v1`
-> Last updated: 2026-04-03 — shipped app version `1.6.9`
+> Last updated: 2026-04-05 — shipped app version `1.7.1`
 
 ---
 
@@ -133,6 +133,8 @@ SKYNET auth required. Full intelligence profile for an external user.
 ### `GET /identity/{external_user_id}/devices`
 SKYNET auth required. All device links for this user.
 
+Only links with a live `fingerprint_id` are returned. Stale identity-link rows with `fingerprint_id = null` are pruned from the Portal User Intelligence view.
+
 **Response `200`**
 ```json
 [
@@ -143,6 +145,33 @@ SKYNET auth required. All device links for this user.
     "ip": "1.2.3.4",
     "linked_at": "2026-03-30T10:00:00Z",
     "last_seen_at": "2026-03-31T09:12:00Z"
+  }
+]
+```
+
+---
+
+### `GET /identity/{external_user_id}/visitors`
+SKYNET auth required. Recent tracked visitors currently linked to this external user.
+
+**Query params:** `limit` (default 50, max 200)
+
+**Response `200`**
+```json
+[
+  {
+    "id": "visitor-uuid",
+    "site_id": "site-uuid",
+    "device_id": "device-uuid",
+    "ip": "1.2.3.4",
+    "country": "Tunisia",
+    "country_flag": "TN",
+    "browser": "Firefox",
+    "os": "Windows",
+    "page_views": 12,
+    "status": "active",
+    "first_seen": "2026-03-30T10:00:00Z",
+    "last_seen": "2026-03-31T09:12:00Z"
   }
 ]
 ```
@@ -220,7 +249,7 @@ SKYNET auth required. Returns anomaly flags for this user.
 ]
 ```
 
-Flag types: `new_device` · `geo_jump` · `multi_account` · `impossible_travel` · `headless` · `risk_spike` · `behavior_drift`
+Flag types: `new_device` · `geo_jump` · `multi_account` · `impossible_travel` · `headless` · `risk_spike` · `behavior_drift` · `group_device_risk` · `group_user_risk` · `coordinated_group_behavior` · `repeated_group_spike`
 
 ---
 
@@ -237,11 +266,36 @@ Valid statuses: `acknowledged` · `resolved` · `false_positive`
 ---
 
 ### `POST /identity/{external_user_id}/enhanced-audit`
-SKYNET auth required (**admin role only**). Enable/disable deep event logging for a user.
+SKYNET auth required (**admin role only**). Enable/disable extra authenticated-activity audit metadata for a user under investigation.
 
 **Body**
 ```json
 { "enabled": true, "reason": "Suspicious login pattern" }
+```
+
+Current implementation note:
+- when enabled, `/track/activity` can enrich events with audit metadata such as `user_agent`, `referer`, and `enhanced: true`
+- this does not by itself block or challenge the user
+- this is currently lighter than a full raw device snapshot and should be treated as targeted investigation context, not full forensic capture
+
+---
+
+### `DELETE /identity/{external_user_id}`
+SKYNET auth required (**admin role only**). Permanently deletes an external user intelligence profile.
+
+Current delete behavior:
+- deletes `user_profiles` row for that external user
+- deletes that user's `identity_links`, `anomaly_flags`, `risk_events`, `activity_events`, and user-bound `incidents`
+- clears `visitors.external_user_id` for previously linked visitors
+- rebalances ownership on affected devices and deletes newly orphaned devices when they have no remaining visitors or identity links
+- recomputes affected remaining external-user profiles so Portal User Intelligence counts and posture stay consistent
+
+**Response `200`**
+```json
+{
+  "message": "Deleted",
+  "affected_external_user_ids": ["other-external-sub"]
+}
 ```
 
 ---
@@ -285,6 +339,8 @@ SKYNET auth required. List all external users sorted by risk score.
 ### `POST /risk/{external_user_id}/recompute`
 SKYNET auth required. Manually trigger risk recomputation.
 
+This route now runs the group-parent orchestration first and then recomputes the canonical user risk score. If `group_escalation_enabled=false`, it falls back to the older base risk-engine behavior.
+
 **Response `200`**
 ```json
 {
@@ -298,7 +354,16 @@ SKYNET auth required. Manually trigger risk recomputation.
 
 ---
 
-## Tracker (Public — X-SkyNet-Key)
+## Tracker (Public — Site API Key)
+
+The public site API key is a revocable integration identifier used by tracker writes. It is not an operator credential.
+
+SkyNet supports two public ingestion shapes:
+- legacy public API routes: `/api/v1/track/*` with `X-SkyNet-Key` or `?key=...`
+- blocker-resistant edge routes: `/s/{site_key}.js` and `/w/{site_key}/*`
+
+For direct browser deployments, expose the same-origin bait route `/ads.js` to the backend as well; the tracker loads it as a real `<script>` to classify browser-side blocking separately from DNS/network filtering.
+For aggressive blocker environments, a protected app can also proxy SkyNet through its own backend or edge so the browser never talks to `skynet.tn` directly and never sees the raw site key.
 
 ### `POST /track/pageview`
 ```json
@@ -322,10 +387,18 @@ SKYNET auth required. Manually trigger risk recomputation.
     "touch_points": 0,
     "clock_resolution_ms": 0.1,
     "raf_mean_ms": 16.7,
-    "raf_jitter_score": 1.4
+    "raf_jitter_score": 1.4,
+    "webrtc_available": true,
+    "webrtc_local_ip_count": 1,
+    "webrtc_vpn_suspected": true,
+    "webrtc_leak_detected": null,
+    "webrtc_stun_reachable": true
   }
 }
 ```
+
+`fingerprint_traits.webrtc_*` fields are populated by `detectWebRTCLeak()` in `skynet.js`. All values are derived booleans/counts — no raw IP addresses are transmitted. `webrtc_leak_detected` is always `null` from the client; server-side correlation is not yet implemented.
+When runtime probes complete, `fingerprint_traits` may also include blocker-related fields such as `adblock_dom_bait_blocked`, `adblock_same_origin_probe_blocked`, `remote_ad_probe_blocked`, `adblocker_detected`, `dns_filter_suspected`, and `blocker_family`.
 
 **Response `200`**
 ```json
@@ -337,6 +410,11 @@ SKYNET auth required. Manually trigger risk recomputation.
   "status": "active"
 }
 ```
+
+When `group_escalation_enabled=true`, pageview writes also trigger:
+- exact-device parent posture recompute
+- strict sibling-device parent posture recompute
+- owning external-user parent posture recompute when the device has a single owner
 
 ### `POST /track/device-context`
 Resolve or create the current SKYNET device record from raw browser fingerprint signals.
@@ -383,10 +461,14 @@ Resolve or create the current SKYNET device record from raw browser fingerprint 
 ```
 
 This is the public helper that powers `SkyNet.getDeviceId()` and `SkyNet.getDeviceContext()` in the bundled tracker. The tracker stores `device_cookie` as a signed first-party `_skynet_did` cookie for continuity across visits.
+When group escalation is enabled, this route can also refresh parent device posture after fingerprint continuity or strict-group signals change.
 
 ### `GET /track/check-access?fp=<raw-fingerprint>&dc=<signed-device-cookie>&ct=<challenge-bypass-token>`
 Used by `tracker/skynet.js` before tracking writes. Returns `{"blocked": false}`, a block-page payload when the current IP, visitor, or exact device is blocked, or a challenge payload when gateway-style friction is required before tracking continues.
 When present, `dc` lets the backend resolve the device by signed cookie continuity before falling back to the raw fingerprint. `ct` is an optional signed challenge bypass token returned by the gateway challenge flow.
+
+Blocker-resistant equivalent:
+- `GET /w/{site_key}/a?fp=...&dc=...&ct=...`
 
 ### `POST /track/event`
 ```json
@@ -394,6 +476,13 @@ When present, `dc` lets the backend resolve the device by signed cookie continui
 ```
 
 The bundled tracker also emits `behavior_snapshot` events with lightweight interaction timing metrics, which power behavior-entropy scoring and `behavior_drift` flags. Form submissions are emitted as `form_submit` with honeypot, field-count, and content-signature metadata for anti-spam heuristics.
+When group escalation is enabled, event writes also refresh exact-device and owning-user parent posture.
+
+Blocker-resistant equivalents:
+- `POST /w/{site_key}/d` → `device-context`
+- `POST /w/{site_key}/p` → `pageview`
+- `POST /w/{site_key}/e` → `event`
+- `POST /w/{site_key}/i` → `identify`
 
 ### `POST /track/activity`
 Track an authenticated user activity event.
@@ -411,7 +500,10 @@ Track an authenticated user activity event.
 }
 ```
 
-**Response `200`** `{ "ok": true }`, `{ "blocked": true }` if user trust_level is "blocked", or `{ "ok": true, "flags": ["impossible_travel"], "trust_level": "suspicious" }` when activity triggers a geo-jump flag
+This route always refreshes the authenticated user’s parent posture after the activity write, and it also refreshes the exact device parent posture when `fingerprint_id` is present.
+Protected apps may proxy this route through their own backend to keep `site_key` server-side and avoid cross-origin tracker failures.
+
+**Response `200`** `{ "ok": true, "risk_action": "allow|flag|challenge|block" }`, `{ "blocked": true, "risk_action": "block" }` if user trust_level is effectively blocked, or `{ "ok": true, "flags": ["impossible_travel"], "trust_level": "suspicious" }` when activity triggers a geo-jump flag
 
 ### `POST /track/identify`
 ```json
@@ -501,6 +593,10 @@ Returns:
 
 ### `GET /gateway/challenge/{token}`
 Serve an interactive challenge page for the pending request token.
+
+Integration note:
+- protected apps can proxy challenge pages and verify endpoints through their own origin
+- this is the recommended pattern when browsers are on plain HTTP LAN hosts or when third-party challenge redirects are undesirable
 
 ### `GET /gateway/challenge/{token}/verify`
 Verify a JS proof-of-work nonce and redirect back with a short-lived signed bypass token.
@@ -602,6 +698,13 @@ Params: `page`, `page_size`, `search`, `country`, `status`
 ### `POST /visitors/{id}/block` · `DELETE /visitors/{id}/block`
 ### `DELETE /visitors/{id}`
 
+Delete behavior:
+- deletes tracker `events` owned by that visitor
+- deletes or detaches any `identity_links` pointing at that visitor
+- deletes related visitor-bound anomaly flags
+- if that visitor was the last remaining child of a device with no remaining identity links, the orphaned device is deleted too
+- recomputes affected external-user profiles so Portal User Intelligence device/visitor totals stop showing stale indicators
+
 ---
 
 ## Devices
@@ -614,6 +717,13 @@ Params: `page`, `page_size`, `search`, `country`, `status`
 ### `DELETE /devices/{id}/link`
 ### `POST /devices/{id}/block` · `DELETE /devices/{id}/block`
 ### `DELETE /devices/{id}`
+
+Delete behavior:
+- deletes visitors currently attached to that exact device
+- deletes or detaches related `identity_links`
+- deletes related device/visitor anomaly flags and device-bound incidents
+- nulls `events.device_id` and `activity_events.fingerprint_id` for historical records that should remain as timeline evidence
+- recomputes affected external-user profiles so Portal User Intelligence and risk posture stay in sync
 
 ---
 
@@ -634,6 +744,24 @@ Note: direct IP / visitor / device block states are enforced immediately, while 
 ## Anti-Evasion
 
 ### `GET /anti-evasion/config` · `PUT /anti-evasion/config`
+Important DNSBL settings:
+- `dnsbl_enabled`
+- `dnsbl_providers`
+- `dnsbl_action`
+- `dnsbl_cache_ttl_sec`
+- `dnsbl_soft_fail_country_codes`
+- `dnsbl_soft_fail_risk_points`
+- `language_mismatch_allowed_languages_by_country`
+
+`dnsbl_soft_fail_country_codes` marks noisy dynamic-IP regions where DNSBL hits remain visible and additive but no longer directly force DNSBL challenge/block on their own. The default runtime now includes `TN`.
+`language_mismatch_allowed_languages_by_country` lets multilingual countries accept normal local language choices even when the locale region suffix differs from GeoIP country. The default anti-evasion config now includes `TN: ["ar", "fr", "en"]`.
+
+New in v1.7.0:
+- `webrtc_leak_detection` (bool, default `true`) — enables `WEBRTC_VPN_BYPASS` incident generation from tracker WebRTC probe signals.
+
+Feature flags (under `POST /settings` → `feature_flags` key):
+- `ml_anomaly_detection` (bool, default `false`) — enables Isolation Forest scoring as an additive risk modifier. Enable after ≥7 days of production traffic to ensure sufficient training data.
+
 ### `GET /anti-evasion/incidents`
 ### `POST /anti-evasion/incidents/{id}/resolve`
 
@@ -844,6 +972,22 @@ Runs retention cleanup immediately for expired tracker events, authenticated act
 
 ### `POST /settings/storage/archive`
 Exports a JSON retention archive of the rows that are currently eligible for cleanup, stores a copy under `backend/data/retention-archives/`, and returns the same archive as a download.
+
+### `POST /settings/storage/tracker-purge`
+Admin-only. Deletes collected data for one tracker/site while keeping the site registration itself. The purge removes site-scoped visitors, events, authenticated activity, security findings, target profiles, and orphaned related device/user intelligence that no longer has remaining signal after the purge.
+
+Body:
+```json
+{ "site_id": "uuid" }
+```
+
+### `POST /settings/storage/reset-install`
+Superadmin-only. Reinitializes operational database content for a fresh install while preserving operator accounts, runtime settings, themes, and tenant configuration. Requires a typed confirmation phrase.
+
+Body:
+```json
+{ "confirmation": "RESET SKYNET" }
+```
 
 ### `GET /settings/integrations/status`
 Returns Integration domain health: site/API access posture, SIEM + monitoring connector status, and current threat-intel inventory metadata.

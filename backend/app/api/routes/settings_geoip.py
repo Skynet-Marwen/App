@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from ...core.config import settings as cfg
 from ...core.database import get_db
-from ...core.security import get_current_user
+from ...core.security import get_current_user, require_superadmin_user
 from ...models.user import User
 from ...services.audit import log_action, request_ip
 from ...services.runtime_config import runtime_settings
@@ -24,7 +24,7 @@ async def upload_mmdb(
     file: UploadFile = File(...),
     request: Request = None,
     db: AsyncSession = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: User = Depends(require_superadmin_user),
 ):
     if not (file.filename or "").endswith(".mmdb"):
         raise HTTPException(422, "Only .mmdb files are accepted")

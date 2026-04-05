@@ -20,6 +20,12 @@
 
   var API_KEY = sn.key || '';
   if (!API_KEY) { console.warn('[SkyNet] No API key configured.'); return; }
+  var PATHS = sn.paths || {};
+
+  function resolvePath(name, fallback) {
+    var path = PATHS[name];
+    return path || fallback;
+  }
 
   // ─── Fingerprinting ───────────────────────────────────────────────────────
 
@@ -50,33 +56,6 @@
     } catch (e) { return null; }
   }
 
-  function buildFingerprint() {
-    var components = [
-      navigator.userAgent,
-      navigator.language,
-      screen.width + 'x' + screen.height + 'x' + screen.colorDepth,
-      new Date().getTimezoneOffset(),
-      !!window.sessionStorage,
-      !!window.localStorage,
-      !!window.indexedDB,
-      !!window.openDatabase,
-      navigator.cpuClass || '',
-      navigator.platform || '',
-      navigator.plugins ? navigator.plugins.length : 0,
-      canvasFingerprint() || '',
-    ];
-    // Simple hash
-    var str = components.join('###');
-    var hash = 0;
-    for (var i = 0; i < str.length; i++) {
-      var char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash;
-    }
-    return Math.abs(hash).toString(16).padStart(8, '0') + '-' +
-      Math.abs(str.length).toString(16).padStart(8, '0');
-  }
-
   function simpleHash(input) {
     var text = String(input || '');
     var hash = 0;
@@ -85,6 +64,17 @@
       hash = hash & hash;
     }
     return Math.abs(hash).toString(16);
+  }
+
+  function browserBrandSignature() {
+    try {
+      if (!navigator.userAgentData || !navigator.userAgentData.brands) return null;
+      var brands = navigator.userAgentData.brands.slice().map(function (item) {
+        return String(item.brand || '') + ':' + String(item.version || '');
+      });
+      brands.sort();
+      return brands.join('|');
+    } catch (e) { return null; }
   }
 
   function readCookie(name) {
@@ -103,8 +93,293 @@
     document.cookie = name + '=' + encodeURIComponent(value) + '; Path=/; Max-Age=' + maxAgeSeconds + '; SameSite=Lax' + secure;
   }
 
+  function readStoredDeviceCookie() {
+    try {
+      var raw = localStorage.getItem('_sn_device_context::' + API_BASE + '::' + API_KEY);
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      return parsed && parsed.device_cookie ? parsed.device_cookie : null;
+    } catch (e) { return null; }
+  }
+
   function getDeviceCookie() {
-    return readCookie('_skynet_did');
+    return readCookie('_skynet_did') || readStoredDeviceCookie();
+  }
+
+  var runtimeProbeState = {
+    js_active: true,
+    adblock_dom_bait_blocked: false,
+    adblock_same_origin_probe_blocked: null,
+    remote_ad_probe_blocked: null,
+    adblocker_detected: false,
+    dns_filter_suspected: false,
+    blocker_family: null,
+  };
+  var runtimeProbePromise = null;
+
+  // WebRTC leak probe state — populated by detectWebRTCLeak()
+  var webrtcProbeState = {
+    webrtc_available: null,
+    webrtc_local_ip_count: null,
+    webrtc_vpn_suspected: null,
+    webrtc_leak_detected: null,
+    webrtc_stun_reachable: null,
+  };
+
+  // Detect VPN/proxy leaks via WebRTC ICE candidates.
+  // Returns a Promise that resolves with webrtcProbeState.
+  // Privacy: no raw IP strings are stored or sent — only derived booleans/counts.
+  function detectWebRTCLeak() {
+    if (typeof Promise === 'undefined' || typeof RTCPeerConnection === 'undefined') {
+      webrtcProbeState.webrtc_available = false;
+      return Promise.resolve(webrtcProbeState);
+    }
+    webrtcProbeState.webrtc_available = true;
+    return new Promise(function (resolve) {
+      var settled = false;
+      var localIPs = {};
+      var stunReachable = false;
+
+      function finish() {
+        if (settled) return;
+        settled = true;
+        var privateCount = 0;
+        for (var ip in localIPs) {
+          if (localIPs[ip] === 'private') privateCount += 1;
+        }
+        webrtcProbeState.webrtc_local_ip_count = privateCount;
+        webrtcProbeState.webrtc_stun_reachable = stunReachable;
+        webrtcProbeState.webrtc_vpn_suspected = privateCount > 0;
+        // webrtc_leak_detected is resolved server-side by comparing to HTTP request IP
+        webrtcProbeState.webrtc_leak_detected = null;
+        try { pc.close(); } catch (e) {}
+        resolve(webrtcProbeState);
+      }
+
+      var timer = setTimeout(finish, 2000);
+      var pc;
+      try {
+        pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+      } catch (e) {
+        webrtcProbeState.webrtc_available = false;
+        clearTimeout(timer);
+        resolve(webrtcProbeState);
+        return;
+      }
+
+      pc.createDataChannel('');
+      pc.onicecandidate = function (e) {
+        if (!e || !e.candidate || !e.candidate.candidate) {
+          // null candidate = ICE gathering complete
+          stunReachable = true;
+          clearTimeout(timer);
+          finish();
+          return;
+        }
+        var candidate = e.candidate.candidate;
+        var matches = candidate.match(/([0-9]{1,3}\.){3}[0-9]{1,3}/g) || [];
+        for (var i = 0; i < matches.length; i++) {
+          var ip = matches[i];
+          var isPrivate = /^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)/.test(ip);
+          localIPs[ip] = isPrivate ? 'private' : 'public';
+          if (!isPrivate) stunReachable = true;
+        }
+      };
+      pc.createOffer()
+        .then(function (offer) { return pc.setLocalDescription(offer); })
+        .catch(function () { clearTimeout(timer); finish(); });
+    });
+  }
+
+  function finalizeRuntimeProbeState() {
+    var brave = detectBraveOrBuiltinShields();
+    runtimeProbeState.adblocker_detected = !!(
+      runtimeProbeState.adblock_dom_bait_blocked ||
+      runtimeProbeState.adblock_same_origin_probe_blocked ||
+      brave
+    );
+    runtimeProbeState.dns_filter_suspected = !!(runtimeProbeState.remote_ad_probe_blocked && !runtimeProbeState.adblocker_detected);
+    if (brave) {
+      runtimeProbeState.blocker_family = 'brave_shields';
+    } else if (runtimeProbeState.adblocker_detected) {
+      runtimeProbeState.blocker_family = 'extension_like';
+    } else if (runtimeProbeState.dns_filter_suspected) {
+      runtimeProbeState.blocker_family = 'dns_or_network_filter';
+    } else {
+      runtimeProbeState.blocker_family = null;
+    }
+    return runtimeProbeState;
+  }
+
+  function probeDomAdblock() {
+    try {
+      var container = document.body || document.documentElement;
+      if (!container) return false;
+      var bait = document.createElement('div');
+      // Class names targeted by EasyList cosmetic filters and uBlock Origin
+      bait.className = 'adsbox pub_300x250 pub_300x250m text-ad banner-ad ad-placement ad-zone ad-banner advertisement';
+      bait.setAttribute('data-ad', 'true');
+      bait.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;pointer-events:none;';
+      container.appendChild(bait);
+      var style = window.getComputedStyle ? window.getComputedStyle(bait) : null;
+      var blocked = !!style && (
+        style.display === 'none' ||
+        style.visibility === 'hidden' ||
+        Number(style.opacity) === 0 ||
+        bait.offsetParent === null ||
+        bait.offsetHeight === 0 ||
+        bait.offsetWidth === 0 ||
+        bait.clientHeight === 0
+      );
+      bait.remove();
+      return blocked;
+    } catch (e) { return false; }
+  }
+
+  function detectBraveOrBuiltinShields() {
+    // Brave exposes navigator.brave; also catches fingerprinting resistance
+    try {
+      if (navigator.brave && typeof navigator.brave.isBrave === 'function') return true;
+    } catch (e) {}
+    return false;
+  }
+
+  function probeSameOriginFilter() {
+    if (typeof Promise === 'undefined') return null;
+    return new Promise(function (resolve) {
+      var token = 'sn-probe-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+      var url = API_BASE + '/ads.js?skynet_probe=' + encodeURIComponent(token) + '&k=' + encodeURIComponent(API_KEY);
+      var target = document.head || document.body || document.documentElement;
+      var registry = window.__skynetAdProbeHits = window.__skynetAdProbeHits || {};
+      var script = document.createElement('script');
+      var done = false;
+
+      if (!target) {
+        resolve(false);
+        return;
+      }
+
+      registry[token] = false;
+
+      function cleanup() {
+        script.onload = null;
+        script.onerror = null;
+        if (script.parentNode) script.parentNode.removeChild(script);
+        delete registry[token];
+      }
+
+      function finish(blocked) {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        var executed = !!registry[token];
+        cleanup();
+        resolve(Boolean(blocked || !executed));
+      }
+
+      var timer = setTimeout(function () { finish(true); }, 1200);
+      script.async = true;
+      script.src = url;
+      script.onload = function () { finish(false); };
+      script.onerror = function () { finish(true); };
+      target.appendChild(script);
+    });
+  }
+
+  function probeRemoteAdFilter() {
+    if (typeof Promise === 'undefined') return null;
+    var url = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?skynet_probe=' + Date.now();
+    if (typeof fetch === 'function') {
+      return fetch(url, { method: 'GET', mode: 'no-cors', cache: 'no-store' })
+        .then(function () { return false; })
+        .catch(function () { return true; });
+    }
+    return new Promise(function (resolve) {
+      var img = new Image();
+      var done = false;
+      var timer = setTimeout(function () {
+        if (done) return;
+        done = true;
+        resolve(true);
+      }, 1200);
+      img.onload = function () {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        resolve(false);
+      };
+      img.onerror = function () {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        resolve(true);
+      };
+      img.src = url;
+    });
+  }
+
+  function startRuntimeProbes() {
+    if (runtimeProbePromise || typeof Promise === 'undefined') return runtimeProbePromise;
+
+    // Brave/built-in shield detection is synchronous — safe to do immediately
+    if (detectBraveOrBuiltinShields()) {
+      runtimeProbeState.adblock_dom_bait_blocked = true;
+    }
+
+    runtimeProbePromise = new Promise(function (resolve) {
+      var settled = false;
+      var pending = 0;
+
+      function finish() {
+        if (settled) return;
+        settled = true;
+        resolve(finalizeRuntimeProbeState());
+      }
+
+      function markDone() {
+        pending -= 1;
+        if (pending <= 0) finish();
+      }
+
+      // Hard deadline: all probes must finish within 1200ms
+      setTimeout(finish, 1200);
+
+      // DOM bait: run after 150ms so ad blocker extensions have time
+      // to inject their CSS cosmetic filter rules into the page
+      pending += 1;
+      setTimeout(function () {
+        if (!runtimeProbeState.adblock_dom_bait_blocked) {
+          runtimeProbeState.adblock_dom_bait_blocked = probeDomAdblock();
+        }
+        markDone();
+      }, 150);
+
+      var sameOrigin = probeSameOriginFilter();
+      if (sameOrigin && typeof sameOrigin.then === 'function') {
+        pending += 1;
+        sameOrigin.then(function (blocked) {
+          runtimeProbeState.adblock_same_origin_probe_blocked = blocked;
+        }).finally(markDone);
+      }
+
+      var remote = probeRemoteAdFilter();
+      if (remote && typeof remote.then === 'function') {
+        pending += 1;
+        remote.then(function (blocked) {
+          runtimeProbeState.remote_ad_probe_blocked = blocked;
+        }).finally(markDone);
+      }
+
+      var webrtcProbe = detectWebRTCLeak();
+      if (webrtcProbe && typeof webrtcProbe.then === 'function') {
+        pending += 1;
+        webrtcProbe.finally(markDone);
+      }
+
+      if (pending === 0) finish();
+    });
+
+    return runtimeProbePromise;
   }
 
   var timingState = {
@@ -154,6 +429,7 @@
   function readFingerprintTraits() {
     var connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
     var timing = readTimingProfile() || {};
+    finalizeRuntimeProbeState();
     return {
       hardware_concurrency: typeof navigator.hardwareConcurrency === 'number' ? navigator.hardwareConcurrency : null,
       device_memory: typeof navigator.deviceMemory === 'number' ? navigator.deviceMemory : null,
@@ -166,7 +442,64 @@
       clock_resolution_ms: timing.clock_resolution_ms || null,
       raf_mean_ms: timing.raf_mean_ms || null,
       raf_jitter_score: timing.raf_jitter_score || null,
+      js_active: true,
+      adblock_dom_bait_blocked: runtimeProbeState.adblock_dom_bait_blocked,
+      adblock_same_origin_probe_blocked: runtimeProbeState.adblock_same_origin_probe_blocked,
+      remote_ad_probe_blocked: runtimeProbeState.remote_ad_probe_blocked,
+      adblocker_detected: runtimeProbeState.adblocker_detected,
+      dns_filter_suspected: runtimeProbeState.dns_filter_suspected,
+      blocker_family: runtimeProbeState.blocker_family,
+      webrtc_available: webrtcProbeState.webrtc_available,
+      webrtc_local_ip_count: webrtcProbeState.webrtc_local_ip_count,
+      webrtc_vpn_suspected: webrtcProbeState.webrtc_vpn_suspected,
+      webrtc_leak_detected: webrtcProbeState.webrtc_leak_detected,
+      webrtc_stun_reachable: webrtcProbeState.webrtc_stun_reachable,
     };
+  }
+
+  function collectFingerprintInputs() {
+    return {
+      canvas_hash: canvasFingerprint(),
+      webgl_hash: webglFingerprint(),
+      fingerprint_traits: readFingerprintTraits(),
+    };
+  }
+
+  function buildFingerprintFromInputs(inputs) {
+    var traits = (inputs && inputs.fingerprint_traits) || {};
+    var timezone = null;
+    try {
+      timezone = Intl && Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+    } catch (e) {}
+    var components = {
+      user_agent: navigator.userAgent || null,
+      user_agent_brands: browserBrandSignature(),
+      language: navigator.language || null,
+      languages: navigator.languages ? navigator.languages.slice(0, 3) : null,
+      screen: screen.width + 'x' + screen.height + 'x' + screen.colorDepth,
+      avail_screen: screen.availWidth + 'x' + screen.availHeight,
+      pixel_ratio: typeof window.devicePixelRatio === 'number' ? Number(window.devicePixelRatio.toFixed(4)) : null,
+      timezone: timezone,
+      timezone_offset_minutes: traits.timezone_offset_minutes || null,
+      platform: navigator.platform || traits.platform || null,
+      hardware_concurrency: traits.hardware_concurrency || null,
+      device_memory: traits.device_memory || null,
+      plugin_count: traits.plugin_count || null,
+      touch_points: traits.touch_points || null,
+      webdriver: typeof traits.webdriver === 'boolean' ? traits.webdriver : null,
+      storage: {
+        session: !!window.sessionStorage,
+        local: !!window.localStorage,
+        indexeddb: !!window.indexedDB,
+        open_database: !!window.openDatabase,
+      },
+      canvas_hash: (inputs && inputs.canvas_hash) || null,
+      webgl_hash: (inputs && inputs.webgl_hash) || null,
+    };
+    var canonical = JSON.stringify(components);
+    var head = simpleHash(canonical).padStart(8, '0').slice(-8);
+    var tail = simpleHash(canonical.split('').reverse().join('')).padStart(8, '0').slice(-8);
+    return head + '-' + tail;
   }
 
   // ─── Session ──────────────────────────────────────────────────────────────
@@ -183,18 +516,23 @@
   }
 
   function buildTrackingPayload(extra) {
+    var fingerprintInputs = collectFingerprintInputs();
+    var timezone = null;
+    try {
+      timezone = Intl && Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+    } catch (e) {}
     return Object.assign({
       page_url: window.location.href,
       referrer: document.referrer || null,
-      fingerprint: buildFingerprint(),
-      canvas_hash: canvasFingerprint(),
-      webgl_hash: webglFingerprint(),
+      fingerprint: buildFingerprintFromInputs(fingerprintInputs),
+      canvas_hash: fingerprintInputs.canvas_hash,
+      webgl_hash: fingerprintInputs.webgl_hash,
       screen: screen.width + 'x' + screen.height,
       language: navigator.language,
-      timezone: Intl && Intl.DateTimeFormat().resolvedOptions().timeZone || null,
+      timezone: timezone,
       session_id: getSessionId(),
       device_cookie: getDeviceCookie(),
-      fingerprint_traits: readFingerprintTraits(),
+      fingerprint_traits: fingerprintInputs.fingerprint_traits,
     }, extra || {});
   }
 
@@ -357,16 +695,27 @@
   // ─── HTTP ─────────────────────────────────────────────────────────────────
 
   function post(endpoint, data) {
-    var url = API_BASE + '/api/v1/track/' + endpoint;
+    var routeMap = {
+      pageview: resolvePath('pageview', '/api/v1/track/pageview'),
+      event: resolvePath('event', '/api/v1/track/event'),
+      identify: resolvePath('identify', '/api/v1/track/identify')
+    };
+    var url = API_BASE + (routeMap[endpoint] || ('/api/v1/track/' + endpoint));
     var body = JSON.stringify(data);
     if (navigator.sendBeacon) {
       var blob = new Blob([body], { type: 'application/json' });
-      navigator.sendBeacon(url + '?key=' + API_KEY, blob);
+      var sendUrl = url;
+      if (sendUrl.indexOf('/api/v1/track/') !== -1) {
+        sendUrl += '?key=' + API_KEY;
+      }
+      navigator.sendBeacon(sendUrl, blob);
     } else {
       var xhr = new XMLHttpRequest();
       xhr.open('POST', url, true);
       xhr.setRequestHeader('Content-Type', 'application/json');
-      xhr.setRequestHeader('X-SkyNet-Key', API_KEY);
+      if (url.indexOf('/api/v1/track/') !== -1) {
+        xhr.setRequestHeader('X-SkyNet-Key', API_KEY);
+      }
       xhr.send(body);
     }
   }
@@ -375,6 +724,10 @@
     var url = API_BASE + path;
     var body = data ? JSON.stringify(data) : null;
     var headers = extraHeaders || {};
+    var headerSiteKey = headers['X-SkyNet-Key'] || headers['x-skynet-key'] || '';
+    if (headerSiteKey) {
+      url += (url.indexOf('?') === -1 ? '?' : '&') + 'site_key=' + encodeURIComponent(headerSiteKey);
+    }
 
     if (typeof fetch !== 'undefined' && typeof Promise !== 'undefined') {
       var fetchHeaders = { 'Content-Type': 'application/json' };
@@ -466,7 +819,13 @@
   }
 
   function checkAccess(fp, onClear) {
-    var url = API_BASE + '/api/v1/track/check-access?key=' + encodeURIComponent(API_KEY) + '&fp=' + encodeURIComponent(fp);
+    var accessPath = resolvePath('check_access', '/api/v1/track/check-access');
+    var url = API_BASE + accessPath;
+    if (accessPath.indexOf('/api/v1/track/') !== -1) {
+      url += '?key=' + encodeURIComponent(API_KEY) + '&fp=' + encodeURIComponent(fp);
+    } else {
+      url += '?fp=' + encodeURIComponent(fp);
+    }
     var deviceCookie = getDeviceCookie();
     if (deviceCookie) url += '&dc=' + encodeURIComponent(deviceCookie);
     var challengeToken = readChallengeToken();
@@ -537,7 +896,7 @@
 
     if (deviceContextPromise) return deviceContextPromise;
 
-    deviceContextPromise = requestJson('POST', '/api/v1/track/device-context', {
+    deviceContextPromise = requestJson('POST', resolvePath('device_context', '/api/v1/track/device-context'), {
       fingerprint: payload.fingerprint,
       canvas_hash: payload.canvas_hash,
       webgl_hash: payload.webgl_hash,
@@ -688,8 +1047,17 @@
      */
     checkBlocked: function (callback) {
       var xhr = new XMLHttpRequest();
-      xhr.open('GET', API_BASE + '/api/v1/track/check/ip?fingerprint=' + buildFingerprint(), true);
-      xhr.setRequestHeader('X-SkyNet-Key', API_KEY);
+      var accessPath = resolvePath('check_access', '/api/v1/track/check-access');
+      var url = API_BASE + accessPath;
+      if (accessPath.indexOf('/api/v1/track/') !== -1) {
+        url += '?key=' + encodeURIComponent(API_KEY) + '&fp=' + encodeURIComponent(SkyNet.getFingerprint());
+      } else {
+        url += '?fp=' + encodeURIComponent(SkyNet.getFingerprint());
+      }
+      xhr.open('GET', url, true);
+      if (accessPath.indexOf('/api/v1/track/') !== -1) {
+        xhr.setRequestHeader('X-SkyNet-Key', API_KEY);
+      }
       xhr.onload = function () {
         try {
           var res = JSON.parse(xhr.responseText);
@@ -704,15 +1072,24 @@
   // ─── Auto-track (with block check first) ─────────────────────────────────
 
   function autoTrack() {
-    var payload = buildTrackingPayload();
-    latestTrackingPayload = payload;
-    checkAccess(payload.fingerprint, function () {
-      // Not blocked — proceed with normal tracking
-      resolveDeviceContext(payload).catch(function () {});
-      if (sn.auto !== false) { post('pageview', payload); }
-    });
+    function proceed() {
+      var payload = buildTrackingPayload();
+      latestTrackingPayload = payload;
+      checkAccess(payload.fingerprint, function () {
+        // Not blocked — proceed with normal tracking
+        resolveDeviceContext(payload).catch(function () {});
+        if (sn.auto !== false) { post('pageview', payload); }
+      });
+    }
+
+    if (runtimeProbePromise && typeof runtimeProbePromise.then === 'function') {
+      runtimeProbePromise.finally(proceed);
+      return;
+    }
+    proceed();
   }
 
+  startRuntimeProbes();
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', autoTrack);
   } else {
@@ -743,6 +1120,7 @@
   window.addEventListener('popstate', autoTrack);
 
   window.SkyNet = SkyNet;
+  window.__skynetTrackerReady = true;
   window._skynet = sn;
 
 })(window, document);

@@ -48,10 +48,15 @@ class DeploymentEngine:
             self.logger.error(f"Deployment failed for {self.target.name}: {exc}")
             if self.target.rollback_on_health_failure and current_release:
                 self.logger.warn("Restoring previous release automatically")
-                self._activate_release(current_release)
-                with self.logger.step("Re-running health checks after rollback"):
-                    self._health_check()
-            raise
+                try:
+                    self._activate_release(current_release)
+                    with self.logger.step("Re-running health checks after rollback"):
+                        self._health_check()
+                    self.logger.success(f"Rollback successful. System is stable at {current_release}")
+                except Exception as rollback_exc:
+                    self.logger.error(f"Rollback failed: {rollback_exc}")
+                    raise DeployError(f"Critical Failure: Deploy failed and rollback failed. Manual intervention required.") from rollback_exc
+            raise DeployError(f"Deployment failed for {self.target.name}, but system was rolled back: {exc}") from exc
         with self.logger.step("Promoting release"):
             if current_release:
                 self.executor.run(["ln", "-sfn", current_release, paths["previous"]], capture_output=False)

@@ -22,6 +22,7 @@ class VisitorOut(BaseModel):
     first_seen: str
     last_seen: str
     linked_user: Optional[str] = None
+    external_user_id: Optional[str] = None
 
 
 class VisitorListResponse(BaseModel):

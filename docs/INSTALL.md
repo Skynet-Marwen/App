@@ -1,6 +1,6 @@
 # SkyNet — Self-Hosted Installation Guide
 
-> Last updated: 2026-04-03 — shipped app version `1.6.9`
+> Last updated: 2026-04-05 — shipped app version `1.7.1`
 
 ---
 
@@ -448,12 +448,15 @@ After a successful deploy, validate these release-critical paths:
 ## Embedding the Tracker
 
 ```html
-<script>window._skynet = { key: 'YOUR_SITE_API_KEY' };</script>
-<script async src="https://skynet.yourdomain.com/tracker/skynet.js"></script>
+<script async src="https://skynet.yourdomain.com/s/YOUR_SITE_API_KEY.js"></script>
 ```
 
 Get your site API key from **Integration → Add Site** in the dashboard.
 The bundled tracker also maintains a signed first-party `_skynet_did` cookie once the browser resolves its SKYNET device context.
+Use the stealth `/s/<site_key>.js` path by default. It injects matching `/w/<site_key>/*` ingest routes automatically and is less likely to be matched by common blocker rules than the older `/tracker/skynet.js` + `/api/v1/track/*` pattern.
+If the browser talks to SkyNet directly, the public edge must also proxy `/ads.js` to the backend so the same-origin blocker probe can execute as a real script resource.
+For aggressive blocker environments or plain-HTTP LAN deployments, proxy SkyNet through the protected app's own origin and keep the raw site API key server-side.
+`adblocker_detection` should stay opt-in until you validate the browser-side probe on your own production browsers; `dns_filter_detection` can still be enabled on its own.
 
 ---
 
@@ -462,6 +465,7 @@ The bundled tracker also maintains a signed first-party `_skynet_did` cookie onc
 After a user authenticates in your app via a configured external OIDC/JWKS provider, call SKYNET to link their identity:
 
 `fingerprint_id` is the SKYNET device UUID (`devices.id`), not the raw tracker fingerprint string. The bundled tracker now resolves that UUID for you through `SkyNet.getDeviceId()`.
+If your app uses a first-party relay pattern, keep the browser on your own origin and forward these same requests to SkyNet server-side instead of calling SkyNet directly from the browser.
 
 ```js
 // 1. Resolve the current SKYNET device UUID

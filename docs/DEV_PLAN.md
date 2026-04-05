@@ -5,20 +5,140 @@
 
 ---
 
-## Current Version: `1.6.9`
-## Phase: Release complete for the settings-surface hardening pass; next focus is `v2.0.0` multi-tenancy
+## Current Version: `1.7.4`
+## Phase: Identity model fixes (retroactive attribution, tor_vpn heuristic, dual-model link, anti-evasion coverage)
 
 ---
 
 ## In Progress
 
 - [ ] Run migrations 0005–0011 in all deployment environments
-- [ ] Harden operator RBAC on settings, integration, blocking, and system routes so `user` / `moderator` accounts cannot mutate global state or read sensitive diagnostics
-- [ ] Encrypt and mask the global webhook signing secret in runtime settings; `GET /api/v1/settings` must not return the raw value
+- [ ] Tune and validate `group_escalation_*` thresholds on real traffic before enabling the feature in production runtime settings
+- [ ] Tune adblock / DNS-filter / ISP-unresolved actions on real traffic before moving them above `flag` for protected applications
+- [ ] Tune `language_mismatch_allowed_languages_by_country` for multilingual markets before using `LANGUAGE_MISMATCH` as more than a low-noise supporting signal
+
+## Blocked / Deferred
+
+- [ ] **Adblocker browser detection — DEFERRED** (prod: `skynet.tn` / `10.0.0.9`)
+  - DNS-filter detection works correctly (remote ad-domain probe).
+  - Browser-side adblocker detection (DOM bait + same-origin probe) was previously **not reliably detecting** extensions (uBlock Origin, AdBlock Plus, Brave Shields, Firefox ETP) because the same-origin probe used `fetch`, which many blockers do not treat like a blocked page resource.
+  - Root causes investigated: CSS injection timing, nginx `/ads.js` routing, Brave `navigator.brave` API, `blocker_family` propagation.
+  - 2026-04-05 patch: same-origin probe now loads `/ads.js` as a real `<script>` and confirms execution via a probe token on `window`, which should better separate browser-side blocking from DNS/network filtering.
+  - **Decision:** keep `adblocker_detection` opt-in in production settings until the new script-tag probe is revalidated on real browsers; keep `dns_filter_detection` enabled.
+  - **To revisit:** if this is still noisy, move to a server-observed bait request model (HTML-injected bait resource with fetch confirmation logged server-side) instead of relying entirely on client-side inference.
 
 ---
 
 ## Done (Unreleased Branch)
+
+- [x] 2026-04-05 — fix(identity): retroactive visitor attribution + tor_vpn heuristic + dual-model link + anti-evasion blind spot — v1.7.4
+  - **Fixed:** `identity_service._sync_external_user_visitors` — `should_claim_all` now restricted to visitors created at or after `linked_at`; historical anonymous sessions no longer retroactively attributed
+  - **Fixed:** `risk_engine.recompute` — `tor_vpn` modifier replaced: queries `Incident` table for `VPN_DETECTED`/`PROXY_DETECTED`/`WEBRTC_VPN_BYPASS` instead of `risk_score >= 100` heuristic
+  - **Fixed:** `devices.py POST /{device_id}/link` — now also writes `IdentityLink` when `external_user_id` provided; legacy `Device.linked_user` write retained for backward compat
+  - **Fixed:** `anti_evasion._apply_multi_account_risk` — multi-account count uses `COALESCE(external_user_id, linked_user)` covering both legacy and IdP-linked visitors
+  - **Bumped:** `APP_VERSION` → `1.7.4`
+- [x] 2026-04-05 — fix(functional): NameError crash + missing profile creation + silent detection failures + user count dedup — v1.7.3
+  - **Fixed:** `track.py` `NameError: identity_service` on every `POST /track/activity` with device payload — import added
+  - **Fixed:** `risk_engine.py` `UserProfile` never created on first `recompute()` call — row now created in the `else` branch
+  - **Fixed:** `anti_evasion.py` `_safe_run` silently swallowed all detection failures — now logs at ERROR with full traceback
+  - **Fixed:** `anti_evasion.py` ML scoring block silently discarded all inference errors — now logs at WARNING
+  - **Fixed:** `stats.py` `unique_users` double-counted users present in both `Visitor.linked_user` and `UserProfile` — now uses set union deduplication; same fix applied to previous-period comparison
+  - **Bumped:** `APP_VERSION` → `1.7.3`
+
+- [x] 2026-04-05 — fix(audit): silent exception + debug leak fixes — v1.7.2
+  - **Fixed:** `track.py` `parse_user_agent()` silent `except: pass` → `_log.debug()` (logger added)
+  - **Fixed:** `stats.py` 3 silent `except Exception:` in overview endpoint → `_log.warning(..., exc_info=True)` (logger added)
+  - **Fixed:** `main.py` asyncio shutdown swallowed errors → `_log.debug()` on `BaseException` (logger added)
+  - **Fixed:** `snippets.jsx` live `console.log` in integration snippet → commented out
+  - **Bumped:** `APP_VERSION` → `1.7.2`
+
+- [x] 2026-04-04 — security(rbac+webhook): RBAC hardening + webhook secret encryption — v1.7.1
+  - **Security:** 12 route files patched — settings, settings_smtp, settings_https, settings_geoip, settings_notifications, settings_integrations, settings_storage, integration, blocking, anti_evasion, system, audit — all critical endpoints now enforce `require_admin_user` or `require_superadmin_user`
+  - **Security:** `GET /api/v1/system/info` now requires authentication (was public)
+  - **Security:** `webhook_secret` → `webhook_secret_enc` in `DEFAULT_RUNTIME_SETTINGS`; `settings.py` GET masks + PUT encrypts; `incident_notifications.py` decrypts at delivery time via `decrypt_password()`
+  - **Fixed:** `init_db()` in `database.py` now has an explanatory docstring (intentional no-op — Alembic manages schema)
+  - **Fixed:** Stale RBAC TODO comment removed from `settings_smtp.py`
+  - **Bumped:** `APP_VERSION` → `1.7.1` in `config.py` and `frontend/package.json`
+  - **Docs:** CHANGELOG, SECURITY, DEV_PLAN updated; all hardening gaps closed
+
+- [x] 2026-04-04 — feat(ml+webrtc): ML anomaly detection + WebRTC leak detection — v1.7.0
+  - **Added:** `backend/app/services/ml/` package: `feature_extractor.py` (27-feature vector from Device ORM), `anomaly_detector.py` (IsolationForest, atomic .pkl persistence), `ml_task.py` (asyncio 24h retraining loop on healthy devices)
+  - **Added:** ML retraining task started in FastAPI lifespan (`start_ml_runtime()`), feature-flagged `ml_anomaly_detection=false` in runtime settings
+  - **Added:** `detectWebRTCLeak()` probe in `skynet.js` — ICE candidate analysis, 2s timeout, RGPD-safe (no raw IPs), 5 boolean/count signals in `fingerprint_traits`
+  - **Added:** `_check_webrtc_leak()` in `anti_evasion.py` → `WEBRTC_VPN_BYPASS` incident +35 risk; `webrtc_leak_detection=true` anti-evasion config
+  - **Added:** `numpy==1.26.4`, `scikit-learn==1.4.2`, `joblib==1.4.2` to `requirements.txt`
+  - **Added:** `RISK_POINTS["webrtc_vpn_bypass"]=35`, `RISK_POINTS["ml_anomaly"]=15`
+  - **Added:** Tests: `test_ml_feature_extractor.py`, `test_webrtc_leak.py`
+  - **Bumped:** `APP_VERSION` → `1.7.0` in `config.py` and `frontend/package.json`
+  - **Docs:** CHANGELOG, ARCHITECTURE, SECURITY, DEV_PLAN updated
+
+- [x] 2026-04-04 — feat(overview-density+docs): compacted the overview dashboard and synced project markdown
+  - **Changed:** Overview stat cards now use a denser low-profile layout with tighter row spacing for better screen efficiency
+  - **Changed:** Traffic Intensity and Threat Hotspots now use much shorter fixed heights on desktop, and Threat Hotspots replaced the resource-heavy animated globe with lightweight ranked bars and compact summary metrics
+  - **Changed:** Risk Leaderboard and Priority Investigations now keep fixed same-row heights with internal scrolling so long analyst content stays visible without breaking symmetry
+  - **Changed:** README, frontend README, and CHANGELOG now describe the compact overview layout and the lightweight hotspot rendering accurately
+  - **Verified:** `npm run build` passed in `frontend/`
+
+- [x] 2026-04-03 — feat(tracker-relay+attribution): hardened browser tracking for blocker-heavy and shared-network environments
+  - **Added:** blocker-resistant public tracker aliases `/s/{site_key}.js` and `/w/{site_key}/*` for less obvious browser collection paths
+  - **Added:** first-party relay pattern for protected apps so tracker load, challenge pages, identity linking, and authenticated activity can stay on the app origin
+  - **Changed:** visitor attribution now prefers exact device continuity over broad shared-IP reuse, reducing cross-visitor mixing on shared networks
+  - **Changed:** browser/device heuristics now classify desktop-vs-mobile more conservatively to avoid touch-capable desktop browsers being mislabeled as mobile
+
+- [x] 2026-04-03 — feat(tracker-probes+strict-tracking): added blocker heuristics, ISP anomalies, and strict protected-app tracker enforcement
+  - **Added:** tracker runtime probes for DOM bait blocking, same-origin ad-path blocking, remote ad-domain blocking, and JS-runtime integrity hints
+  - **Added:** anti-evasion runtime controls for `adblocker_detection`, `dns_filter_detection`, and `isp_resolution_detection` with per-signal actions
+  - **Changed:** Devices grouping and detail payloads now infer probable model/vendor names from linked visitor user-agent evidence instead of summarizing grouped browsers only
+  - **Changed:** Mouwaten now treats SkyNet tracker readiness as mandatory when enforcement is active and blocks protected-app use if the same-origin tracker relay never becomes ready
+  - **Verified:** `node --check tracker/skynet.js` passed, `python3 -m py_compile` passed for the backend changes, targeted frontend ESLint passed, and `npm run build` passed for the SkyNet frontend
+
+- [x] 2026-04-04 — feat(signal-visibility): surfaced blocker and DNS evidence in entity detail views
+  - **Changed:** Visitor details now fetch the exact backend payload and show tracking-signal summaries for adblocker, DNS-filter, and ISP-resolution incidents
+  - **Changed:** Device details, linked device visitors, and Portal User Intelligence profile/device/visitor cards now show compact tracking-evidence summaries instead of requiring operators to pivot into Anti-Evasion incidents
+  - **Verified:** backend `py_compile`, targeted frontend ESLint, and frontend production build passed
+
+- [x] 2026-04-03 — feat(portal-intelligence-linking): tightened visitor/device/user ownership reconciliation
+  - **Added:** `/api/v1/identity/{external_user_id}/visitors` for Portal User Intelligence tracked-visitor visibility
+  - **Changed:** identity linking now propagates across strict sibling-device groups and backfills linked visitors to the owning external user more consistently
+  - **Changed:** Portal User Intelligence export and detail views now include linked visitors alongside device links, risk history, flags, and activity
+
+- [x] 2026-04-03 — fix(intelligence-delete+docs): completed bidirectional intelligence cleanup for visitor/device/user deletion
+  - **Added:** `DELETE /api/v1/identity/{external_user_id}` for admin-side removal of external-user intelligence profiles from Portal User Intelligence
+  - **Changed:** visitor and device deletion now clean related anomaly flags, device-bound incidents, orphaned identity links, and affected Portal User Intelligence counters instead of leaving stale indicators behind
+  - **Changed:** Portal User Intelligence now filters out null-device identity links and exposes tracked visitors plus an explicit external-user delete action in the UI
+  - **Verified:** `python3 -m compileall backend/app` passed, and targeted ESLint passed for `useDevices`, `DevicesPage`, `usePortalUsers`, `PortalUsersPage`, and `services/api`
+
+- [x] 2026-04-03 — fix(orphaned-overview-intelligence): removed stale dashboard investigations after entity deletion
+  - **Added:** shared backend intelligence filters for active incidents and active anomaly flags, with matching orphan-purge helpers for delete/reconcile flows
+  - **Changed:** `GET /api/v1/stats/overview` and `GET /api/v1/risk/users` now ignore incidents/flags whose linked device, visitor, or external-user profile was already deleted
+  - **Changed:** intelligence cleanup now purges orphaned incidents and anomaly flags during external-profile reconciliation so old stale rows stop resurfacing in overview widgets
+  - **Verified:** `python3 -m compileall backend/app backend/tests` passed; direct local unittest execution remains blocked in this shell because backend Python deps like `sqlalchemy` are not installed
+
+- [x] 2026-04-03 — feat(priority-investigation-detail): added drill-down inspection for overview investigations
+  - **Added:** `GET /api/v1/anti-evasion/incidents/{incident_id}` to resolve incident evidence together with the best available related portal user, device, and visitor context
+  - **Changed:** Overview -> Priority Investigations items are now clickable and open a detail modal instead of only redirecting to a visitor search
+  - **Verified:** `python3 -m compileall backend/app backend/tests` passed, targeted frontend ESLint passed for the overview files, and the frontend production build passed
+
+- [x] 2026-04-03 — docs(sync+integration): aligned markdown with the live Mouwaten relay flow, DNSBL soft-fail posture, and current audit semantics
+  - **Changed:** README, API, architecture, install, logic, security, changelog, and Mouwaten integration docs now describe the stealth tracker path, same-origin relay pattern, and challenge proxy flow consistently
+  - **Changed:** docs now clarify that site API keys are public integration identifiers, while protected apps can still hide them behind a first-party relay when needed
+  - **Changed:** docs now describe `enhanced_audit` as targeted extra activity metadata instead of a guaranteed full raw device snapshot, matching the current implementation
+  - **Changed:** docs now record the DNSBL soft-fail runtime behavior for noisy dynamic-IP regions such as Tunisia
+
+- [x] 2026-04-03 — feat(group-escalation+docs): shipped visitor → device → user parent escalation as a backend-only, disabled-by-default engine
+  - **Added:** `services/group_escalation/*` orchestration for exact-device, strict sibling-device, and external-user parent posture recompute
+  - **Added:** runtime settings for `group_escalation_enabled`, window sizes, similarity thresholds, and additive weight tuning
+  - **Added:** group anomaly vocabulary `group_device_risk`, `group_user_risk`, `coordinated_group_behavior`, and `repeated_group_spike`
+  - **Changed:** `/track/pageview`, `/track/event`, `/track/device-context`, `/track/activity`, `/identity/link`, `/risk/{external_user_id}/recompute`, and anti-evasion user recomputes now flow through the parent-escalation orchestrator
+  - **Verified:** `python3 -m compileall backend/app backend/tests` passed locally, backend container rebuild succeeded, and container-side unit suite passed for `tests.test_risk_engine`, `tests.test_settings_persistence`, and `tests.test_group_parent_escalation`
+
+- [x] 2026-04-03 — feat(tenants+notifications+deploy): added tenant management, notification delivery, and deployment tooling
+  - **Added:** tenant account management with host mapping, theme defaults, and operator assignment via `/api/v1/tenants`
+  - **Added:** notification delivery system with SMTP integration, webhook testing, and delivery logging via `/api/v1/settings/notifications`
+  - **Added:** lightweight deployment tool (`skynet deploy`) supporting Docker and Python targets with rsync/SMB sync and registry/prebuilt image handling
+  - **Added:** Mouwaten integration documentation and external JWT validation for end-user authentication
+  - **Added:** UI visibility controls and theme widget curation for dashboard customization
+  - **Changed:** new API routes for tenants, notifications, integrations, and storage operations
 
 - [x] 2026-04-03 — fix(frontend+docs): restored a lint-clean frontend branch and simplified the Settings UX for non-developer operators
   - **Changed:** Settings navigation now behaves like a compact sticky sub-navigation bar inside the Settings surface instead of a stack of section cards
@@ -37,6 +157,12 @@
   - **Added:** integration runtime controls for API access governance, API-key prefixing, integration-specific rate limits, threat-intel refresh, and SIEM/monitoring connector testing
   - **Changed:** Settings -> Data & Storage and Settings -> Integrations now mark all currently shipped capabilities as live in both the detailed roadmap cards and the coordinated summary
   - **Changed:** tracker/API key validation now honors the runtime integration access toggle, and event-notification flows can fan out to SIEM/monitoring webhooks
+
+- [x] 2026-04-03 — feat(storage-reset-actions): added destructive data-reset controls for tracker cleanup and fresh-install reinitialization
+  - **Added:** `POST /api/v1/settings/storage/tracker-purge` for admin-side deletion of one tracker/site's collected visitors, activity, device links, orphaned user intelligence, and scan artifacts while keeping the tracker registration
+  - **Added:** `POST /api/v1/settings/storage/reset-install` for superadmin-only fresh-install reinitialization of operational data while preserving operator accounts, runtime settings, themes, and tenant configuration
+  - **Changed:** Settings -> Data & Storage now includes a tracker selector for data wipes plus a typed-confirmation reset action for clean reinstall flows
+  - **Verified:** `python3 -m compileall backend/app backend/tests` passed, targeted frontend ESLint passed for `DataStorageTab` and `services/api`, and container-side unit coverage passed for the new storage action contracts
 
 - [x] 2026-04-02 — feat(auth+theme-settings): completed the Authentication & Identity and UI / Theme Engine settings surfaces
   - **Added:** `superadmin` role, tenant account registry, operator tenant assignment, and tenant default-theme linkage with migration `0018`

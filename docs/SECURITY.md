@@ -1,16 +1,16 @@
 # SkyNet — Security Model
 
-> Last reviewed: 2026-04-03 — shipped app version `1.6.9`
+> Last reviewed: 2026-04-04 — shipped app version `1.7.1`
 
 ---
 
-## Known Hardening Gaps (2026-04-03 Review)
+## Known Hardening Gaps
 
-- Several high-impact operator routes currently accept any authenticated SKYNET user instead of consistently requiring admin or superadmin privileges. The intended boundary remains admin-only for settings, integration management, blocking controls, and maintenance surfaces.
-- The global webhook signing secret still lives as plaintext `webhook_secret` in runtime settings and is not masked the way `*_enc` secrets are. This should be treated as implementation debt, not as an accepted security posture.
-- `GET /api/v1/system/info` is currently public and exposes component version strings. This is useful for diagnostics, but it is broader than the intended operator-only system surface.
+No open hardening gaps as of v1.7.1. Previous gaps (resolved):
 
-These are active branch issues to fix, not approved long-term behavior.
+- ~~RBAC over-permissive: settings/blocking/integration/maintenance routes accepted any authenticated user.~~ → **Fixed v1.7.1**: all high-impact routes now enforce `require_admin_user` or `require_superadmin_user`.
+- ~~`webhook_secret` stored in plaintext in runtime settings, returned unmasked by `GET /api/v1/settings`.~~ → **Fixed v1.7.1**: migrated to `webhook_secret_enc` (Fernet-encrypted), masked on read, encrypted on write, decrypted only at delivery time.
+- ~~`GET /api/v1/system/info` publicly accessible, exposing component versions.~~ → **Fixed v1.7.1**: now requires authentication (`get_current_user`).
 
 ---
 
@@ -27,6 +27,8 @@ These are active branch issues to fix, not approved long-term behavior.
 | Multi-account abuse | Same device → many users | `detect_multi_account()` → AnomalyFlag severity=high | ✅ v1.2 |
 | Impossible travel | Geo jump between sessions | activity_events IP+country delta check + anomaly flag + risk recompute | ✅ v1.3 |
 | API key leak | Exposed in client source | Per-site keys, revocable instantly, per-request logging | ✅ |
+| Over-reactive DNSBL on residential WAN space | Dynamic-IP markets look abusive to public blocklists | Country-based DNSBL soft-fail list keeps DNSBL additive without direct enforcement | ✅ v1.6.10 |
+| Over-reactive locale mismatch heuristics | Multilingual countries legitimately use neighboring/global UI languages | Country-aware language allowances keep `LANGUAGE_MISMATCH` low-noise in regions such as Tunisia | ✅ v1.7.1 |
 | IP spoofing | X-Forwarded-For manipulation | Forwarded IP headers only trusted when `trust_proxy_headers=true` | ✅ |
 | Fingerprint evasion | Private mode, canvas block | Multi-signal composite; flag absent signals | ✅ |
 | Device cookie tampering | User edits `_skynet_did` manually | HMAC-signed cookie verified server-side before use | ✅ v1.6 |
@@ -41,9 +43,12 @@ These are active branch issues to fix, not approved long-term behavior.
 | Secret exposure | `.env` committed to git | `.gitignore` enforced; `.env.example` as template | ✅ |
 | Insider threat | Admin account abuse | Write-only audit log for all state changes | ✅ v1.1 |
 | Operator lockout | Last owner account deleted/demoted/blocked | Superadmin guardrails prevent removing the final `superadmin` | ✅ |
-| Over-broad operator permissions | Non-admin operator can reach privileged settings/system actions | Route-level `require_admin_user` / `require_superadmin_user` enforcement | Known gap on active branch |
+| Over-broad operator permissions | Non-admin operator can reach privileged settings/system actions | Route-level `require_admin_user` / `require_superadmin_user` enforcement across all critical routes | ✅ v1.7.1 |
 | Malicious branding asset upload | Admin uploads oversized or unsafe theme file | MIME allowlist + 2 MB cap + backend-served logo route only | ✅ |
 | False same-device merge | Cross-browser similarity | Strict tuple grouping; exact fingerprint is block authority | ✅ v1.1 |
+| Over-escalation from grouped behavior | One risky child blocks an unrelated parent immediately | Parent escalation is additive, threshold-based, exact-device first, disabled by default | ✅ v1.6.10 |
+| VPN/proxy bypass via WebRTC | WebRTC ICE candidates leak real LAN IP behind VPN | `detectWebRTCLeak()` tracker probe → `WEBRTC_VPN_BYPASS` incident (+35 risk); no raw IPs collected | ✅ v1.7.0 |
+| Subtle bot/anomaly not covered by rules | Hardcoded thresholds miss novel patterns | Isolation Forest ML model (additive +15 risk, feature-flagged, retrained every 24h on healthy traffic) | ✅ v1.7.0 |
 | Container escape | Docker misconfiguration | Non-root user in containers (planned) | Planned v1.3 |
 
 ---
@@ -87,6 +92,7 @@ SMTP passwords are stored as Fernet-encrypted ciphertext (`smtp_password_enc`) d
 Integration connector secrets (`integration_siem_secret_enc`, `integration_monitoring_secret_enc`) are stored the same way and are only decrypted at send time or when an operator explicitly reuses the masked value during a connector test.
 Theme definitions and per-user theme assignments are stored in the database. Uploaded theme logos are stored under `backend/data/theme-assets/` and served through backend API routes.
 Current gap: the global webhook signing secret is still stored as plaintext runtime config (`webhook_secret`) and can be returned by `GET /settings`; it should be migrated to encrypted-at-rest storage with masked read semantics.
+Site API keys are intentionally public integration identifiers, not operator secrets. When a protected app wants to avoid exposing the raw site key in browser bootstrap config, it should proxy SkyNet through its own origin and keep the site key server-side.
 
 ### Secret Rotation Procedure
 1. Generate new secret.
@@ -136,6 +142,7 @@ When `trust_proxy_headers=false`, the limiter keys off the raw TCP peer address 
 | Resolve incident | `RESOLVE_INCIDENT` | incident.id | — |
 | Anomaly flag update | `FLAG_UPDATE` | flag.id | status, user |
 | Enhanced audit toggle | `ENHANCED_AUDIT_TOGGLE` | external_user_id | enabled, reason |
+| Delete external user intelligence | `DELETE_EXTERNAL_USER` | external_user_id | — |
 
 ### Storage Rules
 - `audit_logs` table is **write-only** — no `DELETE` or `UPDATE` endpoint.
@@ -146,9 +153,13 @@ When `trust_proxy_headers=false`, the limiter keys off the raw TCP peer address 
 - `devices.fingerprint` is the enforcement key for block/link/delete.
 - `devices.device_cookie_id` is a continuity helper only; it improves matching across visits but is not the primary enforcement key.
 - gateway challenge bypass tokens are friction helpers only; they temporarily suppress repeated challenge prompts for the same request subject
+- first-party relay patterns can proxy challenge pages and verification endpoints through the protected app origin so challenge flow does not leave that application
 - `identity_links.external_user_id` (external IdP subject) is the enforcement key for identity/risk actions.
 - These two namespaces are intentionally separate — a blocked device does not auto-block the user profile, and vice versa.
+- Group parent escalation can raise device or user posture from linked child behavior, but it stays additive and threshold-based; there is no separate `ban` state and no immediate hard block path from group logic alone.
 - `UserProfile.trust_level = blocked` currently affects protected-app identity flows and `/track/activity`; anonymous tracker pageviews are not yet hard-blocked by external-user profile state.
+- Visitor blocks remain exact visitor-scoped. Group-parent posture can raise risk on the owning device or user, but a visitor block itself is not allowed to spill onto unrelated visitors or sibling devices.
+- Delete operations now perform intelligence cleanup rather than leaving stale references behind: related anomaly flags, device-bound incidents, and orphaned identity links are removed or detached, and remaining external-user profiles are recomputed after visitor/device/external-user deletion.
 - Site API keys are also governed by the runtime `integration_api_access_enabled` toggle, so operators can disable protected-app ingestion without deleting registered sites.
 - Security Center scans are safe-read oriented and now degrade per site: a single unreachable or broken target should produce an `error` scan status for that profile, not collapse the full scan run.
 - Threat-intel refresh used by Security Center is defensive against malformed upstream advisory rows; invalid entries are ignored so feed noise does not become a denial of scan visibility.

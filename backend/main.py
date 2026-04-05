@@ -1,7 +1,11 @@
+import logging
+import os
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from contextlib import asynccontextmanager
-import os
+
+_log = logging.getLogger("skynet.main")
 
 from app.core.config import settings
 from app.core.database import init_db
@@ -10,8 +14,10 @@ from app.api import api_router
 from app.middleware.rate_limit import limiter, rate_limit_exceeded_handler
 from app.middleware.access_network import AccessNetworkMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
+from app.api.routes.track import edge_router as tracker_edge_router
 from app.services.theme_assets import theme_assets_root
 from app.services.stie_runtime import start_security_runtime
+from app.services.ml.ml_task import start_ml_runtime
 from app.services.runtime_config import (
     DEFAULT_RUNTIME_SETTINGS,
     load_runtime_config,
@@ -29,12 +35,19 @@ async def lifespan(app: FastAPI):
     await _seed_runtime_settings_from_env()
     security_runtime = start_security_runtime()
     app.state.security_runtime = security_runtime
+    ml_runtime = start_ml_runtime()
+    app.state.ml_runtime = ml_runtime
     yield
     security_runtime.cancel()
+    ml_runtime.cancel()
     try:
         await security_runtime
-    except BaseException:
-        pass
+    except BaseException as exc:
+        _log.debug("security_runtime shutdown: %s", exc)
+    try:
+        await ml_runtime
+    except BaseException as exc:
+        _log.debug("ml_runtime shutdown: %s", exc)
     await close_redis()
 
 
@@ -151,6 +164,7 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(AccessNetworkMiddleware)
 
+app.include_router(tracker_edge_router)
 app.include_router(api_router)
 
 # Serve tracker script and test pages

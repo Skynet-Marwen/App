@@ -53,7 +53,13 @@ class DashboardSearchContractTests(unittest.IsolatedAsyncioTestCase):
     async def test_users_search_filters_identity_fields(self):
         session = FakeAsyncSession()
 
-        await users_route.list_users(page=1, page_size=20, search="alice", db=session, _=SimpleNamespace(id="operator-1"))
+        await users_route.list_users(
+            page=1,
+            page_size=20,
+            search="alice",
+            db=session,
+            current=SimpleNamespace(id="operator-1", tenant_id=None),
+        )
 
         self.assertEqual(len(session.scalar_queries), 1)
         self.assertEqual(len(session.execute_queries), 1)
@@ -116,6 +122,37 @@ class DashboardSearchContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(session.execute_queries), 1)
         self.assertQueryMentions(session.scalar_queries[0], "external_user_id", "email", "display_name")
         self.assertQueryMentions(session.execute_queries[0], "external_user_id", "email", "display_name")
+
+    async def test_risk_search_ignores_orphaned_related_flags(self):
+        session = FakeAsyncSession()
+
+        await risk_route.list_risky_users(
+            search="",
+            min_score=0.0,
+            trust_level="",
+            has_flags=True,
+            page=1,
+            page_size=20,
+            db=session,
+            _=SimpleNamespace(id="operator-1"),
+        )
+
+        self.assertEqual(len(session.scalar_queries), 1)
+        self.assertEqual(len(session.execute_queries), 1)
+        self.assertQueryMentions(
+            session.scalar_queries[0],
+            "anomaly_flags",
+            "exists",
+            "related_device_id",
+            "related_visitor_id",
+        )
+        self.assertQueryMentions(
+            session.execute_queries[0],
+            "anomaly_flags",
+            "exists",
+            "related_device_id",
+            "related_visitor_id",
+        )
 
     async def test_global_search_route_returns_grouped_totals(self):
         visitor_rows = FakeExecuteResult([

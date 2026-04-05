@@ -71,7 +71,39 @@ def language_country(language: str | None) -> str | None:
     return region if len(region) == 2 and region.isalpha() else None
 
 
-def language_country_mismatch(language: str | None, geo_country_code: str | None) -> bool:
+def language_primary(language: str | None) -> str | None:
+    if not language:
+        return None
+    normalized = str(language).replace("_", "-").strip()
+    parts = [part for part in normalized.split("-") if part]
+    if not parts:
+        return None
+    primary = parts[0].lower()
+    return primary if len(primary) in (2, 3) and primary.isalpha() else None
+
+
+def _allowed_languages_for_country(geo_country_code: str | None, config: dict | None = None) -> set[str]:
+    code = str(geo_country_code or "").strip().upper()
+    if not code:
+        return set()
+    raw = (config or {}).get("language_mismatch_allowed_languages_by_country") or {}
+    if not isinstance(raw, dict):
+        return set()
+    values = raw.get(code) or []
+    if not isinstance(values, list):
+        return set()
+    return {
+        str(value or "").strip().lower()
+        for value in values
+        if str(value or "").strip()
+    }
+
+
+def language_country_mismatch(language: str | None, geo_country_code: str | None, config: dict | None = None) -> bool:
+    allowed_languages = _allowed_languages_for_country(geo_country_code, config)
+    primary = language_primary(language)
+    if primary and primary in allowed_languages:
+        return False
     lang_country = language_country(language)
     if not lang_country or not geo_country_code:
         return False

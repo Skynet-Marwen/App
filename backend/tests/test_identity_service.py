@@ -6,13 +6,31 @@ from datetime import datetime, timezone
 from app.models.device import Device
 from app.models.identity_link import IdentityLink
 from app.models.user_profile import UserProfile
+from app.models.visitor import Visitor
 from app.services import identity_service
 
 
+class FakeScalarResult:
+    def __init__(self, values):
+        self.values = list(values)
+
+    def all(self):
+        return list(self.values)
+
+
+class FakeExecuteResult:
+    def __init__(self, values):
+        self.values = values
+
+    def scalars(self):
+        return FakeScalarResult(self.values)
+
+
 class FakeAsyncSession:
-    def __init__(self, *, scalar_values=None, get_map=None):
+    def __init__(self, *, scalar_values=None, get_map=None, execute_values=None):
         self.scalar_values = deque(scalar_values or [])
         self.get_map = dict(get_map or {})
+        self.execute_values = deque(execute_values or [])
         self.added = []
         self.flush_count = 0
 
@@ -20,6 +38,11 @@ class FakeAsyncSession:
         if not self.scalar_values:
             raise AssertionError("Unexpected scalar() call")
         return self.scalar_values.popleft()
+
+    async def execute(self, _query):
+        if not self.execute_values:
+            raise AssertionError("Unexpected execute() call")
+        return FakeExecuteResult(self.execute_values.popleft())
 
     async def get(self, model, key):
         return self.get_map.get((model, key))
@@ -92,9 +115,17 @@ class IdentityServiceTests(unittest.IsolatedAsyncioTestCase):
             shared_user_count=0,
             last_known_platform=None,
         )
+        visitor = Visitor(
+            id="visitor-1",
+            ip="1.2.3.4",
+            device_id="device-1",
+            site_id="site-1",
+            page_views=3,
+        )
         session = FakeAsyncSession(
             scalar_values=[None],
-            get_map={(Device, "device-1"): device},
+            get_map={(Device, "device-1"): device, (Visitor, "visitor-1"): visitor},
+            execute_values=[[visitor]],
         )
 
         link, is_new = await identity_service.link_device(
@@ -111,10 +142,12 @@ class IdentityServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(link.external_user_id, "ext-user-1")
         self.assertEqual(link.id_provider, "google")
         self.assertEqual(link.fingerprint_id, "device-1")
+        self.assertEqual(link.visitor_id, "visitor-1")
         self.assertEqual(link.platform, "web")
         self.assertEqual(device.owner_user_id, "ext-user-1")
         self.assertEqual(device.shared_user_count, 0)
         self.assertEqual(device.last_known_platform, "web")
+        self.assertEqual(visitor.external_user_id, "ext-user-1")
         self.assertEqual(len(session.added), 1)
         self.assertIsInstance(session.added[0], IdentityLink)
         self.assertEqual(session.flush_count, 1)
@@ -124,18 +157,37 @@ class IdentityServiceTests(unittest.IsolatedAsyncioTestCase):
             id="link-1",
             external_user_id="ext-user-1",
             fingerprint_id="device-1",
+            visitor_id=None,
             platform="web",
             ip="1.1.1.1",
             linked_at=datetime(2026, 4, 1, 9, 0, tzinfo=timezone.utc),
             last_seen_at=datetime(2026, 4, 1, 9, 0, tzinfo=timezone.utc),
         )
-        session = FakeAsyncSession(scalar_values=[existing])
+        device = Device(
+            id="device-1",
+            fingerprint="fingerprint-1",
+            owner_user_id="ext-user-1",
+            shared_user_count=0,
+            last_known_platform="web",
+        )
+        visitor = Visitor(
+            id="visitor-1",
+            ip="8.8.8.8",
+            device_id="device-1",
+            site_id="site-1",
+            page_views=2,
+        )
+        session = FakeAsyncSession(
+            scalar_values=[existing],
+            get_map={(Device, "device-1"): device, (Visitor, "visitor-1"): visitor},
+            execute_values=[[visitor]],
+        )
 
         link, is_new = await identity_service.link_device(
             session,
             external_user_id="ext-user-1",
             fingerprint_id="device-1",
-            visitor_id=None,
+            visitor_id="visitor-1",
             platform="ios",
             ip="8.8.8.8",
             id_provider="github",
@@ -146,6 +198,8 @@ class IdentityServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(link.id_provider, "github")
         self.assertEqual(link.platform, "ios")
         self.assertEqual(link.ip, "8.8.8.8")
+        self.assertEqual(link.visitor_id, "visitor-1")
+        self.assertEqual(visitor.external_user_id, "ext-user-1")
         self.assertEqual(session.added, [])
         self.assertEqual(session.flush_count, 1)
 
@@ -174,6 +228,146 @@ class IdentityServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(json.loads(flag.evidence), {"other_user": "other-user"})
         self.assertEqual(len(session.added), 1)
         self.assertEqual(session.flush_count, 1)
+
+    async def test_link_device_propagates_to_strict_match_group_siblings(self):
+        exact = Device(
+            id="device-1",
+            fingerprint="fingerprint-1",
+            owner_user_id=None,
+            shared_user_count=0,
+            last_known_platform=None,
+            match_key="strict:v2:66323c2f",
+        )
+        sibling = Device(
+            id="device-2",
+            fingerprint="fingerprint-2",
+            owner_user_id=None,
+            shared_user_count=0,
+            last_known_platform=None,
+            match_key="strict:v2:66323c2f",
+        )
+        exact_visitor = Visitor(
+            id="visitor-1",
+            ip="1.2.3.4",
+            device_id="device-1",
+            site_id="site-1",
+            page_views=3,
+        )
+        sibling_visitor = Visitor(
+            id="visitor-2",
+            ip="1.2.3.4",
+            device_id="device-2",
+            site_id="site-1",
+            page_views=5,
+        )
+        session = FakeAsyncSession(
+            scalar_values=[None, None],
+            get_map={
+                (Device, "device-1"): exact,
+                (Device, "device-2"): sibling,
+                (Visitor, "visitor-1"): exact_visitor,
+            },
+            execute_values=[
+                [exact_visitor],
+                [sibling],
+                [sibling_visitor],
+            ],
+        )
+
+        link, is_new = await identity_service.link_device(
+            session,
+            external_user_id="mp-ss-user",
+            fingerprint_id="device-1",
+            visitor_id="visitor-1",
+            platform="web",
+            ip="1.2.3.4",
+            site_id="site-1",
+            id_provider="keycloak",
+        )
+
+        self.assertTrue(is_new)
+        self.assertEqual(link.fingerprint_id, "device-1")
+        self.assertEqual(exact.owner_user_id, "mp-ss-user")
+        self.assertEqual(sibling.owner_user_id, "mp-ss-user")
+        self.assertEqual(exact_visitor.external_user_id, "mp-ss-user")
+        self.assertEqual(sibling_visitor.external_user_id, "mp-ss-user")
+        self.assertEqual(len(session.added), 2)
+        self.assertTrue(any(isinstance(item, IdentityLink) and item.fingerprint_id == "device-2" for item in session.added))
+
+    async def test_link_device_reconciles_historical_strict_groups_for_existing_links(self):
+        current = Device(
+            id="device-1",
+            fingerprint="fingerprint-1",
+            owner_user_id=None,
+            shared_user_count=0,
+            last_known_platform=None,
+            match_key=None,
+        )
+        historical = Device(
+            id="device-old",
+            fingerprint="fingerprint-old",
+            owner_user_id="mp-ss-user",
+            shared_user_count=0,
+            last_known_platform="web",
+            match_key="strict:v2:66323c2f",
+        )
+        sibling = Device(
+            id="device-2",
+            fingerprint="fingerprint-2",
+            owner_user_id=None,
+            shared_user_count=0,
+            last_known_platform=None,
+            match_key="strict:v2:66323c2f",
+        )
+        current_visitor = Visitor(
+            id="visitor-1",
+            ip="1.2.3.4",
+            device_id="device-1",
+            site_id="site-1",
+            page_views=1,
+        )
+        sibling_visitor = Visitor(
+            id="visitor-2",
+            ip="1.2.3.4",
+            device_id="device-2",
+            site_id="site-1",
+            page_views=5,
+        )
+        session = FakeAsyncSession(
+            scalar_values=[None, sibling_visitor, None],
+            get_map={
+                (Device, "device-1"): current,
+                (Device, "device-old"): historical,
+                (Device, "device-2"): sibling,
+                (Visitor, "visitor-1"): current_visitor,
+            },
+            execute_values=[
+                [current_visitor],
+                ["device-old"],
+                [sibling],
+                [sibling_visitor],
+            ],
+        )
+
+        link, is_new = await identity_service.link_device(
+            session,
+            external_user_id="mp-ss-user",
+            fingerprint_id="device-1",
+            visitor_id="visitor-1",
+            platform="web",
+            ip="1.2.3.4",
+            site_id="site-1",
+            id_provider="keycloak",
+        )
+
+        self.assertTrue(is_new)
+        self.assertEqual(link.fingerprint_id, "device-1")
+        self.assertEqual(current.owner_user_id, "mp-ss-user")
+        self.assertEqual(sibling.owner_user_id, "mp-ss-user")
+        self.assertEqual(current_visitor.external_user_id, "mp-ss-user")
+        self.assertEqual(sibling_visitor.external_user_id, "mp-ss-user")
+        self.assertEqual(len(session.added), 2)
+        self.assertTrue(any(isinstance(item, IdentityLink) and item.fingerprint_id == "device-2" for item in session.added))
 
 
 if __name__ == "__main__":

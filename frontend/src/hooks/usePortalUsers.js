@@ -11,6 +11,7 @@ const DEFAULT_ACTIVITY_FILTERS = {
 const EMPTY_DETAIL = {
   profile: null,
   devices: [],
+  visitors: [],
   riskHistory: [],
   flags: [],
   activity: [],
@@ -89,9 +90,10 @@ export function usePortalUsers() {
     setDetailLoading(true)
     setDetailError('')
     try {
-      const [profileRes, devicesRes, riskHistoryRes, flagsRes] = await Promise.all([
+      const [profileRes, devicesRes, visitorsRes, riskHistoryRes, flagsRes] = await Promise.all([
         identityApi.profile(externalUserId),
         identityApi.devices(externalUserId),
+        identityApi.visitors(externalUserId, { limit: 24 }),
         identityApi.riskHistory(externalUserId, { limit: 24 }),
         identityApi.flags(externalUserId),
       ])
@@ -100,6 +102,7 @@ export function usePortalUsers() {
         ...current,
         profile: profileRes.data,
         devices: devicesRes.data ?? [],
+        visitors: visitorsRes.data ?? [],
         riskHistory: riskHistoryRes.data?.items ?? [],
         flags: flagsRes.data ?? [],
       }))
@@ -223,6 +226,22 @@ export function usePortalUsers() {
     return res.data
   }, [refresh, refreshDetail, selectedUser])
 
+  const deleteExternalUser = useCallback(async (
+    externalUserId = selectedUser?.external_user_id,
+  ) => {
+    if (!externalUserId) return null
+    const res = await identityApi.delete(externalUserId)
+    await refresh()
+    if (selectedUser?.external_user_id === externalUserId) {
+      setSelectedUser(null)
+      setDetail(EMPTY_DETAIL)
+      setDetailError('')
+      setActivityError('')
+      setActivityFilters(DEFAULT_ACTIVITY_FILTERS)
+    }
+    return res.data
+  }, [refresh, selectedUser])
+
   return {
     users,
     total,
@@ -256,5 +275,6 @@ export function usePortalUsers() {
     recomputeRisk,
     setEnhancedAudit,
     updateFlagStatus,
+    deleteExternalUser,
   }
 }

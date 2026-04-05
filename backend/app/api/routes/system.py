@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...core.config import settings
 from ...core.database import get_db
 from ...core.redis import get_redis
-from ...core.security import get_current_user
+from ...core.security import get_current_user, require_superadmin_user
 from ...models.audit_log import AuditLog
 from ...models.site import Site
 from ...models.theme import Theme
@@ -25,7 +25,7 @@ router = APIRouter(prefix="/system", tags=["system"])
 
 
 @router.get("/info")
-async def system_info():
+async def system_info(_: User = Depends(get_current_user)):
     return {
         "app":        settings.APP_VERSION,
         "api":        "v1",
@@ -135,7 +135,7 @@ async def diagnostics(
 async def reload_runtime(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: User = Depends(require_superadmin_user),
 ):
     await load_runtime_config(db)
     log_action(
@@ -154,7 +154,7 @@ async def reload_runtime(
 async def reset_onboarding(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: User = Depends(require_superadmin_user),
 ):
     await update_runtime_settings(
         db,

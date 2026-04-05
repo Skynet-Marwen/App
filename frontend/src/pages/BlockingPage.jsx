@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Shield, Plus, Trash2, Search, Globe, Monitor, User } from 'lucide-react'
+import { Shield, Plus, Trash2, Search, Globe, Monitor, User, Ban, Activity } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
-import { Card, CardHeader, Table, Badge, Button, Input, Modal, Select, Alert, Pagination, PageToolbar, SegmentedTabs } from '../components/ui/index'
+import { Card, CardHeader, Table, Badge, Button, Input, Modal, Select, Alert, Pagination, PageToolbar, SegmentedTabs, StatCard } from '../components/ui/index'
 import { useBlocking } from '../hooks/useBlocking'
 
 const RULE_TYPES = [
@@ -106,20 +106,15 @@ export default function BlockingPage() {
     )},
   ]
 
+  const totalHits = rules.reduce((a, r) => a + (r.hits ?? 0), 0)
+
   return (
     <DashboardLayout title="Blocking" onRefresh={refresh}>
-      {/* Stats */}
-      <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {[
-          { label: 'Active Rules', value: rules.length, color: 'text-cyan-400' },
-          { label: 'Blocked IPs', value: ipTotal, color: 'text-red-400' },
-          { label: 'Total Hits Today', value: rules.reduce((a, r) => a + (r.hits ?? 0), 0), color: 'text-yellow-400' },
-        ].map((s) => (
-          <Card key={s.label}>
-            <p className="text-xs text-gray-500 mb-1">{s.label}</p>
-            <p className={`text-2xl font-bold ${s.color}`}>{s.value.toLocaleString()}</p>
-          </Card>
-        ))}
+      {/* Stat strip */}
+      <div className="grid grid-cols-3 gap-1">
+        <StatCard label="Active Rules" rawValue={rules.length} value={rules.length.toLocaleString()} icon={Shield} color="cyan" loading={loading} nano />
+        <StatCard label="Blocked IPs" rawValue={ipTotal} value={ipTotal.toLocaleString()} icon={Ban} color="red" loading={loading} nano />
+        <StatCard label="Hits Today" rawValue={totalHits} value={totalHits.toLocaleString()} icon={Activity} color="yellow" loading={loading} nano />
       </div>
 
       {/* Tabs */}
@@ -152,7 +147,7 @@ export default function BlockingPage() {
                 placeholder="Search IP..."
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setIpPage(1) }}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500"
+                className="w-full rounded-lg border border-cyan-500/15 bg-black/60 pl-9 pr-3 py-2 text-sm text-white placeholder-gray-500 focus:border-cyan-500/60 focus:outline-none"
               />
             </div>
             <div className="flex flex-wrap items-center gap-3 xl:justify-end">

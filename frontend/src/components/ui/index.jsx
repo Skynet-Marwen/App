@@ -2,6 +2,22 @@ import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 export { Alert, EmptyState, Spinner } from './extras'
 
+function expandModalWidth(width) {
+  const widthMap = {
+    'max-w-sm': 'max-w-xl',
+    'max-w-md': 'max-w-2xl',
+    'max-w-lg': 'max-w-4xl',
+    'max-w-xl': 'max-w-5xl',
+    'max-w-2xl': 'max-w-6xl',
+    'max-w-3xl': 'max-w-7xl',
+    'max-w-4xl': 'max-w-[92vw]',
+    'max-w-5xl': 'max-w-[94vw]',
+    'max-w-6xl': 'max-w-[95vw]',
+    'max-w-7xl': 'max-w-[96vw]',
+  }
+  return widthMap[width] || width
+}
+
 // ─── Card ─────────────────────────────────────────────────────────────────────
 export function Card({ children, className = '' }) {
   return (
@@ -13,7 +29,7 @@ export function Card({ children, className = '' }) {
       <span className="absolute top-0 right-0 w-3 h-3 border-t border-r border-cyan-500/40 z-10 pointer-events-none" />
       <span className="absolute bottom-0 left-0 w-3 h-3 border-b border-l border-cyan-500/40 z-10 pointer-events-none" />
       <span className="absolute bottom-0 right-0 w-3 h-3 border-b border-r border-cyan-500/40 z-10 pointer-events-none" />
-      <div className="relative z-[1] p-4 sm:p-5 xl:p-6">{children}</div>
+      <div className="relative z-[1] h-full p-4 sm:p-5 xl:p-6">{children}</div>
     </div>
   )
 }
@@ -37,7 +53,7 @@ const COLORS = {
   blue:   { t: 'text-blue-400',   bg: 'bg-blue-400/10',   b: 'border-blue-500/25' },
 }
 
-export function StatCard({ label, value, rawValue, change, icon: Icon, color = 'cyan', loading }) {
+export function StatCard({ label, value, rawValue, change, icon: Icon, color = 'cyan', loading, compact = false, nano = false }) {
   const [displayed, setDisplayed] = useState(0)
 
   useEffect(() => {
@@ -57,35 +73,42 @@ export function StatCard({ label, value, rawValue, change, icon: Icon, color = '
   const C = COLORS[color]
   const isPositive = typeof change === 'number' ? change >= 0 : null
   const displayStr = typeof rawValue === 'number' && !loading ? displayed.toLocaleString() : value
+  const shellClassName = nano ? 'min-h-[2.1rem]' : compact ? 'min-h-[4.4rem]' : ''
+  const bodyClassName = nano ? 'p-2 gap-2' : compact ? 'p-3 gap-3' : 'p-4'
+  const labelClassName = nano ? 'text-[8px] tracking-[0.14em]' : compact ? 'mb-0.5 text-[9px] tracking-[0.16em]' : 'mb-1 text-[10px] tracking-[0.18em]'
+  const valueClassName = nano ? 'text-sm leading-none' : compact ? 'text-lg' : 'text-2xl'
+  const changeClassName = nano ? 'text-[8px]' : compact ? 'mt-0.5 text-[9px]' : 'mt-1 text-[10px]'
+  const iconWrapClassName = nano ? 'p-1' : compact ? 'p-1.5' : 'p-2'
+  const iconSize = nano ? 11 : compact ? 14 : 16
 
   return (
-    <div className={`relative overflow-hidden rounded-xl border ${C.b}`}
+    <div className={`relative overflow-hidden rounded-lg border ${C.b} ${shellClassName}`}
       style={{ background: 'rgba(0,0,0,0.62)', backdropFilter: 'blur(10px)' }}>
       <div className="absolute inset-0 pointer-events-none"
         style={{ backgroundImage: 'repeating-linear-gradient(0deg,rgba(255,255,255,0.018) 0px,rgba(255,255,255,0.018) 1px,transparent 1px,transparent 4px)' }} />
-      <span className="absolute top-0 left-0 w-2.5 h-2.5 border-t border-l border-cyan-500/60" />
-      <span className="absolute top-0 right-0 w-2.5 h-2.5 border-t border-r border-cyan-500/60" />
-      <span className="absolute bottom-0 left-0 w-2.5 h-2.5 border-b border-l border-cyan-500/60" />
-      <span className="absolute bottom-0 right-0 w-2.5 h-2.5 border-b border-r border-cyan-500/60" />
-      <div className="relative p-4 flex items-start justify-between z-[1]">
+      <span className="absolute top-0 left-0 w-2 h-2 border-t border-l border-cyan-500/60" />
+      <span className="absolute top-0 right-0 w-2 h-2 border-t border-r border-cyan-500/60" />
+      <span className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-cyan-500/60" />
+      <span className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-cyan-500/60" />
+      <div className={`relative z-[1] flex items-center justify-between ${bodyClassName}`}>
         <div>
-          <p className="text-[10px] text-gray-500 mb-1 uppercase tracking-[0.18em] font-mono">{label}</p>
+          <p className={`font-mono uppercase text-gray-500 ${labelClassName}`}>{label}</p>
           {loading ? (
-            <div className="h-7 w-20 bg-gray-800/60 rounded animate-pulse" />
+            <div className={`${nano ? 'h-4 w-12' : compact ? 'h-6 w-16' : 'h-7 w-20'} rounded bg-gray-800/60 animate-pulse`} />
           ) : (
-            <p key={displayStr} className={`text-2xl font-bold font-mono ${C.t} animate-count-slide`}>
+            <p key={displayStr} className={`${valueClassName} font-mono font-bold ${C.t} animate-count-slide`}>
               {displayStr}
             </p>
           )}
-          {change !== undefined && !loading && (
-            <p className={`text-[10px] mt-1 font-mono ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
+          {change !== undefined && !loading && !nano && (
+            <p className={`font-mono ${changeClassName} ${isPositive ? 'text-green-400' : 'text-red-400'}`}>
               {isPositive ? '▲' : '▼'} {Math.abs(change)}%
             </p>
           )}
         </div>
         {Icon && (
-          <div className={`p-2 rounded-lg ${C.bg} border ${C.b} flex-shrink-0`}>
-            <Icon size={16} className={C.t} />
+          <div className={`${iconWrapClassName} rounded-md ${C.bg} border ${C.b} flex-shrink-0`}>
+            <Icon size={iconSize} className={C.t} />
           </div>
         )}
       </div>
@@ -238,14 +261,30 @@ export function Modal({
   bodyClassName = '',
   fullHeight = false,
 }) {
+  useEffect(() => {
+    if (!open) return undefined
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onClose?.()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [open, onClose])
+
   if (!open) return null
+  const expandedWidth = expandModalWidth(width)
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto p-3 sm:p-4 lg:p-6">
-      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
-      <div className={`relative min-h-full flex justify-center ${fullHeight ? 'items-stretch' : 'items-center'}`}>
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onMouseDown={onClose} />
+      <div
+        className={`relative min-h-full flex justify-center ${fullHeight ? 'items-stretch' : 'items-center'}`}
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) onClose?.()
+        }}
+      >
         <div
-          className={`relative w-full ${width} flex flex-col overflow-hidden rounded-2xl border border-cyan-500/15 shadow-2xl ${fullHeight ? 'h-[calc(100dvh-1.5rem)] sm:h-[calc(100dvh-2rem)] lg:h-[calc(100dvh-3rem)]' : 'max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)]'} ${panelClassName}`}
+          className={`relative w-full ${expandedWidth} flex flex-col overflow-hidden rounded-2xl border border-cyan-500/15 shadow-2xl ${fullHeight ? 'h-[calc(100dvh-1.5rem)] sm:h-[calc(100dvh-2rem)] lg:h-[calc(100dvh-3rem)]' : 'max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)]'} ${panelClassName}`}
           style={{ background: 'var(--theme-panel)', borderColor: 'var(--theme-panel-border)', boxShadow: '0 20px 48px rgba(0, 0, 0, 0.35)', backdropFilter: 'blur(16px)' }}
+          onMouseDown={(event) => event.stopPropagation()}
         >
           <span className="absolute top-0 left-0 w-4 h-4 border-t border-l border-cyan-500/50 rounded-tl-2xl" />
           <span className="absolute top-0 right-0 w-4 h-4 border-t border-r border-cyan-500/50 rounded-tr-2xl" />
@@ -274,8 +313,8 @@ export function Input({ label, error, className = '', ...props }) {
   return (
     <div className="space-y-1.5">
       {label && <label className="block text-xs text-gray-500 font-mono uppercase tracking-wider">{label}</label>}
-      <input
-        className={`w-full border rounded-lg px-3 py-2 text-sm text-gray-200 font-mono placeholder-gray-600 focus:outline-none focus:border-cyan-500/60 transition ${error ? 'border-red-500/50' : 'border-cyan-500/15'} ${className}`}
+      <input 
+        className={`w-full border rounded-lg px-3 py-2 text-sm text-gray-200 font-mono placeholder-gray-600 focus:outline-none focus:border-cyan-500/60 hover:border-cyan-500/30 transition ${error ? 'border-red-500/50' : 'border-cyan-500/15'} ${className}`}
         style={{ background: 'rgba(0,0,0,0.6)' }}
         {...props}
       />

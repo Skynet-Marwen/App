@@ -26,6 +26,7 @@ class Visitor(Base):
     page_views: Mapped[int] = mapped_column(Integer, default=0)
     site_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("sites.id", ondelete="SET NULL"), nullable=True)
     linked_user: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    external_user_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     device_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("devices.id", ondelete="SET NULL"), nullable=True)
     first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

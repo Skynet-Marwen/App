@@ -15,7 +15,12 @@ async def get_db() -> AsyncSession:
         yield session
 
 
-# DB schema is managed by Alembic migrations.
-# Run `alembic upgrade head` before starting the app (done in Dockerfile CMD).
-async def init_db():
-    pass
+async def init_db() -> None:
+    """Intentional no-op.
+
+    DB schema is managed exclusively by Alembic migrations.
+    The Dockerfile CMD runs ``alembic upgrade head`` before starting the app,
+    so there is nothing to do here at application startup.
+    This function exists as a hook in case future startup-time DB work is needed
+    (e.g., seeding lookup tables) without requiring changes to callers.
+    """

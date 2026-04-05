@@ -176,8 +176,12 @@ async def create_user(
     )
 
     from ...services.email import send_welcome_email
+    from ...services.password_reset import generate_reset_token
 
     if _settings.get("smtp_enabled") and user.email:
+        base = (_settings.get("base_url") or "").rstrip("/")
+        reset_token = await generate_reset_token(user.id)
+        reset_link = f"{base}/reset-password?token={reset_token}"
         background_tasks.add_task(
             send_welcome_email,
             to=user.email,
@@ -185,8 +189,9 @@ async def create_user(
             password=body.password,
             role=user.role,
             actor=current.username,
-            login_url=(_settings.get("base_url") or "").rstrip("/") + "/login",
+            login_url=base + "/login",
             instance_name=_settings.get("instance_name", "SkyNet"),
+            reset_link=reset_link,
         )
 
     return {"id": user.id, "message": "Created"}

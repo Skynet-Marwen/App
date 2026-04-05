@@ -9,7 +9,13 @@
 
 ## Action Log
 
-[2026-04-02 01:10] feat(identity+alerts): shipped multi-IdP JWT validation (`idp_providers` + issuer-based selection), tracker behavior snapshots with low-entropy scoring, Redis sliding-window spam detection, and high-severity incident email/webhook notifications; updated Settings Auth/Notifications surfaces and synced docs — Agent: Codex
+[2026-04-05 16:00] fix(identity): v1.7.4 — 4 identity model fixes: (1) _sync_external_user_visitors retroactive attribution eliminated via linked_at timestamp guard; (2) risk_engine tor_vpn modifier now queries Incident table (VPN_DETECTED/PROXY_DETECTED/WEBRTC_VPN_BYPASS) instead of risk_score>=100 heuristic; (3) devices.py POST /{id}/link now dual-writes IdentityLink when external_user_id provided; (4) anti_evasion multi-account count uses COALESCE(external_user_id, linked_user) covering IdP-only deployments; APP_VERSION→1.7.4 — Agent: Claude Sonnet 4.6
+[2026-04-05 14:00] fix(functional): v1.7.3 — 5 confirmed runtime bugs fixed: (1) track.py NameError on identity_service module ref; (2) risk_engine.py UserProfile not created on first recompute; (3) anti_evasion._safe_run silently swallowed detection failures; (4) ML inference except:pass→log.warning; (5) stats.py unique_users double-count fixed with set union deduplication — Agent: Claude Sonnet 4.6
+[2026-04-05 12:00] fix(audit): v1.7.2 — 4 silent-exception fixes: track.py UA parse, stats.py heatmap+blocking_chart+gateway_dashboard, main.py asyncio shutdown; commented console.log debug leak in snippets.jsx; APP_VERSION→1.7.2; CHANGELOG+DEV_PLAN updated — Agent: Claude Sonnet 4.6
+[2026-04-04 12:00] security(rbac+webhook): v1.7.1 — patched 12 route files (system, audit, anti_evasion, blocking, integration, settings_smtp, settings_https, settings_geoip, settings_notifications, settings_integrations, settings_storage, settings) with correct `require_admin_user`/`require_superadmin_user` guards; migrated webhook_secret → webhook_secret_enc (Fernet); fixed init_db docstring; bumped APP_VERSION 1.7.1; updated CHANGELOG, SECURITY, DEV_PLAN — Agent: Claude Sonnet 4.6
+[2026-04-04 00:30] fix(email): split email.py → email.py + email_templates.py (300-line rule); all three email types (welcome, admin-reset, forgot-reset) now inject configured smtp_from_email (e.g. mr.robot@skynet.tn) into both the From header and the email body (header line + footer) — Agent: Claude Sonnet 4.6
+[2026-04-04 00:00] feat(auth+email): added self-service password reset (Redis token, 24h TTL), public endpoints POST /auth/forgot-password + POST /auth/reset-password + GET /auth/smtp-status; updated welcome email with confidentiality clause + 24h reset link; added Forgot Password UI on LoginPage (SMTP-gated) and ResetPasswordPage — Agent: Claude Sonnet 4.6
+[2026-04-03 12:00] feat(tenants+notifications+deploy): committed and pushed tenant management, notification delivery system, deployment tooling, Mouwaten integration docs, and UI improvements; updated CHANGELOG.md and DEV_PLAN.md — Agent: GitHub Copilot
 [2026-04-02 00:40] feat(experience): shipped coordinated UX batch — topbar global search (`GET /api/v1/search`), Overview → Visitors drill-down, Visitors saved presets + bulk block/export, and Settings feature-status summary cards; updated search/filter backend contracts and docs — Agent: Codex
 [2026-04-02 00:00] feat(theme-engine): added backend theme registry, per-user theme selection, default-theme resolution, admin theme CRUD, logo upload/remove, and runtime theme application with safe fallback — Agent: Codex
 [2026-04-02 00:10] feat(settings): reorganized Settings into 9 desktop-friendly domains (Security & Detection, Access & Network, Authentication & Identity, UI / Theme Engine, Data & Storage, Integrations, Notifications & Messaging, Blocking & Response, System & Debug) — Agent: Codex
@@ -205,3 +211,36 @@ checkpoint_20260331_224647
 [2026-03-31 23:55] CHECKPOINT: checkpoint_20260331_235534 created (images tagged + DB dump)
 [2026-04-01 00:04] CLEAN: pruned old checkpoints, kept last 5
 [2026-04-01 00:05] CHECKPOINT: checkpoint_20260401_000504 created (images tagged + DB dump)
+[2026-04-04 08:48] CLEAN: pruned old checkpoints, kept last 5
+[2026-04-04 08:48] CHECKPOINT: checkpoint_20260404_084829 created (images tagged + DB dump)
+[2026-04-04 08:51] DEPLOY FAILED: health check failed — rollback available at [0;36m[INFO][0m  Creating checkpoint: checkpoint_20260404_084829
+[0;32m[OK][0m    Tagged skynet-backend:checkpoint_20260404_084829
+[0;32m[OK][0m    Tagged skynet-frontend:checkpoint_20260404_084829
+[0;36m[INFO][0m  Dumping database → backups/db_20260404_084829.sql
+[0;32m[OK][0m    DB dump saved: backups/db_20260404_084829.sql
+[0;32m[OK][0m    Checkpoint checkpoint_20260404_084829 ready
+checkpoint_20260404_084829
+[2026-04-05 00:22] CHECKPOINT: checkpoint_20260405_002244 created (images tagged + DB dump)
+[2026-04-05 00:28] DEPLOY FAILED: health check failed — rollback available at [0;36m[INFO][0m  Creating checkpoint: checkpoint_20260405_002244
+[0;32m[OK][0m    Tagged skynet-backend:checkpoint_20260405_002244
+[0;32m[OK][0m    Tagged skynet-frontend:checkpoint_20260405_002244
+[0;36m[INFO][0m  Dumping database → backups/db_20260405_002244.sql
+[0;32m[OK][0m    DB dump saved: backups/db_20260405_002244.sql
+[0;32m[OK][0m    Checkpoint checkpoint_20260405_002244 ready
+checkpoint_20260405_002244
+[2026-04-05 00:36] CHECKPOINT: checkpoint_20260405_003651 created (images tagged + DB dump)
+[2026-04-05 00:41] DEPLOY FAILED: health check failed — rollback available at [0;36m[INFO][0m  Creating checkpoint: checkpoint_20260405_003651
+[0;32m[OK][0m    Tagged skynet-backend:checkpoint_20260405_003651
+[0;32m[OK][0m    Tagged skynet-frontend:checkpoint_20260405_003651
+[0;36m[INFO][0m  Dumping database → backups/db_20260405_003651.sql
+[0;32m[OK][0m    DB dump saved: backups/db_20260405_003651.sql
+[0;32m[OK][0m    Checkpoint checkpoint_20260405_003651 ready
+checkpoint_20260405_003651
+[2026-04-05 09:10] CHECKPOINT: checkpoint_20260405_091048 created (images tagged + DB dump)
+[2026-04-05 09:16] DEPLOY FAILED: health check failed — rollback available at [0;36m[INFO][0m  Creating checkpoint: checkpoint_20260405_091048
+[0;32m[OK][0m    Tagged skynet-backend:checkpoint_20260405_091048
+[0;32m[OK][0m    Tagged skynet-frontend:checkpoint_20260405_091048
+[0;36m[INFO][0m  Dumping database → backups/db_20260405_091048.sql
+[0;32m[OK][0m    DB dump saved: backups/db_20260405_091048.sql
+[0;32m[OK][0m    Checkpoint checkpoint_20260405_091048 ready
+checkpoint_20260405_091048

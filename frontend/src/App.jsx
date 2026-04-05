@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './store/useAppStore'
 import { useThemeStore } from './store/themeStore'
 import LoginPage from './pages/LoginPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
 import OverviewPage from './pages/OverviewPage'
 import VisitorsPage from './pages/VisitorsPage'
 import PortalUsersPage from './pages/PortalUsersPage'
@@ -64,6 +65,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/" element={<ProtectedRoute><OverviewPage /></ProtectedRoute>} />
         <Route path="/visitors" element={<ProtectedRoute><VisitorsPage /></ProtectedRoute>} />
         <Route path="/users" element={<ProtectedRoute><PortalUsersPage /></ProtectedRoute>} />

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_, outerjoin, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from ...core.database import get_db
-from ...core.security import get_current_user
+from ...core.security import get_current_user, require_admin_user
 from ...models.audit_log import AuditLog
 from ...models.user import User
 from ...services.audit import parse_extra
@@ -20,7 +20,7 @@ async def list_audit_logs(
     target_id: str = Query(""),
     search: str = Query(""),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_admin_user),
 ):
     audit_join = outerjoin(AuditLog, User, User.id == AuditLog.actor_id)
     filters = []

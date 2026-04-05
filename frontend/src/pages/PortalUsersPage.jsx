@@ -9,6 +9,7 @@ import {
   Search,
   ShieldAlert,
   ShieldCheck,
+  Trash2,
   Users,
 } from 'lucide-react'
 import {
@@ -33,6 +34,7 @@ import {
   Select,
   Table,
 } from '../components/ui/index'
+import TrackingSignalsSummary from '../components/ui/TrackingSignalsSummary'
 import { usePortalUsers } from '../hooks/usePortalUsers'
 import {
   buildPortalUserDetailBundle,
@@ -183,10 +185,12 @@ export default function PortalUsersPage() {
     recomputeRisk,
     setEnhancedAudit,
     updateFlagStatus,
+    deleteExternalUser,
   } = usePortalUsers()
 
   const [actionError, setActionError] = useState('')
   const [busyAction, setBusyAction] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const selectedProfile = detail.profile || selectedUser
   const riskHistoryData = [...detail.riskHistory]
@@ -259,6 +263,20 @@ export default function PortalUsersPage() {
     }
   }
 
+  const handleDeleteExternalUser = async () => {
+    if (!selectedUser?.external_user_id) return
+    setActionError('')
+    setBusyAction(`delete:${selectedUser.external_user_id}`)
+    try {
+      await deleteExternalUser(selectedUser.external_user_id)
+      setConfirmDelete(false)
+    } catch (err) {
+      setActionError(err?.response?.data?.detail?.message || err?.response?.data?.detail || 'Failed to delete portal user intelligence profile')
+    } finally {
+      setBusyAction('')
+    }
+  }
+
   const resetFilters = () => {
     setSearch('')
     setMinScore('0')
@@ -304,6 +322,7 @@ export default function PortalUsersPage() {
       const bundle = buildPortalUserDetailBundle({
         profile: selectedProfile,
         devices: detail.devices,
+        visitors: detail.visitors,
         riskHistory: detail.riskHistory,
         activity: detail.activity,
         flags: detail.flags,
@@ -549,8 +568,8 @@ export default function PortalUsersPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-            <div className="space-y-4 xl:col-span-1">
+          <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[minmax(22rem,0.95fr)_minmax(22rem,0.95fr)_minmax(34rem,1.3fr)]">
+            <div className="space-y-4">
               <SectionPanel
                 kicker="Profile"
                 title={selectedProfile?.display_name || selectedProfile?.email || 'Portal user'}
@@ -592,6 +611,12 @@ export default function PortalUsersPage() {
                     ))}
                   </div>
 
+                  <TrackingSignalsSummary
+                    summary={selectedProfile?.tracking_signals}
+                    title="Tracking & Blocker Signals"
+                    emptyMessage="No adblock, DNS-filter, or ISP-resolution incidents are attached to this portal user yet."
+                  />
+
                   <div className="flex flex-col gap-2 sm:flex-row">
                     <Button
                       className="flex-1"
@@ -611,12 +636,23 @@ export default function PortalUsersPage() {
                     </Button>
                   </div>
 
+                  <Button
+                    variant="danger"
+                    icon={Trash2}
+                    loading={busyAction === `delete:${selectedUser?.external_user_id}`}
+                    onClick={() => setConfirmDelete(true)}
+                  >
+                    Delete External User
+                  </Button>
+
                   {detailLoading && (
                     <p className="text-xs font-mono text-gray-500">Refreshing profile intelligence...</p>
                   )}
                 </div>
               </SectionPanel>
+            </div>
 
+            <div className="space-y-4">
               <SectionPanel
                 kicker="Devices"
                 title={`Linked Devices (${detail.devices.length})`}
@@ -625,7 +661,7 @@ export default function PortalUsersPage() {
                 {detail.devices.length === 0 ? (
                   <p className="text-sm text-gray-500">No linked devices have been recorded yet.</p>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="grid grid-cols-1 gap-3">
                     {detail.devices.map((device) => (
                       <div key={device.id} className="rounded-xl border border-cyan-500/10 bg-black/20 p-3">
                         <div className="flex flex-wrap items-center gap-2">
@@ -637,6 +673,51 @@ export default function PortalUsersPage() {
                           <p>Linked: <span className="text-gray-200">{fmtShortDateTime(device.linked_at)}</span></p>
                           <p className="sm:col-span-2">Last seen: <span className="text-gray-200">{fmtShortDateTime(device.last_seen_at)}</span></p>
                         </div>
+                        <div className="mt-3">
+                          <TrackingSignalsSummary
+                            summary={device.tracking_signals}
+                            title="Device Signals"
+                            compact
+                            emptyMessage="No blocker-related incidents on this linked device."
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </SectionPanel>
+
+              <SectionPanel
+                kicker="Visitors"
+                title={`Tracked Visitors (${detail.visitors?.length || 0})`}
+                action={<Users size={15} className="text-cyan-400" />}
+              >
+                {!detail.visitors || detail.visitors.length === 0 ? (
+                  <p className="text-sm text-gray-500">No tracked visitor records have been linked to this portal user yet.</p>
+                ) : (
+                  <div className="grid grid-cols-1 gap-3">
+                    {detail.visitors.map((visitor) => (
+                      <div key={visitor.id} className="rounded-xl border border-cyan-500/10 bg-black/20 p-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="info">{visitor.status || 'active'}</Badge>
+                          <p className="font-mono text-xs text-cyan-300">{truncateMiddle(visitor.id, 12, 8)}</p>
+                        </div>
+                        <div className="mt-2 grid grid-cols-1 gap-2 text-xs text-gray-400 sm:grid-cols-2">
+                          <p>IP: <span className="text-gray-200">{visitor.ip || '—'}</span></p>
+                          <p>Country: <span className="text-gray-200">{visitor.country_flag ? `${visitor.country_flag} ${visitor.country || '—'}` : visitor.country || '—'}</span></p>
+                          <p>Browser: <span className="text-gray-200">{visitor.browser || '—'}</span></p>
+                          <p>OS: <span className="text-gray-200">{visitor.os || '—'}</span></p>
+                          <p>Page views: <span className="text-gray-200">{visitor.page_views ?? 0}</span></p>
+                          <p>Last seen: <span className="text-gray-200">{fmtShortDateTime(visitor.last_seen)}</span></p>
+                        </div>
+                        <div className="mt-3">
+                          <TrackingSignalsSummary
+                            summary={visitor.tracking_signals}
+                            title="Visitor Signals"
+                            compact
+                            emptyMessage="No blocker-related incidents on this visitor."
+                          />
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -644,7 +725,7 @@ export default function PortalUsersPage() {
               </SectionPanel>
             </div>
 
-            <div className="space-y-4 xl:col-span-2">
+            <div className="space-y-4">
               <SectionPanel
                 kicker="Risk History"
                 title="Composite Risk Timeline"
@@ -870,6 +951,22 @@ export default function PortalUsersPage() {
                 )}
               </SectionPanel>
             </div>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={confirmDelete} onClose={() => setConfirmDelete(false)} title="Delete External User">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-400">
+            Permanently delete portal user intelligence for <code className="text-cyan-400">{selectedProfile?.email || selectedProfile?.external_user_id}</code>?
+            <br />
+            <span className="text-red-400">This removes the external user profile, linked intelligence records, flags, risk history, activity timeline, and stored user-to-device links.</span>
+          </p>
+          <div className="flex gap-2 justify-end">
+            <Button variant="secondary" onClick={() => setConfirmDelete(false)}>Cancel</Button>
+            <Button variant="danger" icon={Trash2} loading={busyAction === `delete:${selectedUser?.external_user_id}`} onClick={handleDeleteExternalUser}>
+              Delete
+            </Button>
           </div>
         </div>
       </Modal>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { devicesApi, usersApi } from '../services/api'
+import { devicesApi, usersApi, visitorsApi } from '../services/api'
 
 export function useDevices() {
   const location = useLocation()
@@ -74,8 +74,15 @@ export function useDevices() {
   }, [refresh])
 
   const deleteDevice = useCallback(async (deviceId) => {
-    await devicesApi.delete(deviceId)
+    const res = await devicesApi.delete(deviceId)
     await refresh()
+    return res.data
+  }, [refresh])
+
+  const deleteDeviceVisitor = useCallback(async (visitorId) => {
+    const res = await visitorsApi.delete(visitorId)
+    await refresh()
+    return res.data
   }, [refresh])
 
   return {
@@ -96,5 +103,6 @@ export function useDevices() {
     blockDevice,
     unblockDevice,
     deleteDevice,
+    deleteDeviceVisitor,
   }
 }

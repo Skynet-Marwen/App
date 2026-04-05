@@ -7,7 +7,7 @@ Routes: PUT  /settings/smtp          — save config (password encrypted at rest
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from ...core.database import get_db
-from ...core.security import get_current_user
+from ...core.security import get_current_user, require_superadmin_user
 from ...models.user import User
 from ...services.audit import log_action, request_ip
 from ...services.email import encrypt_password, decrypt_password, send_test_email
@@ -35,7 +35,7 @@ async def update_smtp(
     data: dict,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: User = Depends(require_superadmin_user),
 ):
     for key in _SMTP_KEYS:
         if key in data:
@@ -53,7 +53,7 @@ async def update_smtp(
 
 
 @router.post("/smtp/test")
-async def test_smtp(data: dict, _: User = Depends(get_current_user)):
+async def test_smtp(data: dict, _: User = Depends(require_superadmin_user)):
     """Connect + send test email using provided values. Nothing is saved."""
     missing = {"host", "port", "from_email", "to_email"} - data.keys()
     if missing:
@@ -84,12 +84,9 @@ async def test_smtp(data: dict, _: User = Depends(get_current_user)):
 async def reveal_smtp_password(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: User = Depends(require_superadmin_user),
 ):
-    """Return decrypted SMTP password. Restricted to admin.
-    TODO: restrict to owner role once RBAC is implemented."""
-    if current.role not in ("admin", "superadmin"):
-        raise HTTPException(403, "Insufficient privileges")
+    """Return decrypted SMTP password. Restricted to superadmin."""
     enc = _settings.get("smtp_password_enc", "")
     if not enc:
         raise HTTPException(404, "No SMTP password stored")

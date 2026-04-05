@@ -1,6 +1,6 @@
 # SkyNet — Deployment System
 
-> Last updated: 2026-04-02
+> Last updated: 2026-04-05
 
 ## Design Proposal
 
@@ -164,6 +164,18 @@ local SMB sync -> ssh to Synology -> docker compose pull/build/up -> /api/health
 - Native Python deployments are designed for `systemd` first; non-systemd process managers should use `restart_strategy: command`.
 - Theme logo delivery now rides on `/api/v1/themes/{id}/logo`, so public edges only need `/api/` forwarded to the backend; no extra static `theme-assets` path is required.
 
+## Public Edge Notes
+
+- Public tracker deployments should forward both legacy tracker paths and the blocker-resistant edge paths to the backend:
+  - `/tracker/*`
+  - `/api/v1/track/*`
+  - `/ads.js`
+  - `/s/*`
+  - `/w/*`
+- Protected apps that use a first-party relay pattern, such as Mouwaten, may instead keep tracker, challenge, and authenticated activity flows on their own origin and forward to SkyNet server-side.
+- Site API keys are public integration identifiers. If an app wants to hide them from the browser entirely, that must be done by the app-side relay rather than by changing SkyNet operator secrets.
+- The same-origin `/ads.js` route is used only to classify browser-level blocker behavior. DNS/network filtering is still inferred separately from the remote ad-domain probe.
+
 ## Post-Deploy Smoke Checklist
 
 Run these after every production deploy:
@@ -173,3 +185,5 @@ Run these after every production deploy:
 3. Trigger a manual Security Center rescan and confirm the UI either reports success or lists per-site scan errors instead of a generic failure.
 4. Confirm realtime HUD updates through websocket or polling fallback.
 5. Confirm operator list counts active devices from live sessions instead of a fixed zero.
+6. If blocker-resistant tracking is enabled, confirm `GET /s/<site_key>.js` returns JavaScript, `GET /ads.js` returns JavaScript on the same origin, and `POST /w/<site_key>/p` reaches the backend successfully.
+7. If you plan to enforce browser-side blocker actions, validate at least these scenarios on production-like browsers: clean browser, DNS filter only, extension-only blocker, and extension + DNS filter together.

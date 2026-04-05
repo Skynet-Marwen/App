@@ -39,6 +39,7 @@ export default function VisitorsPage() {
     blockVisitors,
     unblockVisitor,
     deleteVisitor,
+    loadVisitor,
     pageSize,
   } = useVisitors({ page, search })
   const selectedPreset = presets.find((preset) => preset.id === selectedPresetId) || null
@@ -195,6 +196,15 @@ export default function VisitorsPage() {
     },
   ]
 
+  const openVisitorDetail = async (visitor) => {
+    try {
+      const exact = await loadVisitor(visitor.id)
+      setSelected(exact)
+    } catch {
+      setSelected(visitor)
+    }
+  }
+
   return (
     <DashboardLayout title="Visitors" onRefresh={refresh}>
       <Card>
@@ -256,7 +266,7 @@ export default function VisitorsPage() {
           data={visitors}
           loading={loading}
           emptyMessage="No visitors found"
-          onRowClick={setSelected}
+          onRowClick={openVisitorDetail}
         />
         <Pagination page={page} total={total} pageSize={pageSize} onChange={setPage} />
       </Card>

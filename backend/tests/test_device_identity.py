@@ -6,6 +6,9 @@ from app.services.device_identity import (
     MATCH_VERSION,
     apply_device_match,
     build_match_key,
+    extract_device_model_from_user_agent,
+    infer_device_descriptor,
+    infer_group_descriptor,
     group_devices,
     normalize_language,
     update_device_metadata,
@@ -119,10 +122,50 @@ class DeviceIdentityTests(unittest.TestCase):
         self.assertEqual(strict_group["fingerprint_count"], 2)
         self.assertEqual(strict_group["status"], "mixed")
         self.assertEqual(strict_group["match_label"], "Same Device (Cross-Browser)")
-        self.assertEqual(strict_group["match_evidence"], ["matched screen + timezone + language"])
+        self.assertEqual(strict_group["match_evidence"], ["matched device profile + timezone + language"])
         self.assertEqual(exact_group["fingerprint_count"], 1)
         self.assertEqual(exact_group["match_key"], None)
         self.assertEqual(exact_group["match_label"], "Exact Only")
+
+    def test_apply_device_match_groups_mobile_browsers_with_different_viewports(self):
+        firefox = make_device(
+            browser="Firefox Mobile 149.0",
+            os="Android 15",
+            type="mobile",
+            screen_resolution="456x1013",
+            language="fr-FR",
+            timezone="Africa/Tunis",
+            webgl_hash=None,
+        )
+        chrome = make_device(
+            id="device-2",
+            fingerprint="fp-2",
+            browser="Chrome Mobile 146.0.0",
+            os="Android 10",
+            type="mobile",
+            screen_resolution="412x915",
+            language="fr-FR",
+            timezone="Africa/Tunis",
+            webgl_hash=None,
+        )
+        facebook = make_device(
+            id="device-3",
+            fingerprint="fp-3",
+            browser="Facebook 554.0.0",
+            os="Android 15",
+            type="desktop",
+            screen_resolution="412x915",
+            language="fr-FR",
+            timezone="Africa/Tunis",
+            webgl_hash=None,
+        )
+
+        apply_device_match(firefox)
+        apply_device_match(chrome)
+        apply_device_match(facebook)
+
+        self.assertEqual(firefox.match_key, chrome.match_key)
+        self.assertEqual(chrome.match_key, facebook.match_key)
 
     def test_group_devices_adds_probable_mobile_group_for_same_phone_signals(self):
         now = datetime(2026, 3, 30, 12, 0, tzinfo=timezone.utc)
@@ -330,6 +373,68 @@ class DeviceIdentityTests(unittest.TestCase):
         self.assertEqual({device["id"] for device in probable_groups[0]["devices"]}, {"device-a", "device-b"})
         self.assertEqual(len(exact_groups), 1)
         self.assertEqual(exact_groups[0]["devices"][0]["id"], "device-c")
+
+    def test_extract_device_model_from_android_user_agent(self):
+        model = extract_device_model_from_user_agent(
+            "Mozilla/5.0 (Linux; Android 15; SM-G998B Build/AP3A.240905.015.A2; wv) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/146.0.7680.164 Mobile Safari/537.36"
+        )
+        self.assertEqual(model, "SM-G998B")
+
+    def test_infer_device_descriptor_prefers_probable_model_name(self):
+        device = make_device(
+            os="Android 15",
+            type="mobile",
+            screen_resolution="412x915",
+        )
+        visitors = [
+            make_visitor(
+                os="Android 15",
+                device_type="mobile",
+                user_agent=(
+                    "Mozilla/5.0 (Linux; Android 15; SM-G998B Build/AP3A.240905.015.A2; wv) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/146.0.7680.164 Mobile Safari/537.36"
+                ),
+            ),
+        ]
+
+        descriptor = infer_device_descriptor(device, visitors)
+
+        self.assertEqual(descriptor["probable_model"], "SM-G998B")
+        self.assertEqual(descriptor["probable_vendor"], "Samsung")
+        self.assertIn("Galaxy S21 Ultra", descriptor["display_name"] or "")
+
+    def test_infer_group_descriptor_uses_shared_model_across_linked_visitors(self):
+        first = make_device(id="device-1", os="Android 15", type="mobile", screen_resolution="412x915")
+        second = make_device(id="device-2", os="Android 15", type="mobile", screen_resolution="456x1013")
+        visitors_by_device = {
+            "device-1": [
+                make_visitor(
+                    device_id="device-1",
+                    device_type="mobile",
+                    user_agent=(
+                        "Mozilla/5.0 (Linux; Android 15; SM-G998B Build/AP3A.240905.015.A2; wv) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/146.0.7680.164 Mobile Safari/537.36"
+                    ),
+                )
+            ],
+            "device-2": [
+                make_visitor(
+                    device_id="device-2",
+                    device_type="mobile",
+                    user_agent=(
+                        "Mozilla/5.0 (Linux; Android 15; SM-G998B Build/AP3A.240905.015.A2) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36"
+                    ),
+                )
+            ],
+        }
+
+        descriptor = infer_group_descriptor([first, second], visitors_by_device)
+
+        self.assertEqual(descriptor["probable_model"], "SM-G998B")
+        self.assertEqual(descriptor["probable_vendor"], "Samsung")
+        self.assertIn("Galaxy S21 Ultra", descriptor["display_name"] or "")
 
 
 if __name__ == "__main__":

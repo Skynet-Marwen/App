@@ -9,7 +9,7 @@ Protected by:
 import json
 import uuid
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,18 +19,25 @@ from ...models.user import User
 from ...models.identity_link import IdentityLink
 from ...models.user_profile import UserProfile
 from ...models.anomaly_flag import AnomalyFlag
+from ...models.visitor import Visitor
 from ...schemas.identity import (
     LinkIdentityRequest, LinkIdentityResponse,
     UserProfileOut, AnomalyFlagOut, EnhancedAuditRequest, UpdateFlagRequest,
 )
 from ...services.jwks_validator import validate_external_token, extract_bearer
 from ...services import identity_service, risk_engine
+from ...services.group_escalation import recompute_device_parent_posture, recompute_user_parent_posture
 from ...services.audit import log_action, request_ip
+from ...services.intelligence_cleanup import delete_external_user_graph, reconcile_external_profiles
 from ...services.keycloak_admin import sync_keycloak_users
 from ...services.runtime_config import runtime_settings, save_runtime_settings_cache
+from ...services.tracking_visibility import (
+    get_devices_tracking_summary_map,
+    get_external_user_tracking_summary,
+    get_visitors_tracking_summary_map,
+)
 from ...core.geoip import lookup as geoip_lookup
 from ...core.ip_utils import get_client_ip
-from fastapi import Request
 
 router = APIRouter(prefix="/identity", tags=["identity"])
 
@@ -95,17 +102,37 @@ async def link_identity(
         visitor_id=None,
         platform=body.platform,
         ip=ip,
+        site_id=body.site_id,
         id_provider=id_provider,
     )
+    profile.total_devices = await identity_service.count_user_devices(db, external_user_id)
 
     # Multi-account detection
     flag = await identity_service.detect_multi_account(db, external_user_id, body.fingerprint_id)
 
     # Recompute risk
     trigger = "new_device" if is_new else "login"
-    _, new_score, trust_level = await risk_engine.recompute(
-        db, external_user_id, trigger_type=trigger,
-        trigger_detail={"fingerprint_id": body.fingerprint_id, "platform": body.platform},
+    if body.fingerprint_id:
+        await recompute_device_parent_posture(
+            db,
+            body.fingerprint_id,
+            site_id=body.site_id,
+            trigger_context={
+                "trigger_type": trigger,
+                "source": "identity.link",
+                "external_user_id": external_user_id,
+            },
+        )
+    _, new_score, trust_level = await recompute_user_parent_posture(
+        db,
+        external_user_id,
+        trigger_context={
+            "trigger_type": trigger,
+            "source": "identity.link",
+            "fingerprint_id": body.fingerprint_id,
+            "platform": body.platform,
+            "multi_account_flag": flag.flag_type if flag else None,
+        },
     )
 
     risk_action = risk_engine.enforcement_action(new_score)
@@ -139,7 +166,67 @@ async def get_profile(
     )
     if not profile:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Profile not found"})
-    return _profile_out(profile)
+    device_ids = (
+        await db.execute(
+            select(IdentityLink.fingerprint_id).where(
+                IdentityLink.external_user_id == external_user_id,
+                IdentityLink.fingerprint_id.isnot(None),
+            )
+        )
+    ).scalars().all()
+    visitor_ips = (
+        await db.execute(
+            select(Visitor.ip).where(
+                Visitor.external_user_id == external_user_id,
+                Visitor.ip.isnot(None),
+            )
+        )
+    ).scalars().all()
+    return {
+        **_profile_out(profile),
+        "tracking_signals": await get_external_user_tracking_summary(
+            db,
+            external_user_id,
+            device_ids=list({device_id for device_id in device_ids if device_id}),
+            visitor_ips=list({ip for ip in visitor_ips if ip}),
+        ),
+    }
+
+
+@router.delete("/{external_user_id}")
+async def delete_external_user(
+    external_user_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    if not is_admin_user(current):
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Admin role required"})
+
+    deleted, affected_external_user_ids = await delete_external_user_graph(db, external_user_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Profile not found"})
+
+    await reconcile_external_profiles(
+        db,
+        affected_external_user_ids,
+        trigger_type="delete_external_user",
+        source="identity.delete",
+        target_id=external_user_id,
+    )
+    log_action(
+        db,
+        action="DELETE_EXTERNAL_USER",
+        actor_id=current.id,
+        target_type="user_profile",
+        target_id=external_user_id,
+        ip=request_ip(request),
+    )
+    await db.commit()
+    return {
+        "message": "Deleted",
+        "affected_external_user_ids": sorted(affected_external_user_ids),
+    }
 
 
 # ── GET /identity/{external_user_id}/devices ──────────────────────────────────
@@ -152,9 +239,14 @@ async def get_user_devices(
 ):
     links = (
         await db.execute(
-            select(IdentityLink).where(IdentityLink.external_user_id == external_user_id)
+            select(IdentityLink).where(
+                IdentityLink.external_user_id == external_user_id,
+                IdentityLink.fingerprint_id.isnot(None),
+            )
         )
     ).scalars().all()
+    device_ids = [link.fingerprint_id for link in links if link.fingerprint_id]
+    tracking_summaries = await get_devices_tracking_summary_map(db, device_ids)
     return [
         {
             "id": lk.id,
@@ -163,8 +255,45 @@ async def get_user_devices(
             "ip": lk.ip,
             "linked_at": _fmt_dt(lk.linked_at),
             "last_seen_at": _fmt_dt(lk.last_seen_at),
+            "tracking_signals": tracking_summaries.get(lk.fingerprint_id),
         }
         for lk in links
+    ]
+
+
+@router.get("/{external_user_id}/visitors")
+async def get_user_visitors(
+    external_user_id: str,
+    limit: int = Query(50, le=200),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    visitors = (
+        await db.execute(
+            select(Visitor)
+            .where(Visitor.external_user_id == external_user_id)
+            .order_by(Visitor.last_seen.desc())
+            .limit(limit)
+        )
+    ).scalars().all()
+    tracking_summaries = await get_visitors_tracking_summary_map(db, visitors)
+    return [
+        {
+            "id": visitor.id,
+            "site_id": visitor.site_id,
+            "device_id": visitor.device_id,
+            "ip": visitor.ip,
+            "country": visitor.country,
+            "country_flag": visitor.country_flag,
+            "browser": visitor.browser,
+            "os": visitor.os,
+            "page_views": visitor.page_views,
+            "status": visitor.status,
+            "first_seen": _fmt_dt(visitor.first_seen),
+            "last_seen": _fmt_dt(visitor.last_seen),
+            "tracking_signals": tracking_summaries.get(visitor.id),
+        }
+        for visitor in visitors
     ]
 
 

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.database import get_db
-from ...core.security import get_current_user
+from ...core.security import get_current_user, require_superadmin_user
 from ...models.user import User
 from ...schemas.https_settings import SelfSignedCertificateRequest
 from ...services.audit import log_action, request_ip
@@ -26,7 +26,7 @@ async def upload_https_certificate(
     private_key: UploadFile = File(...),
     chain: UploadFile | None = File(default=None),
     db: AsyncSession = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: User = Depends(require_superadmin_user),
 ):
     try:
         uploaded = save_uploaded_certificate(
@@ -59,7 +59,7 @@ async def create_self_signed_certificate(
     body: SelfSignedCertificateRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: User = Depends(require_superadmin_user),
 ):
     try:
         created = generate_self_signed_certificate(body.common_name, body.valid_days)

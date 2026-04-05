@@ -9,13 +9,122 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+---
+
+## [1.7.4] - 2026-04-05
+
+### Fixed
+- **`identity_service._sync_external_user_visitors`** — retroactive anonymous visitor attribution eliminated. The `should_claim_all` fast-path (sole-owner device) now only claims Visitor records with `first_seen >= linked_at`, preventing historical anonymous sessions created before the user linked from being attributed to that user. The current-session visitor is still claimed explicitly as before.
+- **`risk_engine.recompute` — `tor_vpn` modifier no longer fires on any device with `risk_score == 100`**. Replaced the `device.risk_score >= 100` heuristic with a targeted query for open `VPN_DETECTED`, `PROXY_DETECTED`, or `WEBRTC_VPN_BYPASS` incidents on the user's linked devices. Devices that accumulated 100 risk points through unrelated signals (e.g., headless + IP rotation + DNSBL) no longer incorrectly trigger the +0.40 VPN modifier.
+- **`devices.py POST /{device_id}/link`** — admin link endpoint now also writes to `IdentityLink` when the request body includes `external_user_id`. Legacy `Device.linked_user` write is preserved for backward compatibility; the new `external_user_id` field is optional. Reconciles the admin dashboard path with the tracker-authenticated path.
+- **`anti_evasion._apply_multi_account_risk`** — multi-account detection now counts both `Visitor.linked_user` and `Visitor.external_user_id` as user identifiers via `COALESCE(external_user_id, linked_user)`. Deployments using only Keycloak IdP authentication (where `linked_user` is always NULL) previously saw zero multi-account signals; this is now correctly detected.
+
+---
+
+## [1.7.3] - 2026-04-05
+
+### Fixed
+- **`track.py` — NameError crash on `POST /track/activity`**: `identity_service` was referenced as a module at lines 967/977 but only `upsert_profile` was imported. Every authenticated activity event with a device payload raised `NameError: name 'identity_service' is not defined`. Fixed by importing `identity_service` as a module alongside the existing function import.
+- **`risk_engine.py` — UserProfile never created on first risk computation**: When `recompute()` ran for an `external_user_id` with no existing `UserProfile` row, the score was computed and `RiskEvent`/`AnomalyFlag` rows were persisted, but the `UserProfile` itself was silently skipped. The score was lost on every recompute. Fixed by creating the `UserProfile` row when the `if profile:` branch is not taken.
+- **`anti_evasion.py` — `_safe_run` silently discards all detection failures**: Any exception in `_run_pageview_checks`, `_run_event_checks`, or `_run_identify_checks` (DB error, Redis drop, schema mismatch) was swallowed with no log, leaving threat detection silently disabled. Fixed: exception now logged at `ERROR` level with full traceback.
+- **`anti_evasion.py` — ML anomaly inference failures fully invisible**: `except Exception: pass` in the ML scoring block meant the `ml_anomaly_detection` feature flag could be enabled while the inference was permanently broken (missing model, import error, corrupt `.pkl`) with zero operator visibility. Fixed: exception now logged at `WARNING` level with `exc_info=True`.
+- **`stats.py` — `unique_users` double-counted users with both `Visitor.linked_user` and `UserProfile`**: The previous implementation summed `COUNT(DISTINCT Visitor.linked_user)` and `COUNT(DISTINCT UserProfile.external_user_id)` independently, inflating the count for every user who appeared in both tables (standard Mouwaten integration). Fixed by fetching both ID sets and computing the union size in Python, ensuring exact deduplication. Same fix applied to the previous-period comparison used for `users_change`.
+
+---
+
+## [1.7.2] - 2026-04-05
+
+### Fixed
+- `track.py`: `parse_user_agent()` silent `except: pass` → `_log.debug(...)` — user-agent parse failures are now visible in logs without breaking the request.
+- `stats.py`: 3 silent `except Exception:` blocks in `GET /stats/overview` (traffic heatmap, blocking chart, gateway dashboard) → `_log.warning(..., exc_info=True)` — operators can now diagnose empty stats panels.
+- `main.py`: asyncio background task shutdown (`security_runtime`, `ml_runtime`) now logs the cancellation/exception at DEBUG level instead of swallowing it silently.
+- `snippets.jsx`: commented out live `console.log('SkyNet identity verdict', ...)` from integration code snippet — avoids leaking identity verdict data to browser devtools in production integrations.
+
+---
+
+## [1.7.1] - 2026-04-04
+
+### Changed
+- Browser-side adblock detection now challenges the browser with a real same-origin `<script src="/ads.js?...">` probe instead of relying on `fetch`, which should better distinguish extension-style blocking from DNS/network filtering.
+- Public deployment docs now explicitly require forwarding `/ads.js` alongside `/s/*`, `/w/*`, `/tracker/*`, and `/api/*` when browsers talk directly to SkyNet.
+- `LANGUAGE_MISMATCH` is now country-aware instead of strictly requiring locale-region equality with GeoIP country. The default anti-evasion config allows Tunisia (`TN`) to use `ar`, `fr`, or `en` without raising a mismatch incident.
+
+### Notes
+- `adblocker_detection` remains opt-in until the new script-tag probe is revalidated on production browsers. `dns_filter_detection` can remain enabled independently.
+
+---
+
+## [1.7.1] - 2026-04-04
+
+### Security
+- **RBAC hardening**: all high-impact operator routes now enforce the correct privilege level. Settings write/maintenance endpoints require `superadmin`; blocking, audit, anti-evasion config, and integration management require `admin`. `GET /system/info` now requires authentication (previously public).
+- **Webhook secret encryption**: `webhook_secret` migrated to `webhook_secret_enc` (Fernet-encrypted, same pattern as SMTP/SIEM secrets). `GET /api/v1/settings` returns a masked placeholder; `PUT /api/v1/settings` encrypts on write; `incident_notifications` decrypts at runtime. Operators must re-enter the webhook secret via the UI after upgrading.
+
+### Fixed
+- `init_db()` in `database.py` now carries a docstring explaining it is an intentional no-op (Alembic manages schema migrations via `alembic upgrade head` in the Dockerfile CMD).
+- Removed stale `TODO: restrict to owner role once RBAC is implemented` comment from `settings_smtp.py` — RBAC is now implemented.
+
+---
+
+## [1.7.0] - 2026-04-04
+
+### Added
+- ML-based anomaly detection: Isolation Forest model trained on healthy devices (risk_score < 30), providing an additive risk modifier (max +15 points) alongside existing heuristics. Disabled by default via `feature_flags.ml_anomaly_detection`; enable after 7 days of production traffic.
+- WebRTC leak detection in tracker (`skynet.js`): `detectWebRTCLeak()` probe uses RTCPeerConnection ICE candidates to detect VPN/proxy bypasses. Sends only derived boolean/count signals (no raw IPs). Backend emits `WEBRTC_VPN_BYPASS` incident with +35 risk points; controlled via `webrtc_leak_detection` anti-evasion config (enabled by default).
+- New ML service package `backend/app/services/ml/` with `feature_extractor.py` (27-feature vector), `anomaly_detector.py` (IsolationForest wrapper, atomic persistence), and `ml_task.py` (24h retraining loop).
+- `start_ml_runtime()` background task registered in FastAPI lifespan alongside existing security runtime.
+
+### Changed
+- Tenant account management with host mapping, theme defaults, and operator assignment
+- Notification delivery system with SMTP integration and webhook testing
+- Lightweight deployment tool (`skynet deploy`) for Docker and Python targets
+- Mouwaten integration documentation and external JWT validation
+- UI visibility controls and theme widget curation
+- New API routes for tenants, notifications, integrations, and storage operations
+- Backend-only group parent escalation for visitor -> device -> user risk roll-up, with runtime-configurable windows and weights
+- Admin-side deletion for external-user intelligence profiles via `DELETE /api/v1/identity/{external_user_id}`
+- Blocker-resistant tracker entrypoints `/s/{site_key}.js` and `/w/{site_key}/*`
+- Same-origin protected-app relay pattern for tracker bootstrapping, challenge flow, identity linking, and authenticated activity forwarding
+- Data & Storage destructive operations for tracker-scoped data wipe and superadmin fresh-install reinitialization
+- Tracker-side blocker probes for browser-side ad/tracker filtering, remote DNS-filter heuristics, and JS-runtime integrity signals
+- Anti-evasion runtime controls for adblocker detection, DNS-filter suspicion, and unresolved ISP/provider incidents
+
 ### Changed
 - Settings now uses a compact sticky in-page sub-navigation bar that stays pinned under the header instead of treating section selectors like a secondary dashboard
 - Settings feature-status summary cards, coverage cards, capability chips, and roadmap/planning surfaces are now consistently hidden outside Developer Mode for a cleaner operator-facing configuration experience
 - Shared cards, stat surfaces, previews, and modal panels now use flatter professional styling instead of glow-heavy effects
+- Overview now uses a denser operator-first layout: compact stat tiles, a much shorter traffic heatmap, a lightweight Threat Hotspots ranking view instead of the animated 3D globe, and fixed-height analyst cards with internal scrolling so same-row cards stay aligned
+- Risk recompute flows now run through the parent-escalation orchestrator on identity link, tracking activity, tracker writes, and anti-evasion user updates when the feature is enabled
+- SkyNet and Mouwaten integration docs now describe the live same-origin relay path, blocker-resistant tracker loading, local challenge proxy flow, DNSBL soft-fail behavior, and the current enhanced-audit semantics consistently
+- Visitor, device, and external-user deletion now trigger intelligence cleanup and profile recompute instead of leaving stale Portal User Intelligence indicators behind
+- Visitor attribution now prefers exact device continuity over broad shared-IP reuse, reducing cross-visitor mixing on cafes, schools, and other shared networks
+- Browser/device classification heuristics were tightened so desktop browsers are less likely to be mislabeled as mobile
+- Portal User Intelligence now backfills linked visitors from device ownership and strict sibling-device groups more consistently
+- Settings -> Data & Storage now exposes tracker-level data deletion and a typed-confirmation fresh-install reset alongside retention/archive tooling
+- Priority Investigations on the overview dashboard now open an in-place investigation modal with incident evidence plus resolved visitor, device, and portal-user context
+- Devices grouping now infers probable hardware naming from linked visitor/device signals, so grouped devices can render as probable model/vendor names instead of browser-name summaries
+- Mouwaten now treats SkyNet tracker readiness as mandatory when protection enforcement is active, blocking app use if the tracker relay never becomes ready
+- Visitor, device, and Portal User Intelligence detail views now surface adblock, DNS-filter, and ISP-resolution signal summaries instead of hiding those detections inside anti-evasion incidents only
+- Shared modal windows now open at roughly 2x the original width on desktop and the dense visitor/device/portal-user detail views have been reorganized into wider multi-column layouts with outside-click and `Esc` dismissal
 
 ### Fixed
 - `npm run lint` now passes again across the frontend after cleanup of empty catch blocks, unused JSX render variables, the notification-delivery hook dependency warning, and Vite config Node globals
+- Mouwaten integration now keeps tracker, challenge, and authenticated activity flows on the protected app origin instead of forcing the browser onto cross-origin SkyNet paths
+- Portal User Intelligence no longer shows dangling null-device identity links as linked devices, and the device detail view now supports direct visitor deletion with immediate refresh
+- Blocker-sensitive browser flows no longer depend on exposing cross-origin SkyNet tracking endpoints or the raw site key in protected-app bootstrap config
+- Overview `Recent incidents`, `Priority Investigations`, and open-flag rollups now ignore orphaned device/user/visitor intelligence rows after entity deletion, and delete flows now purge leftover orphan incidents/flags from the database
+
+---
+
+## [1.7.0] - 2026-04-04
+
+### Added
+- ML anomaly detection: Isolation Forest (scikit-learn) trained on healthy devices (risk_score < 30), 27-feature vector per device, 24h async retraining loop, additive risk modifier (+0–15), stored in `data/ml_models/anomaly_model.pkl`. Controlled by `feature_flags.ml_anomaly_detection` (default `false`).
+- WebRTC leak detection in tracker: `detectWebRTCLeak()` probe using RTCPeerConnection + STUN, 2s timeout. Detects VPN/proxy IP bypass via ICE candidate analysis. Sends only boolean/count signals — no raw IP addresses. Backend `_check_webrtc_leak()` emits `WEBRTC_VPN_BYPASS` incident (+35 risk). Controlled by `webrtc_leak_detection` anti-evasion config (default `true`).
+- New `backend/app/services/ml/` package: `feature_extractor.py`, `anomaly_detector.py`, `ml_task.py`.
+- `start_ml_runtime()` asyncio task registered in FastAPI lifespan.
+- `numpy==1.26.4`, `scikit-learn==1.4.2`, `joblib==1.4.2` added to `requirements.txt`.
+- Unit tests: `test_ml_feature_extractor.py`, `test_webrtc_leak.py`.
 
 ---
 
@@ -198,8 +307,8 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - `frontend/src/hooks/`: added `useOverview`, `useVisitors`, `useUsers`, `useUserSessions`, `useDevices`, `useBlocking`, `useAntiEvasion`, `useSettings`, `useSites`, `useAuditLogs`
 - `backend/app/services/sanitize.py`: centralized `bleach`-backed sanitization helpers for stored user-supplied text
 - `backend/app/services/anti_evasion.py`: async in-process anti-evasion checks for pageviews/events/identify flows
-- `DELETE /api/v1/devices/{id}` — permanently deletes a device; nullifies `events.device_id` and `incidents.device_id` (plain-string columns, no DB FK); linked visitors auto-unlinked via DB FK `ondelete=SET NULL`
-- `DELETE /api/v1/visitors/{id}` — permanently deletes a visitor and all their events; linked device is preserved but unlinked via DB FK `ondelete=SET NULL`
+- `DELETE /api/v1/devices/{id}` — initial exact-device delete endpoint (later hardened on the unreleased branch to clean related intelligence graphs and recompute affected external-user profiles)
+- `DELETE /api/v1/visitors/{id}` — initial visitor delete endpoint (later hardened on the unreleased branch to clean related intelligence graphs and prune orphaned devices when appropriate)
 - `frontend/src/pages/DevicesPage.jsx`: Delete button (trash icon) per row + confirmation modal with impact warning
 - `frontend/src/pages/VisitorsPage.jsx`: Delete button (trash icon) per row + confirmation modal with impact warning
 - `frontend/src/services/api.js`: added `devicesApi.delete(id)` and `visitorsApi.delete(id)`

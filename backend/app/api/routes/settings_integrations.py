@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.database import get_db
-from ...core.security import get_current_user
+from ...core.security import get_current_user, require_admin_user, require_superadmin_user
 from ...models.notification_delivery import NotificationDelivery
 from ...models.site import Site
 from ...models.threat_intel import ThreatIntel
@@ -82,7 +82,7 @@ async def test_connector(
     data: dict,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: User = Depends(require_admin_user),
 ):
     connector = clean_text(str(data.get("connector", ""))).lower()
     if connector not in {"siem", "monitoring"}:
@@ -137,7 +137,7 @@ async def test_connector(
 async def refresh_integrations_threat_intel(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: User = Depends(require_superadmin_user),
 ):
     updated = await refresh_threat_intel(db, force=True)
     log_action(

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { CheckCircle, Radar, Settings2, ShieldAlert } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
-import { Alert, Badge, Button, Card, CardHeader, Input, PageToolbar, Select, StatCard, Table, Toggle } from '../components/ui/index'
+import { Alert, Badge, Button, Card, CardHeader, Input, Select, StatCard, Table, Toggle } from '../components/ui/index'
 import { useAntiEvasion } from '../hooks/useAntiEvasion'
 
 export default function AntiEvasionPage() {
@@ -57,6 +57,9 @@ export default function AntiEvasionPage() {
     { key: 'tor_detection', label: 'Tor Detection', description: 'Detect Tor exit nodes' },
     { key: 'proxy_detection', label: 'Proxy Detection', description: 'HTTP/SOCKS proxy detection' },
     { key: 'datacenter_detection', label: 'Datacenter Detection', description: 'Flag traffic from datacenters/cloud IPs' },
+    { key: 'adblocker_detection', label: 'Adblock / uBlock / AdGuard Signals', description: 'Use DOM and same-origin bait probes to detect browser-side filtering.' },
+    { key: 'dns_filter_detection', label: 'DNS Ad-Block Filter Signals', description: 'Use remote ad-domain probes to flag DNS/network-level filtering heuristically.' },
+    { key: 'isp_resolution_detection', label: 'ISP Resolution Checks', description: 'Flag sessions where GeoIP cannot resolve a stable ISP/provider label.' },
     { key: 'headless_browser_detection', label: 'Headless Browser', description: 'Detect Puppeteer, Playwright, PhantomJS' },
     { key: 'bot_detection', label: 'Bot Detection', description: 'Behavioral analysis for bots and crawlers' },
   ]
@@ -70,7 +73,7 @@ export default function AntiEvasionPage() {
 
   const EVASION = [
     { key: 'timezone_mismatch', label: 'Timezone Mismatch', description: 'Flag when timezone doesn\'t match IP geolocation' },
-    { key: 'language_mismatch', label: 'Language Mismatch', description: 'Flag when browser language contradicts geolocation' },
+    { key: 'language_mismatch', label: 'Language Mismatch', description: 'Flag when browser language looks unusual for the visitor country after local allowances are applied' },
     { key: 'cookie_evasion', label: 'Cookie Evasion Detection', description: 'Detect private browsing / cookie deletion patterns' },
     { key: 'ip_rotation_detection', label: 'IP Rotation Detection', description: 'Detect rapid IP changes from same device' },
   ]
@@ -85,26 +88,16 @@ export default function AntiEvasionPage() {
 
   return (
     <DashboardLayout title="Anti-Evasion & Anti-Spam" onRefresh={refresh}>
-      <PageToolbar>
-        <div className="space-y-2">
-          <p className="text-[10px] font-mono uppercase tracking-[0.28em] text-cyan-400/80">Protection Controls</p>
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white">Anti-evasion console</h1>
-            <Badge variant={openIncidents.length ? 'danger' : 'success'}>{openIncidents.length ? `${openIncidents.length} open incident${openIncidents.length === 1 ? '' : 's'}` : 'All clear'}</Badge>
-          </div>
-          <p className="max-w-3xl text-sm text-gray-400">
-            Tune detection modules, fingerprinting, and abuse thresholds from a single operator view. Save commits the current runtime configuration immediately.
-          </p>
+      {/* Stat strip + save action */}
+      <div className="flex items-center gap-1">
+        <div className="grid flex-1 grid-cols-3 gap-1">
+          <StatCard label="Open incidents" rawValue={openIncidents.length} value={openIncidents.length.toLocaleString()} icon={ShieldAlert} color="red" loading={loading} nano />
+          <StatCard label="Resolved" rawValue={resolvedIncidents} value={resolvedIncidents.toLocaleString()} icon={CheckCircle} color="green" loading={loading} nano />
+          <StatCard label="Active detections" rawValue={activeDetections} value={activeDetections.toLocaleString()} icon={Radar} color="cyan" loading={loading} nano />
         </div>
-        <Button loading={saving} onClick={handleSave} icon={saved ? CheckCircle : Settings2}>
-          {saved ? 'Saved!' : 'Save configuration'}
+        <Button loading={saving} onClick={handleSave} icon={saved ? CheckCircle : Settings2} className="shrink-0">
+          {saved ? 'Saved!' : 'Save'}
         </Button>
-      </PageToolbar>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <StatCard label="Open incidents" value={openIncidents.length.toLocaleString()} rawValue={openIncidents.length} icon={ShieldAlert} color="red" loading={loading} />
-        <StatCard label="Resolved incidents" value={resolvedIncidents.toLocaleString()} rawValue={resolvedIncidents} icon={CheckCircle} color="green" loading={loading} />
-        <StatCard label="Active detections" value={activeDetections.toLocaleString()} rawValue={activeDetections} icon={Radar} color="cyan" loading={loading} />
       </div>
 
       {openCritical > 0 && (
@@ -113,8 +106,8 @@ export default function AntiEvasionPage() {
         </Alert>
       )}
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_0.9fr]">
-        <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-2 xl:grid-cols-[1.2fr_0.9fr]">
+        <div className="space-y-2">
           <Card>
             <CardHeader>
               <p className="text-sm font-medium text-white">Detection modules</p>
@@ -170,7 +163,7 @@ export default function AntiEvasionPage() {
           </Card>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-2">
           <Card>
             <CardHeader>
               <p className="text-sm font-medium text-white">Active pipeline</p>
@@ -300,6 +293,41 @@ export default function AntiEvasionPage() {
                   { value: 'block', label: 'Block listed IPs' },
                 ]}
               />
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <Select
+                  label="Adblocker Action"
+                  value={config.adblocker_action || 'flag'}
+                  onChange={(event) => setConfig({ ...config, adblocker_action: event.target.value })}
+                  options={[
+                    { value: 'observe', label: 'Observe' },
+                    { value: 'flag', label: 'Flag' },
+                    { value: 'challenge', label: 'Challenge' },
+                    { value: 'block', label: 'Block' },
+                  ]}
+                />
+                <Select
+                  label="DNS Filter Action"
+                  value={config.dns_filter_action || 'flag'}
+                  onChange={(event) => setConfig({ ...config, dns_filter_action: event.target.value })}
+                  options={[
+                    { value: 'observe', label: 'Observe' },
+                    { value: 'flag', label: 'Flag' },
+                    { value: 'challenge', label: 'Challenge' },
+                    { value: 'block', label: 'Block' },
+                  ]}
+                />
+                <Select
+                  label="ISP Unresolved Action"
+                  value={config.isp_unresolved_action || 'observe'}
+                  onChange={(event) => setConfig({ ...config, isp_unresolved_action: event.target.value })}
+                  options={[
+                    { value: 'observe', label: 'Observe' },
+                    { value: 'flag', label: 'Flag' },
+                    { value: 'challenge', label: 'Challenge' },
+                    { value: 'block', label: 'Block' },
+                  ]}
+                />
+              </div>
               <Input
                 label="DNSBL Providers"
                 value={Array.isArray(config.dnsbl_providers) ? config.dnsbl_providers.join(', ') : (config.dnsbl_providers || '')}

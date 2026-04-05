@@ -202,6 +202,15 @@ class SettingsPersistenceTests(unittest.IsolatedAsyncioTestCase):
             {
                 "spam_rate_threshold": 25,
                 "max_accounts_per_device": 4,
+                "adblocker_detection": True,
+                "adblocker_action": "challenge",
+                "dns_filter_detection": True,
+                "dns_filter_action": "flag",
+                "isp_resolution_detection": True,
+                "isp_unresolved_action": "observe",
+                "language_mismatch_allowed_languages_by_country": {"TN": ["ar", "fr", "en"], "MA": ["ar", "fr"]},
+                "dnsbl_soft_fail_country_codes": ["TN", "MA"],
+                "dnsbl_soft_fail_risk_points": 6,
                 "unknown_flag": True,
             },
         )
@@ -209,8 +218,21 @@ class SettingsPersistenceTests(unittest.IsolatedAsyncioTestCase):
         stored = session.get_map[(RuntimeConfig, 1)]
         self.assertEqual(config["spam_rate_threshold"], 25)
         self.assertEqual(config["max_accounts_per_device"], 4)
+        self.assertTrue(config["adblocker_detection"])
+        self.assertEqual(config["adblocker_action"], "challenge")
+        self.assertTrue(config["dns_filter_detection"])
+        self.assertEqual(config["dns_filter_action"], "flag")
+        self.assertTrue(config["isp_resolution_detection"])
+        self.assertEqual(config["isp_unresolved_action"], "observe")
+        self.assertEqual(config["language_mismatch_allowed_languages_by_country"], {"TN": ["ar", "fr", "en"], "MA": ["ar", "fr"]})
+        self.assertEqual(config["dnsbl_soft_fail_country_codes"], ["TN", "MA"])
+        self.assertEqual(config["dnsbl_soft_fail_risk_points"], 6)
         self.assertNotIn("unknown_flag", config)
         self.assertEqual(stored.anti_evasion_config["spam_rate_threshold"], 25)
+        self.assertTrue(stored.anti_evasion_config["adblocker_detection"])
+        self.assertEqual(stored.anti_evasion_config["dns_filter_action"], "flag")
+        self.assertEqual(stored.anti_evasion_config["language_mismatch_allowed_languages_by_country"], {"TN": ["ar", "fr", "en"], "MA": ["ar", "fr"]})
+        self.assertEqual(stored.anti_evasion_config["dnsbl_soft_fail_country_codes"], ["TN", "MA"])
 
         config["spam_rate_threshold"] = 99
         self.assertEqual(anti_evasion_config.get_anti_evasion_config()["spam_rate_threshold"], 25)
@@ -234,6 +256,39 @@ class SettingsPersistenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stored.runtime_settings["event_retention_days"], 30)
         self.assertEqual(stored.runtime_settings["visitor_retention_days"], 45)
         self.assertEqual(runtime_config.runtime_settings()["event_retention_days"], 30)
+
+    async def test_group_escalation_runtime_settings_round_trip(self):
+        session = FakeAsyncSession()
+
+        result = await runtime_config.update_runtime_settings(
+            session,
+            {
+                "group_escalation_enabled": True,
+                "group_recent_window_hours": 12,
+                "group_history_window_days": 21,
+                "group_behavior_burst_window_minutes": 20,
+                "group_behavior_similarity_threshold": 2.25,
+                "group_escalation_weights": {
+                    "same_device_risky_visitors": 0.3,
+                    "strict_group_risky_siblings": 0.4,
+                },
+            },
+        )
+
+        stored = session.get_map[(RuntimeConfig, 1)]
+        self.assertTrue(result["group_escalation_enabled"])
+        self.assertEqual(result["group_recent_window_hours"], 12)
+        self.assertEqual(result["group_history_window_days"], 21)
+        self.assertEqual(result["group_behavior_burst_window_minutes"], 20)
+        self.assertEqual(result["group_behavior_similarity_threshold"], 2.25)
+        self.assertEqual(
+            stored.runtime_settings["group_escalation_weights"]["same_device_risky_visitors"],
+            0.3,
+        )
+        self.assertEqual(
+            runtime_config.runtime_settings()["group_escalation_weights"]["strict_group_risky_siblings"],
+            0.4,
+        )
 
 
 if __name__ == "__main__":

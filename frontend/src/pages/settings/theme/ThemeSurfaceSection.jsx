@@ -20,7 +20,7 @@ export default function ThemeSurfaceSection({ colors, layout, onColorChange, onL
         <p className="text-xs text-gray-500 font-mono mt-1">Fine-grained control for body, header, navigation, footer, panels, and typography.</p>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
         <ColorRow label="Body Background" value={colors.background || '#050505'} onChange={(value) => onColorChange('background', value)} />
         <Input label="Body Gradient" value={colors.backgroundGradient || ''} onChange={(event) => onColorChange('backgroundGradient', event.target.value)} placeholder="linear-gradient(...)" />
         <ColorRow label="Header Background" value={colors.headerBackground || '#020617'} onChange={(value) => onColorChange('headerBackground', value)} />

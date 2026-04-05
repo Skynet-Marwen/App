@@ -18,3 +18,6 @@ user-agents==2.2.0
 slowapi==0.1.9
 bleach==6.2.0
 aiosmtplib==3.0.1
+numpy==1.26.4
+scikit-learn==1.4.2
+joblib==1.4.2

@@ -3,6 +3,7 @@ import { Link2, Search, Shield, Trash2, Users } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
 import { Card, Badge, Button, Pagination, Modal, Select, PageToolbar } from '../components/ui/index'
 import DeviceGroupsTable from '../components/ui/DeviceGroupsTable'
+import TrackingSignalsSummary from '../components/ui/TrackingSignalsSummary'
 import { useDevices } from '../hooks/useDevices'
 
 const fmtDate = (iso) =>
@@ -27,6 +28,7 @@ export default function DevicesPage() {
     blockDevice,
     unblockDevice,
     deleteDevice,
+    deleteDeviceVisitor,
   } = useDevices()
   const [selected, setSelected] = useState(null)
   const [deviceVisitors, setDeviceVisitors] = useState([])
@@ -35,8 +37,22 @@ export default function DevicesPage() {
   const [submitting, setSubmitting] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleting, setDeleting] = useState(false)
+  const [deleteVisitorTarget, setDeleteVisitorTarget] = useState(null)
+  const [deletingVisitor, setDeletingVisitor] = useState(false)
   const [shieldTarget, setShieldTarget] = useState(null)
   const [shielding, setShielding] = useState(false)
+
+  const refreshSelectedDevice = async (deviceId) => {
+    if (!deviceId) return
+    try {
+      const exact = await loadDevice(deviceId)
+      setSelected(exact)
+      setDeviceVisitors(await loadDeviceVisitors(deviceId))
+    } catch {
+      setSelected(null)
+      setDeviceVisitors([])
+    }
+  }
 
   const openDetailModal = async (device) => {
     try {
@@ -127,6 +143,26 @@ export default function DevicesPage() {
     }
   }
 
+  const handleDeleteVisitor = async () => {
+    if (!deleteVisitorTarget) return
+    setDeletingVisitor(true)
+    try {
+      const result = await deleteDeviceVisitor(deleteVisitorTarget.id)
+      const selectedDeviceId = selected?.id
+      setDeleteVisitorTarget(null)
+      if (result?.deleted_orphan_device || !selectedDeviceId) {
+        setSelected(null)
+        setDeviceVisitors([])
+        return
+      }
+      await refreshSelectedDevice(selectedDeviceId)
+    } catch {
+      // Keep the confirmation modal open on failure.
+    } finally {
+      setDeletingVisitor(false)
+    }
+  }
+
   return (
     <DashboardLayout title="Devices" onRefresh={refresh}>
       <Card>
@@ -137,7 +173,7 @@ export default function DevicesPage() {
               placeholder="Search by fingerprint, browser, OS, or match key..."
               value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500"
+              className="w-full rounded-lg border border-cyan-500/15 bg-black/60 pl-9 pr-3 py-2 text-sm text-white placeholder-gray-500 focus:border-cyan-500/60 focus:outline-none"
             />
           </div>
           <div className="flex flex-wrap items-center gap-3 xl:justify-end">
@@ -160,53 +196,68 @@ export default function DevicesPage() {
       <Modal open={!!selected} onClose={() => { setSelected(null); setDeviceVisitors([]) }} title="Device Details" width="max-w-2xl">
         {selected && (
           <div className="space-y-4">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              {[
-                ['Fingerprint', selected.fingerprint],
-                ['Match Key', selected.match_key ?? '—'],
-                ['Type', selected.type],
-                ['Browser', selected.browser],
-                ['OS', selected.os],
-                ['Screen', selected.screen_resolution],
-                ['Language', selected.language],
-                ['Timezone', selected.timezone],
-                ['Timezone Offset', selected.timezone_offset_minutes != null ? `${selected.timezone_offset_minutes} min` : '—'],
-                ['Visitors', selected.visitor_count],
-                ['Fingerprint Confidence', selected.fingerprint_confidence != null ? `${Math.round(selected.fingerprint_confidence * 100)}%` : '—'],
-                ['Stability Score', selected.stability_score != null ? `${Math.round(selected.stability_score * 100)}%` : '—'],
-                ['Composite Score', selected.composite_score != null ? `${Math.round(selected.composite_score * 100)}%` : '—'],
-                ['Clock Skew', selected.clock_skew_minutes != null ? `${selected.clock_skew_minutes} min` : '—'],
-                ['Status', selected.status],
-                ['First Seen', fmtDate(selected.first_seen)],
-                ['Last Seen', fmtDate(selected.last_seen)],
-              ].map(([label, value]) => (
-                <div key={label} className="bg-gray-800 rounded-lg p-3">
-                  <p className="text-xs text-gray-500 mb-0.5">{label}</p>
-                  <p className="text-sm text-white font-mono break-all">{value ?? '—'}</p>
+            <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[minmax(0,1.4fr)_minmax(22rem,1fr)]">
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3">
+                  {[
+                    ['Display Name', selected.display_name],
+                    ['Probable Model', selected.probable_model],
+                    ['Probable Vendor', selected.probable_vendor],
+                    ['Fingerprint', selected.fingerprint],
+                    ['Match Key', selected.match_key ?? '—'],
+                    ['Type', selected.type],
+                    ['Browser', selected.browser],
+                    ['OS', selected.os],
+                    ['Screen', selected.screen_resolution],
+                    ['Language', selected.language],
+                    ['Timezone', selected.timezone],
+                    ['Timezone Offset', selected.timezone_offset_minutes != null ? `${selected.timezone_offset_minutes} min` : '—'],
+                    ['Visitors', selected.visitor_count],
+                    ['Fingerprint Confidence', selected.fingerprint_confidence != null ? `${Math.round(selected.fingerprint_confidence * 100)}%` : '—'],
+                    ['Stability Score', selected.stability_score != null ? `${Math.round(selected.stability_score * 100)}%` : '—'],
+                    ['Composite Score', selected.composite_score != null ? `${Math.round(selected.composite_score * 100)}%` : '—'],
+                    ['Clock Skew', selected.clock_skew_minutes != null ? `${selected.clock_skew_minutes} min` : '—'],
+                    ['Status', selected.status],
+                    ['First Seen', fmtDate(selected.first_seen)],
+                    ['Last Seen', fmtDate(selected.last_seen)],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-lg border border-cyan-500/10 bg-black/30 p-3">
+                      <p className="text-xs text-gray-500 mb-0.5">{label}</p>
+                      <p className="text-sm text-white font-mono break-all">{value ?? '—'}</p>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </div>
+
+              <div className="space-y-4">
+                <TrackingSignalsSummary
+                  summary={selected.tracking_signals}
+                  title="Tracking & Blocker Signals"
+                  emptyMessage="No adblock, DNS-filter, or ISP-resolution incidents are attached to this device yet."
+                />
+
+                {selected.canvas_hash && (
+                  <div className="bg-gray-800 rounded-lg p-3">
+                    <p className="text-xs text-gray-500 mb-0.5">Canvas Hash</p>
+                    <p className="text-xs text-gray-300 font-mono break-all">{selected.canvas_hash}</p>
+                  </div>
+                )}
+
+                {selected.webgl_hash && (
+                  <div className="bg-gray-800 rounded-lg p-3">
+                    <p className="text-xs text-gray-500 mb-0.5">WebGL Hash</p>
+                    <p className="text-xs text-gray-300 font-mono break-all">{selected.webgl_hash}</p>
+                  </div>
+                )}
+
+                {selected.composite_fingerprint && (
+                  <div className="bg-gray-800 rounded-lg p-3">
+                    <p className="text-xs text-gray-500 mb-0.5">Composite Fingerprint</p>
+                    <p className="text-xs text-gray-300 font-mono break-all">{selected.composite_fingerprint}</p>
+                  </div>
+                )}
+              </div>
             </div>
-
-            {selected.canvas_hash && (
-              <div className="bg-gray-800 rounded-lg p-3">
-                <p className="text-xs text-gray-500 mb-0.5">Canvas Hash</p>
-                <p className="text-xs text-gray-300 font-mono break-all">{selected.canvas_hash}</p>
-              </div>
-            )}
-
-            {selected.webgl_hash && (
-              <div className="bg-gray-800 rounded-lg p-3">
-                <p className="text-xs text-gray-500 mb-0.5">WebGL Hash</p>
-                <p className="text-xs text-gray-300 font-mono break-all">{selected.webgl_hash}</p>
-              </div>
-            )}
-
-            {selected.composite_fingerprint && (
-              <div className="bg-gray-800 rounded-lg p-3">
-                <p className="text-xs text-gray-500 mb-0.5">Composite Fingerprint</p>
-                <p className="text-xs text-gray-300 font-mono break-all">{selected.composite_fingerprint}</p>
-              </div>
-            )}
 
             <div>
               <p className="text-xs text-gray-500 mb-2 flex items-center gap-1.5">
@@ -215,27 +266,36 @@ export default function DevicesPage() {
               {deviceVisitors.length === 0 ? (
                 <p className="text-xs text-gray-600 italic">No visitor records yet.</p>
               ) : (
-                <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                <div className="grid grid-cols-1 gap-2 max-h-[28rem] overflow-y-auto pr-1 xl:grid-cols-2">
                   {deviceVisitors.map((visitor) => (
-                    <div key={visitor.id} className="flex flex-col gap-3 rounded-lg bg-gray-800 px-3 py-2 xl:flex-row xl:items-center xl:justify-between">
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-gray-300">
-                        <code className="text-cyan-400">{visitor.ip}</code>
-                        {visitor.country_flag && <span>{visitor.country_flag}</span>}
-                        <span className="text-gray-500">{visitor.browser ?? '?'} / {visitor.os ?? '?'}</span>
+                      <div key={visitor.id} className="flex flex-col gap-3 rounded-lg border border-cyan-500/10 bg-black/30 px-3 py-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-gray-300">
+                            <code className="text-cyan-400">{visitor.ip}</code>
+                            {visitor.country_flag && <span>{visitor.country_flag}</span>}
+                            <span className="text-gray-500">{visitor.browser ?? '?'} / {visitor.os ?? '?'}</span>
+                          </div>
+                          <div className="mt-2">
+                            <TrackingSignalsSummary
+                              summary={visitor.tracking_signals}
+                              title="Visitor Signals"
+                              compact
+                              emptyMessage="No blocker-related incidents on this visitor."
+                            />
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-gray-500">
+                          <span>{visitor.page_views ?? 0} pvs</span>
+                          <span>{fmtDate(visitor.last_seen)}</span>
+                          {visitor.status === 'blocked' ? <Badge variant="danger">Blocked</Badge> : <Badge variant="success">Active</Badge>}
+                          <Button variant="danger" size="sm" icon={Trash2} onClick={() => setDeleteVisitorTarget(visitor)}>
+                            Delete
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
-                        <span>{visitor.page_views ?? 0} pvs</span>
-                        <span>{fmtDate(visitor.last_seen)}</span>
-                        {visitor.status === 'blocked' ? (
-                          <Badge variant="danger">Blocked</Badge>
-                        ) : (
-                          <Badge variant="success">Active</Badge>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                )}
             </div>
           </div>
         )}
@@ -273,6 +333,20 @@ export default function DevicesPage() {
           <div className="flex gap-2 justify-end">
             <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>
             <Button variant="danger" loading={deleting} onClick={handleDelete} icon={Trash2}>Delete</Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={!!deleteVisitorTarget} onClose={() => setDeleteVisitorTarget(null)} title="Delete Visitor">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-400">
+            Permanently delete visitor <code className="text-cyan-400 text-xs">{deleteVisitorTarget?.ip}</code> from this device?
+            <br />
+            <span className="text-red-400">All events for this visitor will be removed, and orphaned device links will be cleaned up automatically.</span>
+          </p>
+          <div className="flex gap-2 justify-end">
+            <Button variant="secondary" onClick={() => setDeleteVisitorTarget(null)}>Cancel</Button>
+            <Button variant="danger" loading={deletingVisitor} onClick={handleDeleteVisitor} icon={Trash2}>Delete</Button>
           </div>
         </div>
       </Modal>

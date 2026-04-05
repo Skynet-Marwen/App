@@ -134,7 +134,7 @@ export default function UsersPage() {
               placeholder="Search by email, username..."
               value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500"
+              className="w-full rounded-lg border border-cyan-500/15 bg-black/60 pl-9 pr-3 py-2 text-sm text-white placeholder-gray-500 focus:border-cyan-500/60 focus:outline-none"
             />
           </div>
           <div className="flex flex-wrap items-center gap-3 xl:justify-end">
@@ -160,7 +160,7 @@ export default function UsersPage() {
                 ['Created', selected.created_at],
                 ['Last Login', selected.last_login ?? '—'],
               ].map(([label, value]) => (
-                <div key={label} className="bg-gray-800 rounded-lg p-3">
+                <div key={label} className="rounded-lg border border-cyan-500/10 bg-black/30 p-3">
                   <p className="text-xs text-gray-500 mb-0.5">{label}</p>
                   <p className="text-sm text-white break-all">{value}</p>
                 </div>
@@ -175,7 +175,7 @@ export default function UsersPage() {
               ) : (
                 <div className="space-y-2">
                   {sessions.map((s) => (
-                    <div key={s.id} className="flex flex-col gap-3 rounded-lg bg-gray-800 px-3 py-2 lg:flex-row lg:items-center lg:justify-between">
+                    <div key={s.id} className="flex flex-col gap-3 rounded-lg border border-cyan-500/10 bg-black/30 px-3 py-2 lg:flex-row lg:items-center lg:justify-between">
                       <div>
                         <p className="text-xs text-white">{s.ip} · {s.device}</p>
                         <p className="text-xs text-gray-500">{s.last_active}</p>

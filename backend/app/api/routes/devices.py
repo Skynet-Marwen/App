@@ -11,7 +11,15 @@ from ...models.visitor import Visitor
 from ...schemas.device import DeviceGroupListResponse, DeviceListResponse, DeviceOut, LinkRequest
 from ...services.audit import log_action, request_ip
 from ...services.incident_notifications import dispatch_notification_event
-from ...services.device_identity import RECENT_IP_WINDOW_DAYS, group_devices, isoformat
+from ...services.device_identity import (
+    RECENT_IP_WINDOW_DAYS,
+    group_devices,
+    infer_device_descriptor,
+    isoformat,
+)
+from ...services.intelligence_cleanup import delete_device_graph, reconcile_external_profiles
+from ...services.tracking_visibility import get_device_tracking_summary, get_visitors_tracking_summary_map
+from ...services import identity_service
 
 router = APIRouter(prefix="/devices", tags=["devices"])
 
@@ -37,6 +45,21 @@ def _visitor_count_sq():
     )
 
 
+async def _visitors_by_device(db: AsyncSession, device_ids: list[str]) -> dict[str, list[Visitor]]:
+    if not device_ids:
+        return {}
+    result = await db.execute(
+        select(Visitor)
+        .where(Visitor.device_id.in_(device_ids))
+        .order_by(Visitor.last_seen.desc())
+    )
+    visitors_by_device: dict[str, list[Visitor]] = {}
+    for visitor in result.scalars().all():
+        if visitor.device_id:
+            visitors_by_device.setdefault(visitor.device_id, []).append(visitor)
+    return visitors_by_device
+
+
 @router.get("", response_model=DeviceListResponse)
 async def list_devices(
     page: int = Query(1, ge=1),
@@ -59,6 +82,7 @@ async def list_devices(
         q.order_by(Device.last_seen.desc()).offset((page - 1) * page_size).limit(page_size)
     )
     rows = result.all()
+    visitors_by_device = await _visitors_by_device(db, [device.id for device, _vc in rows])
 
     return {
         "total": total,
@@ -66,6 +90,7 @@ async def list_devices(
             {
                 "id": d.id,
                 "fingerprint": d.fingerprint,
+                **infer_device_descriptor(d, visitors_by_device.get(d.id, [])),
                 "match_key": d.match_key,
                 "match_version": d.match_version,
                 "type": d.type,
@@ -108,27 +133,23 @@ async def list_device_groups(
         q = q.where(flt)
     result = await db.execute(q.order_by(Device.last_seen.desc()))
     rows = result.all()
-    recent_visitors_by_device: dict[str, list[dict[str, object]]] = {}
     device_ids = [device.id for device, _visitor_count in rows]
-    if device_ids:
-        cutoff = datetime.now(timezone.utc) - timedelta(days=RECENT_IP_WINDOW_DAYS)
-        visitor_result = await db.execute(
-            select(Visitor.device_id, Visitor.ip, Visitor.last_seen, Visitor.os)
-            .where(Visitor.device_id.in_(device_ids))
-            .where(Visitor.last_seen >= cutoff)
-            .where(Visitor.ip.is_not(None))
-        )
-        for device_id, ip, last_seen, os_name in visitor_result.all():
-            if not device_id:
-                continue
-            recent_visitors_by_device.setdefault(device_id, []).append(
-                {
-                    "ip": ip,
-                    "last_seen": last_seen,
-                    "os": os_name,
-                }
-            )
-    groups = group_devices(rows, recent_visitors_by_device)
+    visitors_by_device = await _visitors_by_device(db, device_ids)
+    group_visitors_by_device: dict[str, list[dict[str, object]]] = {
+        device_id: [
+            {
+                "ip": visitor.ip,
+                "last_seen": visitor.last_seen,
+                "os": visitor.os,
+                "user_agent": visitor.user_agent,
+                "browser": visitor.browser,
+                "device_type": visitor.device_type,
+            }
+            for visitor in visitors
+        ]
+        for device_id, visitors in visitors_by_device.items()
+    }
+    groups = group_devices(rows, group_visitors_by_device)
     start = (page - 1) * page_size
     end = start + page_size
     return {
@@ -151,9 +172,11 @@ async def get_device(
     if not row:
         raise HTTPException(404, "Device not found")
     device, visitor_count = row
+    visitors_by_device = await _visitors_by_device(db, [device.id])
     return {
         "id": device.id,
         "fingerprint": device.fingerprint,
+        **infer_device_descriptor(device, visitors_by_device.get(device.id, [])),
         "match_key": device.match_key,
         "match_version": device.match_version,
         "type": device.type,
@@ -176,6 +199,7 @@ async def get_device(
         "visitor_count": visitor_count or 0,
         "first_seen": isoformat(device.first_seen),
         "last_seen": isoformat(device.last_seen),
+        "tracking_signals": await get_device_tracking_summary(db, device.id),
     }
 
 
@@ -200,6 +224,7 @@ async def device_visitors(
         .order_by(Visitor.last_seen.desc())
     )
     visitors = result.scalars().all()
+    visitor_tracking = await get_visitors_tracking_summary_map(db, visitors)
 
     return {
         "items": [
@@ -214,6 +239,7 @@ async def device_visitors(
                 "page_views": v.page_views,
                 "status": v.status,
                 "last_seen": isoformat(v.last_seen),
+                "tracking_signals": visitor_tracking.get(v.id),
             }
             for v in visitors
         ]
@@ -236,7 +262,16 @@ async def link_device(
         text("UPDATE visitors SET linked_user = :user_id WHERE device_id = :device_id"),
         {"user_id": body.user_id, "device_id": device_id},
     )
-    log_action(db, action="LINK_DEVICE", actor_id=current.id, target_type="device", target_id=d.id, ip=request_ip(request), extra={"user_id": body.user_id})
+    if body.external_user_id:
+        await identity_service.link_device(
+            db,
+            external_user_id=body.external_user_id,
+            fingerprint_id=device_id,
+            visitor_id=None,
+            platform="web",
+            ip=request_ip(request),
+        )
+    log_action(db, action="LINK_DEVICE", actor_id=current.id, target_type="device", target_id=d.id, ip=request_ip(request), extra={"user_id": body.user_id, "external_user_id": body.external_user_id})
     await db.commit()
     return {"message": "Linked"}
 
@@ -319,11 +354,18 @@ async def delete_device(
     d = await db.get(Device, device_id)
     if not d:
         raise HTTPException(404, "Device not found")
-    # Nullify plain-string foreign refs (no DB-level FK cascade)
-    await db.execute(text("UPDATE events SET device_id = NULL WHERE device_id = :id"), {"id": device_id})
-    await db.execute(text("UPDATE incidents SET device_id = NULL WHERE device_id = :id"), {"id": device_id})
-    # visitors.device_id → FK ondelete=SET NULL, handled by DB on delete
+    affected_external_user_ids = await delete_device_graph(db, device_id)
+    await reconcile_external_profiles(
+        db,
+        affected_external_user_ids,
+        trigger_type="delete_device",
+        source="devices.delete",
+        target_id=device_id,
+    )
     log_action(db, action="DELETE_DEVICE", actor_id=current.id, target_type="device", target_id=d.id, ip=request_ip(request))
-    await db.delete(d)
     await db.commit()
-    return {"message": "Deleted"}
+    return {
+        "message": "Deleted",
+        "deleted_visitors": True,
+        "affected_external_user_ids": sorted(affected_external_user_ids),
+    }

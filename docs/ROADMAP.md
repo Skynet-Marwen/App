@@ -2,6 +2,7 @@
 
 > This roadmap is intentionally opinionated. Priorities can shift — update when they do.
 > Items may move to done on the unreleased branch before a formal release is cut.
+> Use [CHANGELOG.md](../CHANGELOG.md) for full shipped detail and [DEV_PLAN.md](./DEV_PLAN.md) for branch-execution notes.
 
 ---
 
@@ -123,13 +124,13 @@ SKYNET evolves from observer to active enforcement gateway.
 - [x] Challenge types: CAPTCHA redirect, JS proof-of-work, honeypot
 - [x] Bot detection pipeline: headless signals, crawler signatures, click farm
 - [x] Form spam: honeypot fields, submission velocity, content deduplication
-- [x] DNSBL integration (submitter IP vs public abuse databases)
+- [x] DNSBL integration (submitter IP vs public abuse databases, with soft-fail tuning for dynamic-IP regions)
 - [x] Gateway dashboard: traffic overview, bot %, latency, challenge analytics
 - [x] Operator metric hardening: real per-site integration stats and no synthetic Overview fallback signals
 
 ---
 
-## Post-v1.6 Settings Surface Completion `Unreleased Branch`
+## Post-v1.6 Settings Surface Completion ✅ `Unreleased Branch`
 Close the remaining planned/partial settings-surface gaps before the next release train.
 
 - [x] Superadmin tier for owner-grade operator control
@@ -140,6 +141,57 @@ Close the remaining planned/partial settings-surface gaps before the next releas
 - [x] Curated dashboard widget selection in the theme editor
 - [x] Storage health, lifecycle cleanup, and retention archive tooling in Data & Storage
 - [x] Integration API governance, threat-intel refresh, and SIEM/monitoring connectors in Integrations
+- [x] Notifications matrix, escalation rules, webhook test sends, and delivery history
+- [x] Access & Network runtime controls for domains, CORS, IP policy, and request limits
+
+---
+
+## Post-v1.6 Tracking, Relay, and Attribution ✅ `Unreleased Branch`
+Harden browser collection and protected-app integration for real deployments.
+
+- [x] Blocker-resistant tracker aliases: `/s/{site_key}.js` and `/w/{site_key}/*`
+- [x] Same-origin protected-app relay pattern for tracker bootstrap, challenge pages, identity linking, and authenticated activity
+- [x] Mouwaten integration flow documented for Keycloak + SkyNet relay usage
+- [x] Visitor attribution now prefers exact device continuity over broad shared-IP reuse
+- [x] Shared-network mixing reduced for cafes, schools, and other NAT-heavy environments
+- [x] Browser/device classification heuristics tightened to reduce desktop-as-mobile mislabeling
+- [x] DNSBL soft-fail support for dynamic-IP regions such as Tunisia
+- [x] Country-aware language-mismatch allowances for multilingual regions such as Tunisia (`ar` / `fr` / `en`)
+
+---
+
+## Post-v1.6 Portal User Intelligence Consistency ✅ `Unreleased Branch`
+Make visitor/device/user ownership and deletion behavior consistent across the analyst workflows.
+
+- [x] External-user visitor feed in Portal User Intelligence
+- [x] Visitor backfill from linked devices and strict sibling-device groups
+- [x] Strict-group ownership propagation during identity linking
+- [x] Visitor delete from the Devices workflow with immediate UI refresh
+- [x] External-user delete from Portal User Intelligence
+- [x] Intelligence cleanup on visitor/device/external-user deletion
+- [x] Removal of stale null-device identity links from the Portal User Intelligence device list
+- [x] Related flags/incidents cleanup and affected-profile recompute after destructive actions
+
+---
+
+## v1.7.1 — RBAC + Secret Hardening `Released: 2026-04-04`
+
+- [x] Harden operator RBAC on privileged settings, integration, blocking, anti-evasion, audit, and system routes
+- [x] Encrypt/mask the global webhook signing secret in runtime settings
+- [ ] Revalidate browser-side adblock detection after the script-tag same-origin probe change before enabling it broadly in production
+- [ ] Tune and validate `group_escalation_*` thresholds on real traffic
+- [ ] Finalize production rollout guidance for blocker-resistant tracking, `/ads.js` same-origin bait routing, and first-party relay patterns
+
+---
+
+## v1.7.0 — ML Detection + WebRTC + Hardening `Released: 2026-04-04`
+
+- [x] ML anomaly detection: Isolation Forest on 27-feature device vectors, 24h retraining, additive +15 risk modifier, feature-flagged
+- [x] WebRTC leak detection: `detectWebRTCLeak()` tracker probe → `WEBRTC_VPN_BYPASS` incident +35 risk
+- [x] Harden operator RBAC on privileged settings, integration, blocking, and system routes
+- [x] Encrypt/mask the global webhook signing secret in runtime settings
+- [ ] Tune and validate `group_escalation_*` thresholds on real traffic
+- [ ] Finalize production rollout guidance for blocker-resistant tracking and first-party relay patterns
 
 ---
 

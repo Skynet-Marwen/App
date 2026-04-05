@@ -85,11 +85,12 @@ export function buildPortalUsersCsvRows(users) {
   }))
 }
 
-export function buildPortalUserDetailBundle({ profile, devices, riskHistory, activity, flags, activityFilters }) {
+export function buildPortalUserDetailBundle({ profile, devices, visitors, riskHistory, activity, flags, activityFilters }) {
   return {
     exported_at: new Date().toISOString(),
     profile,
     devices,
+    visitors,
     risk_history: riskHistory,
     activity,
     flags,
@@ -124,6 +125,10 @@ export function buildPortalUserDetailCsvRows(bundle) {
 
   ;(bundle.devices || []).forEach((device) => {
     pushRow('device', device.id || device.fingerprint_id, device.platform, `IP: ${device.ip || '—'} | Linked: ${device.linked_at || '—'} | Last seen: ${device.last_seen_at || '—'}`)
+  })
+
+  ;(bundle.visitors || []).forEach((visitor) => {
+    pushRow('visitor', visitor.id, visitor.ip, `Browser: ${visitor.browser || '—'} | OS: ${visitor.os || '—'} | Views: ${visitor.page_views ?? 0} | Last seen: ${visitor.last_seen || '—'}`)
   })
 
   ;(bundle.risk_history || []).forEach((entry) => {

@@ -1,6 +1,12 @@
 import json
+import logging
 import uuid
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+_log = logging.getLogger("skynet.track")
 from fastapi import APIRouter, Request, Header, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy import select, text
 from ...core.database import AsyncSessionLocal
 from ...models.site import Site
@@ -24,17 +30,141 @@ from ...services.device_fingerprint import (
     verify_device_cookie,
 )
 from ...services.device_identity import update_device_metadata
-from ...services.dnsbl import lookup_ip as dnsbl_lookup_ip
+from ...services.dnsbl import lookup_ip as dnsbl_lookup_ip, should_soft_fail_dnsbl
 from ...services.jwks_validator import validate_external_token, extract_bearer
 from ...services.network_intel import filter_detection_matches, highest_priority_action, network_detection_matches
 from ...services.response_policy import evaluate_response_rules, strongest_action
+from ...services import identity_service
 from ...services.identity_service import upsert_profile
-from ...services.risk_engine import enforcement_action, recompute as recompute_risk
+from ...services.risk_engine import enforcement_action
+from ...services.group_escalation import recompute_device_parent_posture, recompute_user_parent_posture
 from ...services.runtime_config import runtime_settings
-from datetime import datetime, timezone
 from typing import Optional
 from ...core.ip_utils import get_client_ip
 router = APIRouter(prefix="/track", tags=["tracker"])
+edge_router = APIRouter(tags=["tracker-edge"])
+
+VISITOR_IP_FALLBACK_WINDOW_MINUTES = 30
+EDGE_ROUTE_PREFIX = "/w"
+
+
+def _edge_paths(site_key: str) -> dict[str, str]:
+    return {
+        "pageview": f"{EDGE_ROUTE_PREFIX}/{site_key}/p",
+        "event": f"{EDGE_ROUTE_PREFIX}/{site_key}/e",
+        "device_context": f"{EDGE_ROUTE_PREFIX}/{site_key}/d",
+        "identify": f"{EDGE_ROUTE_PREFIX}/{site_key}/i",
+        "check_access": f"{EDGE_ROUTE_PREFIX}/{site_key}/a",
+    }
+
+
+def _tracker_asset_path() -> Path:
+    return Path(__file__).resolve().parents[3] / "tracker" / "skynet.js"
+
+
+def _parse_screen_resolution(screen: Optional[str]) -> tuple[int, int] | None:
+    if not screen or "x" not in str(screen).lower():
+        return None
+    raw_width, raw_height = str(screen).lower().split("x", 1)
+    try:
+        width = int(raw_width.strip())
+        height = int(raw_height.strip())
+    except ValueError:
+        return None
+    if width <= 0 or height <= 0:
+        return None
+    return width, height
+
+
+def _infer_device_type(
+    ua_string: str,
+    *,
+    parsed_device_type: Optional[str],
+    screen: Optional[str],
+    fingerprint_traits: Optional[dict],
+) -> Optional[str]:
+    traits = fingerprint_traits or {}
+    platform = str(traits.get("platform") or "").lower()
+    ua_lower = str(ua_string or "").lower()
+    parsed_screen = _parse_screen_resolution(screen)
+    touch_points = traits.get("touch_points")
+    try:
+        touch_points = int(touch_points) if touch_points is not None else None
+    except (TypeError, ValueError):
+        touch_points = None
+
+    is_android_mobile_ua = any(token in ua_lower for token in ("android", " mobile ", "; mobile", " mobile;", "mobile safari", "; wv", " fbav/", "fb_iab"))
+    is_desktop_platform = any(token in platform for token in ("win", "mac", "x11", "cros"))
+    is_linux_desktop = (
+        "linux" in platform
+        and "android" not in platform
+        and "arm" not in platform
+        and "aarch64" not in platform
+        and "arm64" not in platform
+    )
+    if is_android_mobile_ua:
+        return "mobile"
+    if is_desktop_platform or is_linux_desktop:
+        return "desktop"
+    if "ipad" in ua_lower or "ipad" in platform:
+        return "tablet"
+    if "iphone" in ua_lower or "android" in ua_lower or "mobile" in ua_lower:
+        return "mobile"
+    if "tablet" in ua_lower:
+        return "tablet"
+    if parsed_screen:
+        width, height = parsed_screen
+        shorter = min(width, height)
+        longer = max(width, height)
+        if shorter >= 900 or longer >= 1600:
+            return "desktop"
+        if shorter >= 700:
+            return "tablet"
+        if touch_points and touch_points > 0 and shorter <= 500:
+            return "mobile"
+    return parsed_device_type or "desktop"
+
+
+def _ip_fallback_cutoff() -> datetime:
+    return datetime.now(timezone.utc) - timedelta(minutes=VISITOR_IP_FALLBACK_WINDOW_MINUTES)
+
+
+async def _resolve_visitor_record(
+    db,
+    *,
+    site_id: str,
+    device: Device | None,
+    external_user_id: str | None,
+    ip: str,
+    user_agent: str,
+) -> Visitor | None:
+    if device:
+        return await db.scalar(
+            select(Visitor)
+            .where(Visitor.site_id == site_id, Visitor.device_id == device.id)
+            .order_by(Visitor.last_seen.desc())
+        )
+    if external_user_id:
+        return await db.scalar(
+            select(Visitor)
+            .where(
+                Visitor.site_id == site_id,
+                Visitor.external_user_id == external_user_id,
+            )
+            .order_by(Visitor.last_seen.desc())
+        )
+    return await db.scalar(
+        select(Visitor)
+        .where(
+            Visitor.site_id == site_id,
+            Visitor.device_id.is_(None),
+            Visitor.external_user_id.is_(None),
+            Visitor.ip == ip,
+            Visitor.user_agent == (user_agent or None),
+            Visitor.last_seen >= _ip_fallback_cutoff(),
+        )
+        .order_by(Visitor.last_seen.desc())
+    )
 
 
 async def _upsert_activity_visitor(
@@ -42,10 +172,13 @@ async def _upsert_activity_visitor(
     *,
     site_id: str | None,
     device: Device | None,
+    external_user_id: str | None,
     ip: str,
     geo: dict,
     user_agent: str,
     event_type: str,
+    screen: str | None = None,
+    fingerprint_traits: dict | None = None,
 ) -> Visitor | None:
     if not site_id:
         return None
@@ -53,12 +186,20 @@ async def _upsert_activity_visitor(
     if not site or not site.active:
         return None
 
-    visitor_query = select(Visitor).where(Visitor.ip == ip, Visitor.site_id == site_id)
-    if device:
-        visitor_query = visitor_query.where(Visitor.device_id == device.id)
-    visitor = await db.scalar(visitor_query)
+    browser, os_name, device_type = parse_user_agent(
+        user_agent,
+        screen=screen,
+        fingerprint_traits=fingerprint_traits,
+    )
+    visitor = await _resolve_visitor_record(
+        db,
+        site_id=site_id,
+        device=device,
+        external_user_id=external_user_id,
+        ip=ip,
+        user_agent=user_agent,
+    )
     if not visitor:
-        browser, os_name, device_type = parse_user_agent(user_agent)
         visitor = Visitor(
             id=str(uuid.uuid4()),
             ip=ip,
@@ -69,6 +210,7 @@ async def _upsert_activity_visitor(
             city=geo.get("city") or None,
             isp=geo.get("isp") or geo.get("org") or geo.get("as") or None,
             device_id=device.id if device else None,
+            external_user_id=external_user_id or (device.owner_user_id if device and (device.shared_user_count or 0) == 0 else None),
             browser=browser or None,
             os=os_name or None,
             device_type=device_type or None,
@@ -77,26 +219,44 @@ async def _upsert_activity_visitor(
         db.add(visitor)
 
     visitor.last_seen = datetime.now(timezone.utc)
+    visitor.browser = browser or visitor.browser
+    visitor.os = os_name or visitor.os
+    visitor.device_type = device_type or visitor.device_type
     if device:
         visitor.device_id = device.id
+        if external_user_id:
+            visitor.external_user_id = external_user_id
+        elif device.owner_user_id and (device.shared_user_count or 0) == 0 and not visitor.external_user_id:
+            visitor.external_user_id = device.owner_user_id
     visitor.user_agent = user_agent or visitor.user_agent
     if event_type == "pageview":
         visitor.page_views = (visitor.page_views or 0) + 1
     return visitor
 
 
-def parse_user_agent(ua_string: str) -> tuple[Optional[str], Optional[str], Optional[str]]:
+def parse_user_agent(
+    ua_string: str,
+    *,
+    screen: Optional[str] = None,
+    fingerprint_traits: Optional[dict] = None,
+) -> tuple[Optional[str], Optional[str], Optional[str]]:
     browser = None
     os_name = None
-    device_type = None
+    parsed_device_type = None
     try:
         import user_agents
         ua = user_agents.parse(ua_string)
         browser = f"{ua.browser.family} {ua.browser.version_string}".strip()
         os_name = f"{ua.os.family} {ua.os.version_string}".strip()
-        device_type = "mobile" if ua.is_mobile else "tablet" if ua.is_tablet else "desktop"
+        parsed_device_type = "mobile" if ua.is_mobile else "tablet" if ua.is_tablet else "desktop"
     except Exception:
-        pass
+        _log.debug("UA parse failed for %r", ua_string[:200] if ua_string else "")
+    device_type = _infer_device_type(
+        ua_string,
+        parsed_device_type=parsed_device_type,
+        screen=screen,
+        fingerprint_traits=fingerprint_traits,
+    )
     return browser, os_name, device_type
 
 
@@ -223,6 +383,31 @@ _DEFAULT_BLOCK_CONFIG = {
 def _challenge_cookie_valid(request: Request, subject: str) -> bool:
     return verify_bypass_cookie(request.cookies.get("_skynet_challenge"), subject)
 
+@router.get("/ads.js")
+async def adblock_bait_probe(skynet_probe: Optional[str] = Query(None)):
+    """
+    Same-origin adblock bait probe.
+    Returns a tiny executable JS payload with ad-network-style headers so
+    ad-blocking extensions that match on URL/resource type can block it.
+    The tracker loads this as a <script> and expects the probe token to be
+    marked on window. Missing execution is treated as browser-side blocking.
+    No auth required — this endpoint is intentionally public.
+    """
+    content = "/* ad */"
+    if skynet_probe:
+        content = (
+            "(function(){"
+            "window.__skynetAdProbeHits=window.__skynetAdProbeHits||{};"
+            f"window.__skynetAdProbeHits[{json.dumps(str(skynet_probe))}]=true;"
+            "})();"
+        )
+    return Response(
+        content=content,
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex"},
+    )
+
+
 @router.get("/check-access")
 async def check_access(
     request: Request,
@@ -233,7 +418,7 @@ async def check_access(
     ct: Optional[str] = Query(None),
 ):
     try:
-        await validate_site_key(await resolve_api_key(x_skynet_key, key))
+        site = await validate_site_key(await resolve_api_key(x_skynet_key, key))
     except HTTPException:
         return {"blocked": False}
     ip = get_client_ip(request)
@@ -244,20 +429,31 @@ async def check_access(
         blocked_visitor = False
         challenge_device = None
         geo = None
-        if not blocked_ip:
-            blocked_visitor = await db.scalar(
-                select(Visitor.id).where(Visitor.ip == ip, Visitor.status == "blocked")
-            ) is not None
-        if not blocked_ip and not blocked_visitor and fp:
+        if not blocked_ip and fp:
             device = await db.scalar(select(Device).where(Device.fingerprint == fp))
             blocked_device = device is not None and device.status == "blocked"
             challenge_device = device
-        if not blocked_ip and not blocked_visitor and not blocked_device and dc:
+        if not blocked_ip and not blocked_device and dc:
             cookie_id = verify_device_cookie(dc)
             if cookie_id:
                 device = await db.scalar(select(Device).where(Device.device_cookie_id == cookie_id))
                 blocked_device = device is not None and device.status == "blocked"
                 challenge_device = device or challenge_device
+        if not blocked_ip and not blocked_device:
+            visitor_filters = [Visitor.site_id == site.id, Visitor.status == "blocked"]
+            if challenge_device:
+                visitor_filters.append(Visitor.device_id == challenge_device.id)
+            else:
+                visitor_filters.extend(
+                    [
+                        Visitor.device_id.is_(None),
+                        Visitor.external_user_id.is_(None),
+                        Visitor.ip == ip,
+                        Visitor.user_agent == (request.headers.get("user-agent", "") or None),
+                        Visitor.last_seen >= _ip_fallback_cutoff(),
+                    ]
+                )
+            blocked_visitor = await db.scalar(select(Visitor.id).where(*visitor_filters)) is not None
         if not blocked_ip and not blocked_visitor and not blocked_device:
             if _challenge_cookie_valid(request, ip) or verify_bypass_cookie(ct, ip):
                 return {"blocked": False}
@@ -329,9 +525,14 @@ async def check_access(
                     ttl_sec=int(challenge_cfg.get("dnsbl_cache_ttl_sec", 900) or 900),
                 )
                 if dnsbl.get("listed"):
+                    soft_fail = should_soft_fail_dnsbl(geo.get("country_code"), challenge_cfg)
                     dnsbl_decision = {
-                        "action": str(challenge_cfg.get("dnsbl_action") or "challenge"),
-                        "details": dnsbl,
+                        "action": "observe" if soft_fail else str(challenge_cfg.get("dnsbl_action") or "challenge"),
+                        "details": {
+                            **dnsbl,
+                            "soft_fail": soft_fail,
+                            "country_code": geo.get("country_code"),
+                        },
                     }
 
             device_action = None
@@ -407,7 +608,11 @@ async def resolve_device_context(
 ):
     site = await validate_site_key(await resolve_api_key(x_skynet_key, key))
     ua_string = request.headers.get("user-agent", "")
-    browser, os_name, device_type = parse_user_agent(ua_string)
+    browser, os_name, device_type = parse_user_agent(
+        ua_string,
+        screen=payload.screen,
+        fingerprint_traits=payload.fingerprint_traits,
+    )
     geo = await geoip_lookup(get_client_ip(request))
 
     async with AsyncSessionLocal() as db:
@@ -441,6 +646,26 @@ async def resolve_device_context(
             "composite_score": device.composite_score if device else None,
             "clock_skew_minutes": device.clock_skew_minutes if device else None,
         }
+        if device:
+            posture = await recompute_device_parent_posture(
+                db,
+                device.id,
+                site_id=site.id,
+                trigger_context={"trigger_type": "device_context", "source": "track.device_context"},
+            )
+            response["risk_score"] = posture["new_score"]
+            response["status"] = posture["status"]
+            if posture.get("external_user_id"):
+                await recompute_user_parent_posture(
+                    db,
+                    posture["external_user_id"],
+                    trigger_context={
+                        "trigger_type": "device_context",
+                        "source": "track.device_context",
+                        "device_id": device.id,
+                        "site_id": site.id,
+                    },
+                )
         await db.commit()
     return response
 
@@ -454,7 +679,11 @@ async def track_pageview(
     site = await validate_site_key(await resolve_api_key(x_skynet_key, key))
     ip = get_client_ip(request)
     ua_string = request.headers.get("user-agent", "")
-    browser, os_name, device_type = parse_user_agent(ua_string)
+    browser, os_name, device_type = parse_user_agent(
+        ua_string,
+        screen=payload.screen,
+        fingerprint_traits=payload.fingerprint_traits,
+    )
     geo = await geoip_lookup(ip)
     async with AsyncSessionLocal() as db:
         blocked = await db.get(BlockedIP, ip)
@@ -477,10 +706,14 @@ async def track_pageview(
             fingerprint_traits=payload.fingerprint_traits,
             geo_timezone=geo.get("timezone") or None,
         )
-        visitor_query = select(Visitor).where(Visitor.ip == ip, Visitor.site_id == site.id)
-        if device:
-            visitor_query = visitor_query.where(Visitor.device_id == device.id)
-        visitor = await db.scalar(visitor_query)
+        visitor = await _resolve_visitor_record(
+            db,
+            site_id=site.id,
+            device=device,
+            external_user_id=device.owner_user_id if device and (device.shared_user_count or 0) == 0 else None,
+            ip=ip,
+            user_agent=ua_string,
+        )
         if not visitor:
             visitor = Visitor(
                 id=str(uuid.uuid4()),
@@ -493,6 +726,7 @@ async def track_pageview(
                 isp=geo.get("isp") or geo.get("org") or geo.get("as") or None,
                 device_id=device.id if device else None,
                 linked_user=device.linked_user if device else None,
+                external_user_id=device.owner_user_id if device and (device.shared_user_count or 0) == 0 else None,
             )
             db.add(visitor)
         visitor.browser = browser or visitor.browser
@@ -504,6 +738,8 @@ async def track_pageview(
         if device:
             visitor.device_id = device.id
             visitor.linked_user = device.linked_user
+            if device.owner_user_id and (device.shared_user_count or 0) == 0 and not visitor.external_user_id:
+                visitor.external_user_id = device.owner_user_id
         event = Event(
             id=str(uuid.uuid4()),
             site_id=site.id,
@@ -516,6 +752,27 @@ async def track_pageview(
             ip=ip,
         )
         db.add(event)
+        owner_external_user_id = None
+        if device:
+            posture = await recompute_device_parent_posture(
+                db,
+                device.id,
+                site_id=site.id,
+                trigger_context={"trigger_type": "pageview", "source": "track.pageview"},
+            )
+            owner_external_user_id = posture.get("external_user_id")
+        if owner_external_user_id:
+            await recompute_user_parent_posture(
+                db,
+                owner_external_user_id,
+                trigger_context={
+                    "trigger_type": "pageview",
+                    "source": "track.pageview",
+                    "device_id": device.id if device else None,
+                    "visitor_id": visitor.id,
+                    "site_id": site.id,
+                },
+            )
         await db.commit()
     dispatch_pageview_checks(
         {
@@ -579,6 +836,26 @@ async def track_event(
             ip=ip,
         )
         db.add(event)
+        owner_external_user_id = None
+        if device:
+            posture = await recompute_device_parent_posture(
+                db,
+                device.id,
+                site_id=site.id,
+                trigger_context={"trigger_type": payload.event_type, "source": "track.event"},
+            )
+            owner_external_user_id = posture.get("external_user_id")
+        if owner_external_user_id:
+            await recompute_user_parent_posture(
+                db,
+                owner_external_user_id,
+                trigger_context={
+                    "trigger_type": payload.event_type,
+                    "source": "track.event",
+                    "device_id": device.id if device else None,
+                    "site_id": site.id,
+                },
+            )
         await db.commit()
     dispatch_event_checks(
         {
@@ -678,10 +955,13 @@ async def track_activity(
             db,
             site_id=resolved_site_id,
             device=device,
+            external_user_id=external_user_id,
             ip=ip,
             geo=geo,
             user_agent=user_agent,
             event_type=payload.event_type,
+            screen=device.screen_resolution if device else None,
+            fingerprint_traits=None,
         )
 
         if device:
@@ -692,6 +972,7 @@ async def track_activity(
                 visitor_id=visitor.id if visitor else None,
                 platform=payload.platform or "web",
                 ip=ip,
+                site_id=resolved_site_id,
                 id_provider=claims.get("__skynet_id_provider", "keycloak"),
             )
             profile.total_devices = await identity_service.count_user_devices(db, external_user_id)
@@ -756,17 +1037,30 @@ async def track_activity(
 
         trust_level = None
         score = profile.current_risk_score if profile else 0.0
-        if travel_flag:
-            _, score, trust_level = await recompute_risk(
+        if device:
+            await recompute_device_parent_posture(
                 db,
-                external_user_id,
-                trigger_type="impossible_travel",
-                trigger_detail={
-                    "ip": ip,
-                    "country": country,
-                    "fingerprint_id": payload.fingerprint_id,
+                device.id,
+                site_id=resolved_site_id,
+                trigger_context={
+                    "trigger_type": payload.event_type,
+                    "source": "track.activity",
+                    "external_user_id": external_user_id,
                 },
             )
+        _, score, trust_level = await recompute_user_parent_posture(
+            db,
+            external_user_id,
+            trigger_context={
+                "trigger_type": "impossible_travel" if travel_flag else payload.event_type,
+                "source": "track.activity",
+                "ip": ip,
+                "country": country,
+                "fingerprint_id": payload.fingerprint_id,
+                "site_id": resolved_site_id,
+                "travel_flag": travel_flag.flag_type if travel_flag else None,
+            },
+        )
         await db.commit()
     action = enforcement_action(float(score or 0.0))
     response = {"ok": True, "risk_action": action}
@@ -801,3 +1095,69 @@ async def check_device(fingerprint: str, x_skynet_key: str = Header(...)):
             "risk_score": device.risk_score,
             "linked_user": device.linked_user,
         }
+
+
+@edge_router.get("/s/{site_key}.js")
+async def stealth_tracker_script(site_key: str):
+    await validate_site_key(site_key)
+    asset_path = _tracker_asset_path()
+    tracker_source = asset_path.read_text(encoding="utf-8")
+    prelude = (
+        "(function(){"
+        "var s=window._skynet=window._skynet||{};"
+        "var current=document.currentScript;"
+        "var origin='';"
+        "try{origin=current&&current.src?new URL(current.src,window.location.href).origin:'';}catch(e){}"
+        f"s.key={json.dumps(site_key)};"
+        "s.api=s.api||origin;"
+        f"s.paths={json.dumps(_edge_paths(site_key), separators=(',', ':'))};"
+        "})();\n"
+    )
+    return Response(content=prelude + tracker_source, media_type="application/javascript")
+
+
+@edge_router.get(f"{EDGE_ROUTE_PREFIX}" + "/{site_key}/a")
+async def edge_check_access(
+    site_key: str,
+    request: Request,
+    fp: Optional[str] = Query(None),
+    dc: Optional[str] = Query(None),
+    ct: Optional[str] = Query(None),
+):
+    return await check_access(request=request, key=site_key, x_skynet_key=None, fp=fp, dc=dc, ct=ct)
+
+
+@edge_router.post(f"{EDGE_ROUTE_PREFIX}" + "/{site_key}/d")
+async def edge_device_context(
+    site_key: str,
+    payload: DeviceContextPayload,
+    request: Request,
+):
+    return await resolve_device_context(payload=payload, request=request, key=site_key, x_skynet_key=None)
+
+
+@edge_router.post(f"{EDGE_ROUTE_PREFIX}" + "/{site_key}/p")
+async def edge_pageview(
+    site_key: str,
+    payload: PageviewPayload,
+    request: Request,
+):
+    return await track_pageview(payload=payload, request=request, key=site_key, x_skynet_key=None)
+
+
+@edge_router.post(f"{EDGE_ROUTE_PREFIX}" + "/{site_key}/e")
+async def edge_event(
+    site_key: str,
+    payload: EventPayload,
+    request: Request,
+):
+    return await track_event(payload=payload, request=request, key=site_key, x_skynet_key=None)
+
+
+@edge_router.post(f"{EDGE_ROUTE_PREFIX}" + "/{site_key}/i")
+async def edge_identify(
+    site_key: str,
+    payload: IdentifyPayload,
+    request: Request,
+):
+    return await identify_user(payload=payload, request=request, key=site_key, x_skynet_key=None)

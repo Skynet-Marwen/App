@@ -240,6 +240,73 @@ class RiskEngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(new_score, 0.45, places=2)
         self.assertEqual(trust_level, "normal")
 
+    async def test_recompute_applies_extra_group_modifiers_and_persists_them(self):
+        now = datetime.now(timezone.utc)
+        profile = UserProfile(
+            id="profile-5",
+            external_user_id="ext-user-5",
+            current_risk_score=0.25,
+            trust_level="normal",
+            total_devices=2,
+            total_sessions=5,
+            first_seen=now - timedelta(days=5),
+            last_seen=now - timedelta(minutes=10),
+        )
+        links = [
+            IdentityLink(
+                id="link-1",
+                external_user_id="ext-user-5",
+                fingerprint_id="device-1",
+                platform="web",
+                linked_at=now - timedelta(days=1),
+                last_seen_at=now - timedelta(hours=1),
+            ),
+            IdentityLink(
+                id="link-2",
+                external_user_id="ext-user-5",
+                fingerprint_id="device-2",
+                platform="web",
+                linked_at=now - timedelta(days=2),
+                last_seen_at=now - timedelta(hours=2),
+            ),
+        ]
+        devices = [
+            Device(id="device-1", fingerprint="fp-1", risk_score=35, shared_user_count=0),
+            Device(id="device-2", fingerprint="fp-2", risk_score=40, shared_user_count=0),
+        ]
+        session = FakeAsyncSession(
+            scalar_values=[profile],
+            execute_values=[links, devices, []],
+        )
+
+        previous, new_score, trust_level = await risk_engine.recompute(
+            session,
+            "ext-user-5",
+            trigger_type="pageview",
+            trigger_detail={"source": "group-escalation"},
+            extra_modifiers={
+                "group_user_risk": 0.16,
+                "coordinated_group_behavior": 0.20,
+            },
+        )
+
+        self.assertEqual(previous, 0.25)
+        self.assertAlmostEqual(new_score, 0.75, places=2)
+        self.assertEqual(trust_level, "suspicious")
+        self.assertEqual(len(session.added), 3)
+        self.assertIsInstance(session.added[0], RiskEvent)
+        self.assertEqual(
+            json.loads(session.added[0].trigger_detail)["extra_modifiers"],
+            {
+                "group_user_risk": 0.16,
+                "coordinated_group_behavior": 0.2,
+            },
+        )
+        self.assertIsInstance(session.added[1], AnomalyFlag)
+        self.assertEqual(session.added[1].flag_type, "risk_spike")
+        self.assertIsInstance(session.added[2], AnomalyFlag)
+        self.assertEqual(session.added[2].flag_type, "risk_auto_flag")
+
     def test_enforcement_action_uses_explicit_threshold_bands(self):
         self.assertEqual(risk_engine.enforcement_action(0.59), "allow")
         self.assertEqual(risk_engine.enforcement_action(0.60), "flag")

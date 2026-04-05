@@ -39,9 +39,10 @@ function cellHoverGlow(intensity) {
 }
 
 // ─── Container layer ──────────────────────────────────────────────────────────
-export function TrafficHeatmap({ data, range, className = '' }) {
+export function TrafficHeatmap({ data, range, className = '', compact = false, fill = false }) {
   const mode = TIME_MODES[range] || TIME_MODES['24h']
   const [tip, setTip] = useState(null)
+  const ratio = compact ? '24 / 3.2' : GRID_RATIO
 
   const { normalized, calOffset } = useMemo(() => {
     if (!data?.length) return { normalized: [], calOffset: 0 }
@@ -67,8 +68,46 @@ export function TrafficHeatmap({ data, range, className = '' }) {
   if (!data?.length) {
     return (
       <div className={`flex items-center justify-center text-xs font-mono text-gray-700 ${className}`}
-        style={{ aspectRatio: GRID_RATIO }}>
+        style={fill ? { width: '100%', height: '100%' } : { aspectRatio: ratio }}>
         // NO DATA
+      </div>
+    )
+  }
+
+  if (fill) {
+    return (
+      <div className={`traffic-heatmap flex min-h-0 flex-col ${className}`}>
+        {/* Meta strip */}
+        <div className="mb-1.5 flex shrink-0 items-center gap-2 font-mono text-[9px]">
+          <span className="text-gray-600">
+            TOTAL <span className="text-cyan-400">{totalHits.toLocaleString()}</span>
+          </span>
+          {peakCount > 0 && (
+            <span className="text-gray-600">
+              PEAK <span className="text-cyan-400">{peakCount.toLocaleString()}</span>
+            </span>
+          )}
+          <span className="ml-auto uppercase tracking-widest text-gray-700">{mode.label}</span>
+        </div>
+        {/* Grid fills remaining height, cells stay square */}
+        <HeatmapGrid
+          data={normalized}
+          mode={mode}
+          calOffset={calOffset}
+          range={range}
+          setTip={setTip}
+          compact
+          fill
+        />
+        {tip && createPortal(
+          <div style={{ position: 'fixed', left: tip.x + 16, top: tip.y - 58, zIndex: 9999, pointerEvents: 'none' }}>
+            <div style={{ background: 'rgba(2,6,23,0.97)', backdropFilter: 'blur(8px)', border: '1px solid rgba(6,182,212,0.25)', borderRadius: '4px', padding: '6px 10px', fontFamily: 'monospace', fontSize: '10px', lineHeight: '1.5', whiteSpace: 'nowrap' }}>
+              <div style={{ color: '#6b7280', marginBottom: '2px' }}>{tip.ts}</div>
+              <div style={{ color: '#22d3ee', fontWeight: 700 }}>{tip.count.toLocaleString()} requests</div>
+            </div>
+          </div>,
+          document.body
+        )}
       </div>
     )
   }
@@ -77,7 +116,7 @@ export function TrafficHeatmap({ data, range, className = '' }) {
     <div className={`traffic-heatmap ${className}`}>
 
       {/* Meta row */}
-      <div className="flex items-center gap-3 mb-3 text-[10px] font-mono">
+      <div className={`flex items-center font-mono ${compact ? 'mb-2 gap-2 text-[9px]' : 'mb-3 gap-3 text-[10px]'}`}>
         <span className="text-gray-600">
           TOTAL <span className="text-cyan-400">{totalHits.toLocaleString()}</span> hits
         </span>
@@ -98,17 +137,20 @@ export function TrafficHeatmap({ data, range, className = '' }) {
         calOffset={calOffset}
         range={range}
         setTip={setTip}
+        compact={compact}
       />
 
       {/* Color scale legend */}
-      <div className="flex items-center gap-2 mt-3">
-        <span className="text-[9px] font-mono text-gray-700 uppercase tracking-widest">Low</span>
-        <div
-          className="flex-1 h-1.5 rounded-full"
-          style={{ background: 'linear-gradient(90deg, rgba(3,8,20,0.88), rgba(6,182,212,0.92))' }}
-        />
-        <span className="text-[9px] font-mono text-gray-700 uppercase tracking-widest">High</span>
-      </div>
+      {!compact && (
+        <div className="mt-3 flex items-center gap-2">
+          <span className="text-[9px] font-mono uppercase tracking-widest text-gray-700">Low</span>
+          <div
+            className="h-1.5 flex-1 rounded-full"
+            style={{ background: 'linear-gradient(90deg, rgba(3,8,20,0.88), rgba(6,182,212,0.92))' }}
+          />
+          <span className="text-[9px] font-mono uppercase tracking-widest text-gray-700">High</span>
+        </div>
+      )}
 
       {/* Tooltip — portalled to body so fixed positioning is never broken by
           ancestor transforms/filters in the dashboard layout */}
@@ -144,9 +186,9 @@ export function TrafficHeatmap({ data, range, className = '' }) {
 }
 
 // ─── Grid layer ───────────────────────────────────────────────────────────────
-function HeatmapGrid({ data, mode, calOffset, range, setTip }) {
+function HeatmapGrid({ data, mode, calOffset, range, setTip, compact, fill = false }) {
   const isCalendar   = !!mode.calendar
-  const show7dLabels = range === '7d'
+  const show7dLabels = range === '7d' && !compact
 
   const { cells, rows } = useMemo(() => {
     if (!isCalendar) {
@@ -185,9 +227,32 @@ function HeatmapGrid({ data, mode, calOffset, range, setTip }) {
   }, [show7dLabels, data])
 
   const cols = isCalendar ? 7 : mode.cols
+  const cellGap = compact ? '1px' : '2px'
+  const ratio = compact ? '24 / 3.2' : GRID_RATIO
 
+  // ── Fill mode: square cells, stable height ───────────────────────────────────
+  if (fill) {
+    return (
+      // position:relative container — flex:1 but absolute children can't push it taller
+      <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+        {/* absolute fill → centering layer has a defined size so max-height:100% works */}
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+          {/* aspect-ratio = cols/rows → every cell is square regardless of range */}
+          <div style={{ aspectRatio: `${cols} / ${rows}`, maxWidth: '100%', maxHeight: '100%', width: '100%' }}>
+            <div style={{ width: '100%', height: '100%', display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gridTemplateRows: `repeat(${rows}, 1fr)`, gap: '1px' }}>
+              {cells.map(({ bucket, blank }, i) => (
+                <HeatmapCell key={i} bucket={bucket} blank={blank} setTip={setTip} compact />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Normal mode ───────────────────────────────────────────────────────────────
   return (
-    <div className="flex gap-1.5" style={{ aspectRatio: GRID_RATIO }}>
+    <div className={`${compact ? 'flex gap-1' : 'flex gap-1.5'}`} style={{ aspectRatio: ratio }}>
 
       {/* 7d: Y-axis day labels */}
       {show7dLabels && (
@@ -202,26 +267,17 @@ function HeatmapGrid({ data, mode, calOffset, range, setTip }) {
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         {/* 30d: day-of-week header */}
-        {isCalendar && (
-          <div className="grid grid-cols-7 mb-[2px]" style={{ gap: '2px', flexShrink: 0 }}>
+        {isCalendar && !compact && (
+          <div className="mb-[2px] grid grid-cols-7" style={{ gap: cellGap, flexShrink: 0 }}>
             {DOW_HDR.map((d, i) => (
               <div key={i} className="text-center text-[8px] font-mono text-gray-700">{d}</div>
             ))}
           </div>
         )}
 
-        {/* Main grid — fills the remaining height so all modes share the same outer box */}
-        <div
-          style={{
-            flex: 1,
-            display: 'grid',
-            gridTemplateColumns: `repeat(${cols}, 1fr)`,
-            gridTemplateRows: `repeat(${rows}, 1fr)`,
-            gap: '2px',
-          }}
-        >
+        <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gridTemplateRows: `repeat(${rows}, 1fr)`, gap: cellGap }}>
           {cells.map(({ bucket, blank }, i) => (
-            <HeatmapCell key={i} bucket={bucket} blank={blank} setTip={setTip} />
+            <HeatmapCell key={i} bucket={bucket} blank={blank} setTip={setTip} compact={compact} />
           ))}
         </div>
       </div>
@@ -230,7 +286,7 @@ function HeatmapGrid({ data, mode, calOffset, range, setTip }) {
 }
 
 // ─── Cell layer ───────────────────────────────────────────────────────────────
-function HeatmapCell({ bucket, blank, setTip }) {
+function HeatmapCell({ bucket, blank, setTip, compact }) {
   const { count, timestamp, intensity } = bucket
   const active = !blank && count > 0
   const bg = blank ? 'rgba(255,255,255,0.02)' : cellColor(intensity)
@@ -251,6 +307,7 @@ function HeatmapCell({ bucket, blank, setTip }) {
         'traffic-heatmap__cell',
         blank ? 'traffic-heatmap__cell--blank' : '',
         active ? 'traffic-heatmap__cell--active traffic-heatmap__cell--interactive' : '',
+        compact ? 'traffic-heatmap__cell--compact' : '',
       ].filter(Boolean).join(' ')}
       style={{
         backgroundColor: bg,

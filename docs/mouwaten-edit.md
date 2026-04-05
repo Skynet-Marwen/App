@@ -10,11 +10,11 @@
 Make Mouwaten:
 
 - authenticate users with Keycloak
-- expose the Keycloak access token to SkyNet
 - resolve the current SkyNet device UUID in the browser
 - link the authenticated Mouwaten user to that SkyNet device
 - send authenticated activity events to SkyNet
 - let SkyNet return a trust verdict (`trusted` / `normal` / `suspicious` / `blocked`)
+- keep tracker and challenge flow on the Mouwaten origin when blockers or plain-HTTP LAN hosts make direct SkyNet browser calls unreliable
 
 ---
 
@@ -132,22 +132,30 @@ Reference:
 
 ## What Mouwaten Needed To Do
 
-The actual Mouwaten codebase is not inside this repository, so this section documents the integration contract that Mouwaten had to follow.
+This section reflects the live Mouwaten-side integration pattern now used with SkyNet.
 
-### 1. Load the SkyNet tracker on Mouwaten pages
+### 1. Serve the tracker through Mouwaten itself
 
-Mouwaten needs the SkyNet tracker script on the pages that should be tracked:
+Mouwaten no longer needs to expose the raw SkyNet site key in public bootstrap config or call `https://skynet.tn` directly from the browser.
 
-```html
-<script>window._skynet = { key: 'YOUR_SITE_API_KEY' };</script>
-<script async src="https://skynet.yourdomain.com/tracker/skynet.js"></script>
-```
+The live pattern is:
+
+- public config returns:
+  - `tracker_url: /api/auth/skynet.js`
+  - `base_url: ""`
+  - `site_key: ""`
+- Mouwaten backend fetches the real SkyNet tracker server-side
+- Mouwaten injects same-origin relay paths for tracker, identity, activity, and challenge flow
 
 Result:
 
 - browser tracking is enabled
+- the raw SkyNet site API key stays server-side
 - SkyNet can resolve device context
 - `_skynet_did` continuity cookie can be maintained
+- blocker-sensitive browsers stay on the Mouwaten origin
+- challenge pages no longer need to redirect the browser to `https://skynet.tn`
+- Mouwaten can require tracker readiness before protected flows continue, instead of silently tolerating blocked tracker JS
 
 ### 2. Resolve the real SkyNet device UUID in the browser
 
@@ -159,12 +167,12 @@ const deviceId = await SkyNet.getDeviceId();
 
 This avoids using raw browser fingerprints directly in app code.
 
-### 3. Send the Keycloak access token to SkyNet after login
+### 3. Send the Keycloak access token after login through the Mouwaten relay
 
-After Mouwaten authenticates the user with Keycloak, it must call:
+After Mouwaten authenticates the user with Keycloak, it calls its own same-origin relay:
 
 ```js
-const linkRes = await fetch('https://skynet.example.com/api/v1/identity/link', {
+const linkRes = await fetch('/api/auth/skynet/link', {
   method: 'POST',
   headers: {
     Authorization: `Bearer ${keycloakAccessToken}`,
@@ -173,7 +181,6 @@ const linkRes = await fetch('https://skynet.example.com/api/v1/identity/link', {
   body: JSON.stringify({
     fingerprint_id: deviceId,
     platform: 'web',
-    site_id: '<mouwaten-site-id>',
   }),
 });
 
@@ -186,12 +193,12 @@ Mouwaten should then enforce the returned verdict:
 - `suspicious`: require extra verification
 - `blocked`: deny access or stop the sensitive action
 
-### 4. Send authenticated activity to SkyNet
+### 4. Send authenticated activity through the same-origin relay
 
 Once logged in, Mouwaten should send user activity such as pageviews or important actions:
 
 ```js
-await fetch('https://skynet.example.com/api/v1/track/activity', {
+await fetch('/api/auth/skynet/activity', {
   method: 'POST',
   headers: {
     Authorization: `Bearer ${keycloakAccessToken}`,
@@ -203,12 +210,38 @@ await fetch('https://skynet.example.com/api/v1/track/activity', {
     fingerprint_id: deviceId,
     page_url: window.location.href,
     session_id: window.sessionStorage.getItem('_sn_sid'),
-    site_id: '<mouwaten-site-id>',
   }),
 });
 ```
 
-### 5. Keep Keycloak token claims compatible
+The Mouwaten backend injects the real SkyNet `site_key` server-side before forwarding the request to `/api/v1/track/activity`.
+
+### 5. Proxy challenge pages on the Mouwaten origin
+
+When `/api/auth/skynet/check-access` returns a challenge, Mouwaten now keeps the browser on:
+
+### 6. Treat tracker readiness as mandatory when enforcement is active
+
+Mouwaten should not silently continue when the SkyNet tracker relay is blocked by extension filtering or never exposes a usable device API.
+
+The live integration now supports a strict behavior:
+
+- load the tracker from `/api/auth/skynet.js`
+- require `window.__skynetTrackerReady === true`
+- require `SkyNet.getDeviceId()` to exist
+- if the tracker never becomes ready, stop the protected app flow and show a security message instead of continuing without tracking
+
+This is the practical answer to “no tracker, no protected use” for Mouwaten.
+
+- `/api/auth/skynet/challenge/{token}`
+- `/api/auth/skynet/challenge/{token}/verify`
+- `/api/auth/skynet/challenge/{token}/verify-honeypot`
+
+This keeps the browser on `http://10.0.0.39:8081` instead of bouncing to `https://skynet.tn`.
+
+The current relay also injects a SHA-256 fallback into the JS proof-of-work page so the challenge still works on plain-HTTP LAN hosts where `crypto.subtle` may be unavailable.
+
+### 6. Keep Keycloak token claims compatible
 
 For Mouwaten to work correctly with SkyNet, the Keycloak-issued token needs to provide claims that SkyNet expects during validation and profile upsert, mainly:
 
@@ -276,29 +309,32 @@ Reference:
 
 ```text
 1. User opens Mouwaten
-2. Mouwaten loads skynet.js with its site API key
+2. Mouwaten serves `/api/auth/skynet.js` from its own origin
 3. Browser resolves SkyNet device context
 4. User signs in through Keycloak
 5. Mouwaten receives Keycloak access token
-6. Mouwaten calls SkyNet /identity/link with:
+6. Mouwaten calls `/api/auth/skynet/link` with:
    - Bearer <keycloak_token>
    - fingerprint_id = SkyNet device UUID
 7. SkyNet validates token against Keycloak JWKS
 8. SkyNet upserts user profile and device link
 9. SkyNet computes risk and trust level
 10. Mouwaten receives verdict and acts on it
-11. Mouwaten keeps sending authenticated activity to /track/activity
+11. Mouwaten keeps sending authenticated activity to `/api/auth/skynet/activity`
+12. If challenge is needed, Mouwaten serves the challenge page and verify endpoints locally
 ```
 
 ---
 
 ## Practical Mouwaten Checklist
 
-- Add the SkyNet tracker script to Mouwaten pages.
+- Serve the SkyNet tracker through `/api/auth/skynet.js` on Mouwaten itself.
 - Make sure Mouwaten uses `SkyNet.getDeviceId()` before identity linking.
-- After Keycloak login, call `/api/v1/identity/link`.
+- After Keycloak login, call the Mouwaten relay for identity linking.
 - Use the returned `trust_level` in Mouwaten access decisions.
-- Send authenticated events to `/api/v1/track/activity`.
+- Send authenticated events through the Mouwaten relay.
+- Keep challenge pages proxied on the Mouwaten origin.
+- Do not expose the raw SkyNet site API key in public bootstrap config unless you intentionally choose the direct browser integration model.
 - Configure the Mouwaten Keycloak realm in SkyNet JWKS settings.
 - Optionally enable Keycloak realm sync for the `mouwaten` realm.
 - Optionally map Mouwaten hostnames to a dedicated tenant/theme inside SkyNet.

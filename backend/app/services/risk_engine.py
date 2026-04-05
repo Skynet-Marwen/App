@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.identity_link import IdentityLink
 from ..models.device import Device
+from ..models.incident import Incident
 from ..models.user_profile import UserProfile
 from ..models.risk_event import RiskEvent
 from ..models.anomaly_flag import AnomalyFlag
@@ -27,7 +28,7 @@ _MODIFIERS = {
     "shared_device": 0.20,    # device used by >1 user
     "new_device": 0.10,       # link created < 24h ago
     "geo_jump": 0.30,         # impossible_travel flag open
-    "tor_vpn": 0.40,          # device risk_score == 100 (proxy/tor heuristic)
+    "tor_vpn": 0.40,          # open VPN/proxy/WebRTC-bypass incident on a linked device
     "headless": 0.30,         # headless browser detected
     "multi_account": 0.25,    # multi_account flag open
     "behavior_drift": 0.15,   # low-entropy interaction timing
@@ -102,6 +103,7 @@ async def recompute(
     external_user_id: str,
     trigger_type: str = "manual",
     trigger_detail: Optional[dict] = None,
+    extra_modifiers: Optional[dict[str, float]] = None,
 ) -> tuple[float, float, str]:
     """Recompute and persist a user's risk score.
 
@@ -168,9 +170,27 @@ async def recompute(
         if "behavior_drift" in flag_types:
             modifier += modifier_weights["behavior_drift"]
 
-        # Tor/VPN heuristic: device risk_score == 100
-        if any(d.risk_score >= 100 for d in devices):
+        # Tor/VPN: any linked device has an open VPN, proxy, or WebRTC-bypass incident
+        _TOR_VPN_TYPES = frozenset({"VPN_DETECTED", "PROXY_DETECTED", "WEBRTC_VPN_BYPASS"})
+        device_ids = [d.id for d in devices]
+        has_tor_vpn_incident = bool(
+            await db.scalar(
+                select(func.count()).select_from(Incident).where(
+                    Incident.device_id.in_(device_ids),
+                    Incident.type.in_(_TOR_VPN_TYPES),
+                    Incident.status == "open",
+                )
+            )
+        )
+        if has_tor_vpn_incident:
             modifier += modifier_weights["tor_vpn"]
+
+        if extra_modifiers:
+            for value in extra_modifiers.values():
+                try:
+                    modifier += max(float(value), 0.0)
+                except (TypeError, ValueError):
+                    continue
 
         new_score = min(base + modifier, 1.0)
 
@@ -179,22 +199,44 @@ async def recompute(
     flag_threshold, challenge_threshold, block_threshold = _enforcement_thresholds()
 
     # 4. Persist risk_event
+    detail_payload = dict(trigger_detail or {})
+    if extra_modifiers:
+        detail_payload["extra_modifiers"] = {}
+        for key, value in extra_modifiers.items():
+            if not isinstance(key, str):
+                continue
+            try:
+                detail_payload["extra_modifiers"][key] = round(float(value), 4)
+            except (TypeError, ValueError):
+                continue
     event = RiskEvent(
         id=str(uuid.uuid4()),
         external_user_id=external_user_id,
         score=new_score,
         delta=delta,
         trigger_type=trigger_type,
-        trigger_detail=json.dumps(trigger_detail) if trigger_detail else None,
+        trigger_detail=json.dumps(detail_payload) if detail_payload else None,
         created_at=datetime.now(timezone.utc),
     )
     db.add(event)
 
-    # 5. Update profile
+    # 5. Update or create profile
     if profile:
         profile.current_risk_score = new_score
         profile.trust_level = "blocked" if new_score >= block_threshold else trust_level
         profile.total_devices = len(links)
+    else:
+        now = datetime.now(timezone.utc)
+        profile = UserProfile(
+            id=str(uuid.uuid4()),
+            external_user_id=external_user_id,
+            current_risk_score=new_score,
+            trust_level="blocked" if new_score >= block_threshold else trust_level,
+            total_devices=len(links),
+            first_seen=now,
+            last_seen=now,
+        )
+        db.add(profile)
 
     # 6. Auto-flag on spike
     if abs(delta) >= 0.20 and delta > 0:

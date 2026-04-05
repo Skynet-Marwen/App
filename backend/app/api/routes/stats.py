@@ -1,5 +1,9 @@
+import logging
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+
+_log = logging.getLogger("skynet.stats")
 from sqlalchemy import select, func, text, case
 from ...core.database import get_db
 from ...core.security import get_current_user
@@ -13,6 +17,7 @@ from ...models.user_profile import UserProfile
 from ...models.anomaly_flag import AnomalyFlag
 from ...schemas.stats import OverviewResponse, RealtimeResponse
 from ...services.gateway_analytics import summarize_gateway_dashboard
+from ...services.intelligence_filters import active_anomaly_flag_clause, active_incident_clause
 from ...services.overview_realtime import get_realtime_snapshot
 from datetime import datetime, timedelta, timezone
 
@@ -72,22 +77,30 @@ async def overview(
     # Current period metrics
     total_visitors = await db.scalar(select(func.count(func.distinct(Visitor.id))).where(Visitor.last_seen >= since)) or 0
     total_detected = await db.scalar(
-        select(func.count()).select_from(Incident).where(Incident.detected_at >= since)
+        select(func.count())
+        .select_from(Incident)
+        .where(Incident.detected_at >= since)
+        .where(active_incident_clause())
     ) or 0
     blocked_attempts = await db.scalar(
         select(func.sum(BlockedIP.hits)).select_from(BlockedIP)
     ) or 0
-    linked_unique_users = await db.scalar(
-        select(func.count(func.distinct(Visitor.linked_user))).where(
-            Visitor.last_seen >= since, Visitor.linked_user.isnot(None)
+    # Collect all known external_user_id values (deduplicated across both sources)
+    linked_user_ids_rows = (
+        await db.execute(
+            select(func.distinct(Visitor.linked_user)).where(
+                Visitor.last_seen >= since, Visitor.linked_user.isnot(None)
+            )
         )
-    ) or 0
-    external_unique_users = await db.scalar(
-        select(func.count(func.distinct(UserProfile.external_user_id))).where(
-            UserProfile.last_seen >= since
+    ).scalars().all()
+    profile_user_ids_rows = (
+        await db.execute(
+            select(func.distinct(UserProfile.external_user_id)).where(
+                UserProfile.last_seen >= since
+            )
         )
-    ) or 0
-    unique_users = int(linked_unique_users) + int(external_unique_users)
+    ).scalars().all()
+    unique_users = len(set(linked_user_ids_rows) | set(profile_user_ids_rows))
     
     # Count devices
     total_devices = await db.scalar(
@@ -106,7 +119,10 @@ async def overview(
     
     # Evasion attempts from incidents
     evasion_attempts = await db.scalar(
-        select(func.count()).select_from(Incident).where(Incident.detected_at >= since)
+        select(func.count())
+        .select_from(Incident)
+        .where(Incident.detected_at >= since)
+        .where(active_incident_clause())
     ) or 0
     
     # Count spam/suspicious events
@@ -117,20 +133,24 @@ async def overview(
         )
     ) or 0
     
-    prev_linked_unique_users = await db.scalar(
-        select(func.count(func.distinct(Visitor.linked_user))).where(
-            Visitor.last_seen >= since - timedelta(days=days),
-            Visitor.last_seen < since,
-            Visitor.linked_user.isnot(None),
+    prev_linked_user_ids_rows = (
+        await db.execute(
+            select(func.distinct(Visitor.linked_user)).where(
+                Visitor.last_seen >= since - timedelta(days=days),
+                Visitor.last_seen < since,
+                Visitor.linked_user.isnot(None),
+            )
         )
-    ) or 0
-    prev_external_unique_users = await db.scalar(
-        select(func.count(func.distinct(UserProfile.external_user_id))).where(
-            UserProfile.last_seen >= since - timedelta(days=days),
-            UserProfile.last_seen < since,
+    ).scalars().all()
+    prev_profile_user_ids_rows = (
+        await db.execute(
+            select(func.distinct(UserProfile.external_user_id)).where(
+                UserProfile.last_seen >= since - timedelta(days=days),
+                UserProfile.last_seen < since,
+            )
         )
-    ) or 0
-    prev_unique_users = int(prev_linked_unique_users) + int(prev_external_unique_users)
+    ).scalars().all()
+    prev_unique_users = len(set(prev_linked_user_ids_rows) | set(prev_profile_user_ids_rows))
 
     # Previous period for comparison
     prev_since = since - timedelta(days=days)
@@ -193,26 +213,27 @@ async def overview(
             })
             current += bucket_delta
     except Exception:
+        _log.warning("overview: traffic heatmap aggregation failed", exc_info=True)
         traffic_heatmap = []
 
     # Blocking chart - by incident type
-    blocking_query = """
-    SELECT type, COUNT(*) as count
-    FROM incidents
-    GROUP BY type
-    ORDER BY count DESC
-    LIMIT 10
-    """
     try:
-        result = await db.execute(text(blocking_query))
+        result = await db.execute(
+            select(Incident.type, func.count().label("count"))
+            .where(active_incident_clause())
+            .group_by(Incident.type)
+            .order_by(func.count().desc())
+            .limit(10)
+        )
         rows = result.fetchall()
         blocking_chart = [
             {"reason": row[0], "count": row[1]}
             for row in rows
         ]
     except Exception:
+        _log.warning("overview: blocking chart aggregation failed", exc_info=True)
         blocking_chart = []
-    
+
     # Top countries by visitor count
     countries_result = await db.execute(
         select(
@@ -253,6 +274,7 @@ async def overview(
     incident_rows_result = await db.execute(
         select(Incident)
         .where(Incident.detected_at >= prev_since)
+        .where(active_incident_clause())
         .order_by(Incident.detected_at.desc())
         .limit(200)
     )
@@ -431,6 +453,7 @@ async def overview(
         .where(
             AnomalyFlag.external_user_id == UserProfile.external_user_id,
             AnomalyFlag.status == "open",
+            active_anomaly_flag_clause(),
         )
         .correlate(UserProfile)
         .scalar_subquery()
@@ -440,6 +463,7 @@ async def overview(
         .where(
             AnomalyFlag.external_user_id == UserProfile.external_user_id,
             AnomalyFlag.status == "open",
+            active_anomaly_flag_clause(),
         )
         .order_by(
             case(
@@ -494,6 +518,7 @@ async def overview(
             prev_since=prev_since,
         )
     except Exception:
+        _log.warning("overview: gateway dashboard summary failed", exc_info=True)
         gateway_dashboard = None
 
     return {

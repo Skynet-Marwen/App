@@ -2,9 +2,39 @@ import unittest
 
 from app.services import anti_evasion
 from app.services.bot_detection import detect_click_farm, detect_crawler_signature, detect_headless_signals
+from app.services.dnsbl import should_soft_fail_dnsbl
+from app.services.network_intel import language_country_mismatch
 
 
 class AntiEvasionTests(unittest.TestCase):
+    def test_runtime_filter_signals_detect_extension_like_blockers(self):
+        signals = anti_evasion._runtime_filter_signals(
+            {
+                "js_active": True,
+                "adblock_dom_bait_blocked": True,
+                "adblock_same_origin_probe_blocked": False,
+                "remote_ad_probe_blocked": True,
+            }
+        )
+
+        self.assertTrue(signals["adblocker_detected"])
+        self.assertFalse(signals["dns_filter_suspected"])
+        self.assertEqual(signals["blocker_family"], "extension_like")
+
+    def test_runtime_filter_signals_detect_dns_filter_heuristic(self):
+        signals = anti_evasion._runtime_filter_signals(
+            {
+                "js_active": True,
+                "adblock_dom_bait_blocked": False,
+                "adblock_same_origin_probe_blocked": False,
+                "remote_ad_probe_blocked": True,
+            }
+        )
+
+        self.assertFalse(signals["adblocker_detected"])
+        self.assertTrue(signals["dns_filter_suspected"])
+        self.assertEqual(signals["blocker_family"], "dns_or_network_filter")
+
     def test_assess_behavior_entropy_flags_overly_regular_timings(self):
         assessment = anti_evasion._assess_behavior_entropy(
             {
@@ -64,6 +94,34 @@ class AntiEvasionTests(unittest.TestCase):
 
         self.assertIsNotNone(assessment)
         self.assertGreaterEqual(assessment["clicks_per_minute"], 30)
+
+    def test_dnsbl_soft_fail_matches_tunisia_by_default_style_config(self):
+        self.assertTrue(
+            should_soft_fail_dnsbl(
+                "TN",
+                {"dnsbl_soft_fail_country_codes": ["TN"]},
+            )
+        )
+
+    def test_dnsbl_soft_fail_does_not_match_other_countries(self):
+        self.assertFalse(
+            should_soft_fail_dnsbl(
+                "FR",
+                {"dnsbl_soft_fail_country_codes": ["TN"]},
+            )
+        )
+
+    def test_language_mismatch_allows_common_tunisian_languages(self):
+        config = {"language_mismatch_allowed_languages_by_country": {"TN": ["ar", "fr", "en"]}}
+
+        self.assertFalse(language_country_mismatch("fr-FR", "TN", config))
+        self.assertFalse(language_country_mismatch("en-US", "TN", config))
+        self.assertFalse(language_country_mismatch("ar-TN", "TN", config))
+
+    def test_language_mismatch_still_flags_unlisted_languages_for_tunisia(self):
+        config = {"language_mismatch_allowed_languages_by_country": {"TN": ["ar", "fr", "en"]}}
+
+        self.assertTrue(language_country_mismatch("it-IT", "TN", config))
 
 
 if __name__ == "__main__":

@@ -41,6 +41,8 @@ const browserSummary = (devices) => {
   return `${labels.slice(0, 2).join(' + ')} +${labels.length - 2}`
 }
 
+const deviceTitle = (device) => device.display_name || device.probable_model || device.probable_vendor || device.os || 'Unknown device'
+
 const groupBadgeVariant = (matchStrength) => {
   if (matchStrength === 'strict') return 'info'
   if (matchStrength === 'probable_mobile') return 'warning'
@@ -114,7 +116,7 @@ export default function DeviceGroupsTable({
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm text-white font-medium truncate">
-                          {browserSummary(group.devices)}
+                          {group.display_name || deviceTitle(group.devices[0] || {})}
                         </span>
                         <Badge variant={groupBadgeVariant(group.match_strength)}>
                           {group.match_label}
@@ -123,13 +125,14 @@ export default function DeviceGroupsTable({
                       <div className="mt-1 flex items-center gap-2 text-xs text-gray-500 flex-wrap">
                         <span className="flex items-center gap-1">
                           <Monitor size={12} />
-                          {group.devices[0]?.os ?? 'Unknown OS'}
+                          {group.probable_vendor || group.devices[0]?.os || 'Unknown device'}
                         </span>
                         <span className="flex items-center gap-1">
                           <Fingerprint size={12} />
                           {group.match_key ? group.match_key.slice(0, 18) : group.devices[0]?.fingerprint?.slice(0, 18)}
                           …
                         </span>
+                        <span>{browserSummary(group.devices)}</span>
                       </div>
                       {evidenceSummary(group) && (
                         <div className="mt-2 text-xs text-gray-500">
@@ -160,11 +163,14 @@ export default function DeviceGroupsTable({
                             className="min-w-0 text-left hover:text-white transition"
                           >
                             <div className="flex items-center gap-2">
-                              <Fingerprint size={13} className="text-cyan-400 flex-shrink-0" />
-                              <code className="text-xs text-cyan-400 truncate">{device.fingerprint}</code>
+                              <Monitor size={13} className="text-cyan-400 flex-shrink-0" />
+                              <span className="text-sm text-white truncate">{deviceTitle(device)}</span>
                             </div>
                             <div className="mt-1 text-xs text-gray-500">
                               {device.browser ?? 'Unknown browser'} / {device.os ?? 'Unknown OS'}
+                            </div>
+                            <div className="mt-1 text-xs text-cyan-400 font-mono truncate">
+                              {device.fingerprint}
                             </div>
                           </button>
                           <div className="text-xs text-gray-400 self-center">

@@ -34,6 +34,9 @@ export const authApi = {
   },
   logout: () => api.post('/auth/logout'),
   me: () => api.get('/auth/me'),
+  smtpStatus: () => api.get('/auth/smtp-status'),
+  forgotPassword: (email) => api.post('/auth/forgot-password', { email }),
+  resetPassword: (token, new_password) => api.post('/auth/reset-password', { token, new_password }),
 }
 
 // --- Overview / Stats ---
@@ -100,6 +103,7 @@ export const antiEvasionApi = {
   config: () => api.get('/anti-evasion/config'),
   updateConfig: (data) => api.put('/anti-evasion/config', data),
   incidents: (params) => api.get('/anti-evasion/incidents', { params }),
+  incident: (id) => api.get(`/anti-evasion/incidents/${id}`),
   resolveIncident: (id) => api.post(`/anti-evasion/incidents/${id}/resolve`),
 }
 
@@ -138,6 +142,8 @@ export const settingsApi = {
   storageStatus: () => api.get('/settings/storage/status'),
   purgeStorage: () => api.post('/settings/storage/purge'),
   archiveStorage: () => api.post('/settings/storage/archive', {}, { responseType: 'blob' }),
+  purgeTrackerData: (siteId) => api.post('/settings/storage/tracker-purge', { site_id: siteId }),
+  resetInstallStorage: (confirmation) => api.post('/settings/storage/reset-install', { confirmation }),
   restoreUploadedBackup: ({ file, mode, services, password }) => {
     const form = new FormData()
     form.append('file', file)
@@ -209,7 +215,9 @@ export const riskApi = {
 
 export const identityApi = {
   profile: (externalUserId) => api.get(`/identity/${externalUserId}/profile`),
+  delete: (externalUserId) => api.delete(`/identity/${externalUserId}`),
   devices: (externalUserId) => api.get(`/identity/${externalUserId}/devices`),
+  visitors: (externalUserId, params) => api.get(`/identity/${externalUserId}/visitors`, { params }),
   riskHistory: (externalUserId, params) => api.get(`/identity/${externalUserId}/risk-history`, { params }),
   activity: (externalUserId, params) => api.get(`/identity/${externalUserId}/activity`, { params }),
   flags: (externalUserId) => api.get(`/identity/${externalUserId}/flags`),

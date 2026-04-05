@@ -19,8 +19,7 @@ export const TAB_HINTS = {
 export function buildSnippets(apiKey, origin, siteId) {
   return {
     html: `<!-- SkyNet Tracker -->
-<script>window._skynet = { key: '${apiKey}' };</script>
-<script async src="${origin}/tracker/skynet.js"></script>
+<script async src="${origin}/s/${apiKey}.js"></script>
 
 <!-- Browser helpers exposed after load:
      SkyNet.getDeviceId()
@@ -46,7 +45,7 @@ const linkRes = await fetch('${origin}/api/v1/identity/link', {
 });
 
 const identity = await linkRes.json();
-console.log('SkyNet identity verdict', identity);
+// console.log('SkyNet identity verdict', identity);
 
 if (identity.trust_level === 'blocked') {
   // deny access
@@ -71,12 +70,10 @@ await fetch('${origin}/api/v1/track/activity', {
 
     gtm: `<!-- Custom HTML Tag — Google Tag Manager -->
 <script>
-  window._skynet = window._skynet || {};
-  window._skynet.key = '${apiKey}';
   (function() {
     var s = document.createElement('script');
     s.async = true;
-    s.src = '${origin}/tracker/skynet.js';
+    s.src = '${origin}/s/${apiKey}.js';
     document.head.appendChild(s);
   })();
 </script>`,
@@ -85,11 +82,10 @@ await fetch('${origin}/api/v1/track/activity', {
 // functions.php — enqueue SkyNet tracker on all frontend pages
 function skynet_tracker_enqueue() {
     ?>
-    <script>window._skynet = { key: '<?php echo esc_js('${apiKey}'); ?>' };</script>
     <?php
     wp_enqueue_script(
         'skynet-tracker',
-        '${origin}/tracker/skynet.js',
+        '${origin}/s/${apiKey}.js',
         [], null, true   // load in footer
     );
 }

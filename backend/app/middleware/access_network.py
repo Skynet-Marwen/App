@@ -133,10 +133,14 @@ def _origin_from_url(url: str | None) -> str | None:
 
 async def _tracker_allowed_origin(request: Request) -> str | None:
     path = request.url.path or ""
-    if not (path.startswith("/api/v1/track/") or path == "/api/v1/identity/link"):
+    if not (path.startswith("/api/v1/track/") or path.startswith("/w/") or path == "/api/v1/identity/link"):
         return None
 
     site_key = _tracker_site_key(request)
+    if not site_key and path.startswith("/w/"):
+        parts = [part for part in path.split("/") if part]
+        if len(parts) >= 2:
+            site_key = parts[1]
     if not site_key:
         return None
 
@@ -194,7 +198,7 @@ def _scope_limit(path: str, settings: dict) -> tuple[str, int]:
         return "auth", max(int(settings.get("rate_limit_auth_per_minute") or 30), 1)
     if path.startswith("/api/v1/integration/") or path.startswith("/api/v1/settings/integrations"):
         return "integration", max(int(settings.get("rate_limit_integration_per_minute") or 120), 1)
-    if path.startswith("/api/v1/track/"):
+    if path.startswith("/api/v1/track/") or path.startswith("/w/") or path.startswith("/s/"):
         return "track", max(int(settings.get("rate_limit_track_per_minute") or 200), 1)
     return "default", max(int(settings.get("rate_limit_default_per_minute") or 300), 1)
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { AlertTriangle, CheckCircle, Database, FolderArchive, HardDriveDownload, RefreshCw, Save, Trash2 } from 'lucide-react'
 
 import { Alert, Badge, Button, Card, CardHeader } from '../../components/ui'
-import { settingsApi } from '../../services/api'
+import { integrationApi, settingsApi } from '../../services/api'
 import BackupTab from './BackupTab'
 import SettingsRoadmapCard from './SettingsRoadmapCard'
 
@@ -18,8 +18,13 @@ export default function DataStorageTab({ settings, setSettings, saving, savedKey
   const [busy, setBusy] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [sites, setSites] = useState([])
+  const [selectedSiteId, setSelectedSiteId] = useState('')
 
-  useEffect(() => { refreshStatus() }, [])
+  useEffect(() => {
+    refreshStatus()
+    refreshSites()
+  }, [])
 
   async function refreshStatus() {
     setLoadingStatus(true)
@@ -31,6 +36,17 @@ export default function DataStorageTab({ settings, setSettings, saving, savedKey
       setError(err.response?.data?.detail || 'Failed to load storage status')
     } finally {
       setLoadingStatus(false)
+    }
+  }
+
+  async function refreshSites() {
+    try {
+      const res = await integrationApi.sites()
+      const items = Array.isArray(res.data) ? res.data : []
+      setSites(items)
+      setSelectedSiteId((current) => current || items[0]?.id || '')
+    } catch (err) {
+      setError((current) => current || err.response?.data?.detail || 'Failed to load trackers')
     }
   }
 
@@ -69,6 +85,56 @@ export default function DataStorageTab({ settings, setSettings, saving, savedKey
       setBusy('')
     }
   }
+
+  async function handleTrackerPurge() {
+    if (!selectedSiteId) {
+      setError('Choose a tracker first.')
+      return
+    }
+    const tracker = sites.find((item) => item.id === selectedSiteId)
+    if (!window.confirm(`Delete all tracked data for ${tracker?.name || 'this tracker'}? The tracker configuration stays, but visitors, activity, device links, and orphaned user intelligence will be removed.`)) {
+      return
+    }
+    setBusy('tracker-purge')
+    setMessage('')
+    setError('')
+    try {
+      const res = await settingsApi.purgeTrackerData(selectedSiteId)
+      const summary = res.data.summary || {}
+      setMessage(`Tracker data deleted for ${res.data.site?.name || tracker?.name || 'tracker'}: ${formatSummary(summary)}`)
+      await refreshStatus()
+      await refreshSites()
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to delete tracker data')
+    } finally {
+      setBusy('')
+    }
+  }
+
+  async function handleFreshInstallReset() {
+    const confirmation = window.prompt('Type RESET SKYNET to reinitialize runtime data for a fresh install. Operator accounts and settings stay, but sites and collected intelligence data will be deleted.')
+    if (!confirmation) {
+      return
+    }
+    setBusy('reset-install')
+    setMessage('')
+    setError('')
+    try {
+      const res = await settingsApi.resetInstallStorage(confirmation)
+      const summary = res.data.summary || {}
+      setSites([])
+      setSelectedSiteId('')
+      setMessage(`Fresh-install reset completed: ${formatSummary(summary)}`)
+      await refreshStatus()
+      await refreshSites()
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to reset operational database')
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const selectedSite = sites.find((item) => item.id === selectedSiteId) || null
 
   return (
     <div className="space-y-4">
@@ -190,6 +256,85 @@ export default function DataStorageTab({ settings, setSettings, saving, savedKey
         </Card>
       </div>
 
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.72fr)_minmax(320px,0.58fr)]">
+        <Card>
+          <CardHeader>
+            <div>
+              <p className="text-sm font-medium text-white">Tracker Data Reset</p>
+              <p className="mt-1 text-xs text-gray-500">Delete collected data for one tracker/site while keeping the tracker registration so it can start fresh.</p>
+            </div>
+          </CardHeader>
+          <div className="space-y-3">
+            <label className="block">
+              <span className="mb-1 block text-xs font-mono uppercase tracking-[0.18em] text-gray-500">Tracker</span>
+              <select
+                value={selectedSiteId}
+                onChange={(event) => setSelectedSiteId(event.target.value)}
+                className="w-full rounded-xl border border-cyan-500/10 bg-black/30 px-3 py-2 text-sm text-white outline-none"
+              >
+                <option value="">Select tracker</option>
+                {sites.map((site) => (
+                  <option key={site.id} value={site.id}>
+                    {site.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="rounded-xl border border-cyan-500/10 bg-black/20 px-4 py-3">
+              {selectedSite ? (
+                <>
+                  <p className="text-sm text-white">{selectedSite.name}</p>
+                  <p className="mt-1 text-xs text-gray-500">{selectedSite.url}</p>
+                  <p className="mt-2 text-xs text-cyan-300">
+                    {selectedSite.stats?.visitors ?? 0} visitors · {selectedSite.stats?.events ?? 0} events · {selectedSite.stats?.blocked ?? 0} blocked
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm text-gray-400">Choose a tracker to delete its stored activity, visitors, device links, and orphaned related user intelligence.</p>
+              )}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="danger"
+                icon={Trash2}
+                loading={busy === 'tracker-purge'}
+                onClick={handleTrackerPurge}
+                disabled={!selectedSiteId}
+              >
+                Delete Tracker Data
+              </Button>
+            </div>
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div>
+              <p className="text-sm font-medium text-white">Fresh Install Reset</p>
+              <p className="mt-1 text-xs text-gray-500">Reinitialize collected runtime data for a clean start while preserving operator accounts, runtime settings, themes, and tenant configuration.</p>
+            </div>
+          </CardHeader>
+          <div className="space-y-3">
+            <div className="rounded-xl border border-red-500/15 bg-red-950/10 px-4 py-3">
+              <p className="text-xs font-mono uppercase tracking-[0.18em] text-red-300">Destructive Scope</p>
+              <p className="mt-2 text-sm text-white">Deletes registered trackers/sites, visitors, devices, external-user intelligence, events, activity timelines, incidents, findings, blocked-IP history, notification deliveries, and old audit history.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="danger"
+                icon={AlertTriangle}
+                loading={busy === 'reset-install'}
+                onClick={handleFreshInstallReset}
+              >
+                Reinitialize for Fresh Install
+              </Button>
+            </div>
+          </div>
+        </Card>
+      </div>
+
       {showFeatureStatusDetails ? (
         <SettingsRoadmapCard
           eyebrow="Storage Map"
@@ -209,6 +354,8 @@ export default function DataStorageTab({ settings, setSettings, saving, savedKey
               items: [
                 { label: 'Archiving', status: 'live', note: 'Operators can export retention archives for expiring visitors, events, activity, and incidents.' },
                 { label: 'Purge rules', status: 'live', note: 'Background maintenance and manual cleanup now apply retention by data class.' },
+                { label: 'Tracker reset', status: 'live', note: 'Operators can now wipe collected data for one tracker/site without removing the tracker registration itself.' },
+                { label: 'Fresh install reset', status: 'live', note: 'Superadmins can reinitialize operational database content while preserving operator access and settings.' },
                 { label: 'Backups', status: 'live', note: 'Selective backup and restore already ship today.' },
               ],
             },
@@ -256,6 +403,12 @@ function formatPending(preview) {
     `${preview.activity_events ?? 0} activity`,
     `${preview.incidents ?? 0} incidents`,
   ].join(' · ')
+}
+
+function formatSummary(summary) {
+  return Object.entries(summary || {})
+    .map(([key, value]) => `${key} ${value}`)
+    .join(' · ')
 }
 
 function extractFilename(contentDisposition) {

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from ...core.database import get_db
-from ...core.security import get_current_user
+from ...core.security import get_current_user, require_admin_user
 from ...models.user import User
 from ...models.blocking import BlockingRule, BlockedIP
 from ...schemas.blocking import CreateRuleRequest, BlockIPRequest
@@ -28,7 +28,7 @@ async def list_rules(db: AsyncSession = Depends(get_db), _: User = Depends(get_c
 
 
 @router.post("/rules")
-async def create_rule(body: CreateRuleRequest, request: Request, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
+async def create_rule(body: CreateRuleRequest, request: Request, db: AsyncSession = Depends(get_db), current: User = Depends(require_admin_user)):
     rule = BlockingRule(id=str(uuid.uuid4()), **body.model_dump())
     db.add(rule)
     log_action(db, action="CREATE_BLOCK_RULE", actor_id=current.id, target_type="blocking_rule", target_id=rule.id, ip=request_ip(request), extra={"type": rule.type, "action": rule.action})
@@ -37,7 +37,7 @@ async def create_rule(body: CreateRuleRequest, request: Request, db: AsyncSessio
 
 
 @router.delete("/rules/{rule_id}")
-async def delete_rule(rule_id: str, request: Request, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
+async def delete_rule(rule_id: str, request: Request, db: AsyncSession = Depends(get_db), current: User = Depends(require_admin_user)):
     r = await db.get(BlockingRule, rule_id)
     if not r:
         raise HTTPException(404, "Not found")
@@ -79,7 +79,7 @@ async def list_blocked_ips(
 
 
 @router.post("/ips")
-async def block_ip(body: BlockIPRequest, request: Request, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
+async def block_ip(body: BlockIPRequest, request: Request, db: AsyncSession = Depends(get_db), current: User = Depends(require_admin_user)):
     existing = await db.get(BlockedIP, body.ip)
     if existing:
         raise HTTPException(409, "IP already blocked")
@@ -103,7 +103,7 @@ async def block_ip(body: BlockIPRequest, request: Request, db: AsyncSession = De
 
 
 @router.delete("/ips/{ip}")
-async def unblock_ip(ip: str, request: Request, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
+async def unblock_ip(ip: str, request: Request, db: AsyncSession = Depends(get_db), current: User = Depends(require_admin_user)):
     i = await db.get(BlockedIP, ip)
     if not i:
         raise HTTPException(404, "Not found")

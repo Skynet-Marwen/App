@@ -175,7 +175,7 @@ export default function BackupTab() {
       {message && <Alert type="success">{message}</Alert>}
       {error && <Alert type="danger">{error}</Alert>}
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-2">
         <Card>
           <CardHeader>
             <div>

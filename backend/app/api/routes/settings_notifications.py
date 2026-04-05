@@ -7,7 +7,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.database import get_db
-from ...core.security import get_current_user
+from ...core.security import get_current_user, require_admin_user
 from ...models.notification_delivery import NotificationDelivery
 from ...models.user import User
 from ...services.audit import log_action, request_ip
@@ -24,7 +24,7 @@ async def test_webhook(
     data: dict,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: User = Depends(require_admin_user),
 ):
     try:
         url = clean_url(data.get("url"))

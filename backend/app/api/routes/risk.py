@@ -8,7 +8,8 @@ from ...core.security import get_current_user
 from ...models.anomaly_flag import AnomalyFlag
 from ...models.user import User
 from ...models.user_profile import UserProfile
-from ...services import risk_engine
+from ...services.group_escalation import recompute_user_parent_posture
+from ...services.intelligence_filters import active_anomaly_flag_clause
 
 router = APIRouter(prefix="/risk", tags=["risk"])
 
@@ -30,6 +31,7 @@ async def list_risky_users(
         .where(
             AnomalyFlag.external_user_id == UserProfile.external_user_id,
             AnomalyFlag.status == "open",
+            active_anomaly_flag_clause(),
         )
         .correlate(UserProfile)
         .scalar_subquery()
@@ -99,10 +101,10 @@ async def recompute_risk(
     if not profile:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Profile not found"})
 
-    previous, new_score, trust_level = await risk_engine.recompute(
-        db, external_user_id,
-        trigger_type="manual",
-        trigger_detail={"requested_by": current.id},
+    previous, new_score, trust_level = await recompute_user_parent_posture(
+        db,
+        external_user_id,
+        trigger_context={"trigger_type": "manual", "requested_by": current.id, "source": "risk.recompute"},
     )
     await db.commit()
     return {

@@ -1,9 +1,12 @@
 import asyncio
 import json
+import logging
 import time
 import uuid
+
+_ae_log = logging.getLogger("skynet.anti_evasion")
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from ..core.database import AsyncSessionLocal
 from ..core.redis import get_redis
 from ..models.anomaly_flag import AnomalyFlag
@@ -12,7 +15,7 @@ from ..models.incident import Incident
 from ..models.visitor import Visitor
 from .anti_evasion_config import get_anti_evasion_config
 from .bot_detection import detect_click_farm, detect_crawler_signature, detect_headless_signals
-from .dnsbl import lookup_ip as dnsbl_lookup_ip
+from .dnsbl import lookup_ip as dnsbl_lookup_ip, should_soft_fail_dnsbl
 from .form_spam import assess_form_submission
 from .incident_notifications import dispatch_incident_notifications, dispatch_notification_event
 from .network_intel import (
@@ -21,6 +24,7 @@ from .network_intel import (
     language_country_mismatch,
     match_country_rule,
     match_provider_rule,
+    provider_label,
 )
 from .runtime_config import runtime_settings
 
@@ -36,7 +40,99 @@ RISK_POINTS = {
     "behavior_entropy": 20,
     "click_farm": 35,
     "dnsbl": 40,
+    "adblocker": 18,
+    "dns_filter": 14,
+    "isp_unresolved": 6,
+    "webrtc_vpn_bypass": 35,
+    "ml_anomaly": 15,
 }
+
+
+def _policy_points(action: str | None, *, observe: int, flag: int, challenge: int, block: int) -> int:
+    normalized = str(action or "observe").lower()
+    if normalized == "block":
+        return block
+    if normalized == "challenge":
+        return challenge
+    if normalized == "flag":
+        return flag
+    return observe
+
+
+def _policy_severity(action: str | None, default: str = "medium") -> str:
+    normalized = str(action or "").lower()
+    if normalized == "block":
+        return "critical"
+    if normalized == "challenge":
+        return "high"
+    if normalized == "flag":
+        return "medium"
+    return default
+
+
+_ADBLOCKER_FAMILIES = {"extension_like", "brave_shields"}
+
+
+def _runtime_filter_signals(fingerprint_traits: dict | None) -> dict[str, object]:
+    traits = fingerprint_traits or {}
+    dom_bait = bool(traits.get("adblock_dom_bait_blocked"))
+    same_origin_probe = traits.get("adblock_same_origin_probe_blocked")
+    remote_probe = traits.get("remote_ad_probe_blocked")
+    # Trust the tracker's own resolved blocker_family when present
+    blocker_family = traits.get("blocker_family") or None
+    same_origin_blocked = bool(same_origin_probe) if same_origin_probe is not None else False
+    remote_blocked = bool(remote_probe) if remote_probe is not None else False
+    adblocker_detected = (
+        dom_bait or
+        same_origin_blocked or
+        bool(traits.get("adblocker_detected")) or
+        (blocker_family in _ADBLOCKER_FAMILIES)
+    )
+    dns_filter_suspected = remote_blocked and not adblocker_detected
+    if not blocker_family:
+        if adblocker_detected:
+            blocker_family = "extension_like"
+        elif dns_filter_suspected:
+            blocker_family = "dns_or_network_filter"
+    return {
+        "js_active": bool(traits.get("js_active", False)),
+        "adblocker_detected": adblocker_detected,
+        "dns_filter_suspected": dns_filter_suspected,
+        "blocker_family": blocker_family,
+        "dom_bait_blocked": dom_bait,
+        "same_origin_probe_blocked": same_origin_probe,
+        "remote_probe_blocked": remote_probe,
+    }
+
+
+def _check_webrtc_leak(fingerprint_traits: dict | None) -> dict | None:
+    """Evaluate WebRTC signals for VPN bypass indicators.
+
+    Returns a findings dict only when all three conditions are true:
+      - webrtc_available is True  (WebRTC supported in this browser)
+      - webrtc_vpn_suspected is True  (private IPs found in ICE candidates)
+      - webrtc_stun_reachable is True  (STUN probe completed — not a timeout)
+
+    Returns None when any condition is missing / None (probe incomplete →
+    inconclusive).  No raw IP addresses are received; signals are boolean/int
+    aggregates computed client-side.
+    """
+    traits = fingerprint_traits or {}
+    if traits.get("webrtc_available") is not True:
+        return None
+    if traits.get("webrtc_vpn_suspected") is not True:
+        return None
+    if traits.get("webrtc_stun_reachable") is not True:
+        return None
+    return {
+        "signal": "webrtc_vpn_bypass",
+        "severity": "high",
+        "risk_score": 75,
+        "webrtc_available": True,
+        "webrtc_local_ip_count": traits.get("webrtc_local_ip_count") or 0,
+        "webrtc_vpn_suspected": True,
+        "webrtc_stun_reachable": True,
+    }
 
 
 def dispatch_pageview_checks(context: dict) -> None:
@@ -55,6 +151,7 @@ async def _safe_run(coro) -> None:
     try:
         await coro
     except Exception:
+        _ae_log.exception("anti-evasion check failed — detection suspended for this request")
         return
 
 
@@ -67,6 +164,7 @@ async def _run_pageview_checks(context: dict) -> None:
         device = await _get_device(db, context.get("device_id"))
         risk = 0
         geo = context.get("geo") or {}
+        filter_signals = _runtime_filter_signals(context.get("fingerprint_traits"))
         if config.get("bot_detection") and _looks_like_bot(context.get("user_agent")):
             risk += RISK_POINTS["bot"]
             incident = await _emit_incident(db, redis, "BOT_DETECTED", "Bot-like user-agent detected", context, "high")
@@ -110,6 +208,54 @@ async def _run_pageview_checks(context: dict) -> None:
             incident = await _emit_incident(db, redis, "WEBGL_FINGERPRINT_MISSING", "WebGL fingerprint missing", context, "medium")
             if incident:
                 incidents.append(incident)
+        if config.get("adblocker_detection") and filter_signals["adblocker_detected"]:
+            action = str(config.get("adblocker_action") or "flag")
+            risk += _policy_points(action, observe=RISK_POINTS["adblocker"], flag=22, challenge=34, block=55)
+            incident = await _emit_incident(
+                db,
+                redis,
+                "ADBLOCKER_DETECTED",
+                "Browser-side filtering suggests an ad/tracker blocker is active against probe resources",
+                {**context, "details": filter_signals},
+                _policy_severity(action),
+            )
+            if incident:
+                incidents.append(incident)
+        if config.get("dns_filter_detection") and filter_signals["dns_filter_suspected"]:
+            action = str(config.get("dns_filter_action") or "flag")
+            risk += _policy_points(action, observe=RISK_POINTS["dns_filter"], flag=18, challenge=28, block=45)
+            incident = await _emit_incident(
+                db,
+                redis,
+                "DNS_FILTER_SUSPECTED",
+                "Remote ad-domain probes failed while same-origin tracker probes passed, suggesting DNS or network filtering",
+                {**context, "details": filter_signals},
+                _policy_severity(action),
+            )
+            if incident:
+                incidents.append(incident)
+        if config.get("isp_resolution_detection") and not provider_label(geo):
+            action = str(config.get("isp_unresolved_action") or "observe")
+            risk += _policy_points(action, observe=RISK_POINTS["isp_unresolved"], flag=10, challenge=18, block=30)
+            incident = await _emit_incident(
+                db,
+                redis,
+                "ISP_UNRESOLVED",
+                "GeoIP lookup did not resolve a stable ISP/provider label for this source",
+                {
+                    **context,
+                    "details": {
+                        "provider_label": provider_label(geo),
+                        "country_code": (geo or {}).get("country_code"),
+                        "country": (geo or {}).get("country"),
+                        "org": (geo or {}).get("org"),
+                        "as": (geo or {}).get("as"),
+                    },
+                },
+                _policy_severity(action, default="low"),
+            )
+            if incident:
+                incidents.append(incident)
         if config.get("ip_rotation_detection") and context.get("fingerprint"):
             if await _record_ip_rotation(redis, context["fingerprint"], context.get("ip")):
                 risk += RISK_POINTS["ip_rotation"]
@@ -129,14 +275,23 @@ async def _run_pageview_checks(context: dict) -> None:
                 ttl_sec=int(config.get("dnsbl_cache_ttl_sec", 900) or 900),
             )
             if dnsbl.get("listed"):
-                risk += RISK_POINTS["dnsbl"]
+                soft_fail = should_soft_fail_dnsbl((geo or {}).get("country_code"), config)
+                dnsbl_points = int(config.get("dnsbl_soft_fail_risk_points", 8) or 0) if soft_fail else RISK_POINTS["dnsbl"]
+                risk += dnsbl_points
                 incident = await _emit_incident(
                     db,
                     redis,
                     "DNSBL_LISTED",
                     "Source IP is listed by a public DNS blocklist provider",
-                    {**context, "details": dnsbl},
-                    "critical" if str(config.get("dnsbl_action") or "challenge") == "block" else "high",
+                    {
+                        **context,
+                        "details": {
+                            **dnsbl,
+                            "soft_fail": soft_fail,
+                            "country_code": (geo or {}).get("country_code"),
+                        },
+                    },
+                    "medium" if soft_fail else "critical" if str(config.get("dnsbl_action") or "challenge") == "block" else "high",
                 )
                 if incident:
                     incidents.append(incident)
@@ -195,13 +350,13 @@ async def _run_pageview_checks(context: dict) -> None:
             )
             if incident:
                 incidents.append(incident)
-        if config.get("language_mismatch") and language_country_mismatch(context.get("language"), geo.get("country_code")):
+        if config.get("language_mismatch") and language_country_mismatch(context.get("language"), geo.get("country_code"), config):
             risk += 10
             incident = await _emit_incident(
                 db,
                 redis,
                 "LANGUAGE_MISMATCH",
-                "Browser language region does not align with the GeoIP country code",
+                "Browser language does not align with the GeoIP country after country-specific language allowances are applied",
                 {
                     **context,
                     "details": {
@@ -242,6 +397,32 @@ async def _run_pageview_checks(context: dict) -> None:
             if incident:
                 incidents.append(incident)
         risk += await _apply_multi_account_risk(db, redis, context, config, incidents)
+        # WebRTC leak detection
+        if config.get("webrtc_leak_detection"):
+            webrtc_signal = _check_webrtc_leak(context.get("fingerprint_traits"))
+            if webrtc_signal:
+                risk += RISK_POINTS["webrtc_vpn_bypass"]
+                incident = await _emit_incident(
+                    db,
+                    redis,
+                    "WEBRTC_VPN_BYPASS",
+                    "WebRTC ICE candidate probing detected private IPs consistent with a VPN tunnel",
+                    {**context, "details": webrtc_signal},
+                    webrtc_signal["severity"],
+                )
+                if incident:
+                    incidents.append(incident)
+        # ML anomaly scoring (additive modifier, feature-flagged)
+        if runtime_settings().get("feature_flags", {}).get("ml_anomaly_detection") and device:
+            try:
+                from .ml.feature_extractor import extract_device_features
+                from .ml.anomaly_detector import load_model, score_sample
+                features = extract_device_features(device)
+                ml_score = score_sample(features, load_model()) if features else 0.5
+                if ml_score > 0.7:
+                    risk += int(RISK_POINTS["ml_anomaly"] * ml_score)
+            except Exception:
+                _ae_log.warning("ml_anomaly_detection enabled but inference failed", exc_info=True)
         if device:
             device.risk_score = min(100, max(device.risk_score or 0, risk))
         await db.commit()
@@ -316,22 +497,28 @@ async def _run_event_checks(context: dict) -> None:
             if device:
                 device.risk_score = min(100, max(device.risk_score or 0, finding["risk_score"]))
         if context.get("user_id") and (spam_assessment or created_flag):
-            from .risk_engine import recompute
-            await recompute(
+            from .group_escalation import recompute_user_parent_posture
+            await recompute_user_parent_posture(
                 db,
                 context["user_id"],
-                trigger_type="behavior_drift" if created_flag else "spam_detected",
-                trigger_detail=behavior_assessment if created_flag else spam_assessment,
+                trigger_context={
+                    "trigger_type": "behavior_drift" if created_flag else "spam_detected",
+                    "source": "anti_evasion.pageview",
+                    "detail": behavior_assessment if created_flag else spam_assessment,
+                },
             )
         elif context.get("user_id") and (click_farm_assessment or form_findings):
-            from .risk_engine import recompute
-            await recompute(
+            from .group_escalation import recompute_user_parent_posture
+            await recompute_user_parent_posture(
                 db,
                 context["user_id"],
-                trigger_type="spam_detected",
-                trigger_detail={
-                    "click_farm": click_farm_assessment,
-                    "form_findings": form_findings,
+                trigger_context={
+                    "trigger_type": "spam_detected",
+                    "source": "anti_evasion.pageview",
+                    "detail": {
+                        "click_farm": click_farm_assessment,
+                        "form_findings": form_findings,
+                    },
                 },
             )
         await db.commit()
@@ -427,9 +614,11 @@ async def _apply_multi_account_risk(db, redis, context: dict, config: dict, inci
     risk = 0
     if context.get("device_id"):
         device_users = await db.scalar(
-            select(func.count(func.distinct(Visitor.linked_user))).where(
+            select(func.count(func.distinct(
+                func.coalesce(Visitor.external_user_id, Visitor.linked_user)
+            ))).where(
                 Visitor.device_id == context["device_id"],
-                Visitor.linked_user.is_not(None),
+                or_(Visitor.linked_user.is_not(None), Visitor.external_user_id.is_not(None)),
             )
         ) or 0
         extra = max(device_users - int(config.get("max_accounts_per_device", 3)), 0)
@@ -440,9 +629,11 @@ async def _apply_multi_account_risk(db, redis, context: dict, config: dict, inci
                 incidents.append(incident)
     if context.get("ip"):
         ip_users = await db.scalar(
-            select(func.count(func.distinct(Visitor.linked_user))).where(
+            select(func.count(func.distinct(
+                func.coalesce(Visitor.external_user_id, Visitor.linked_user)
+            ))).where(
                 Visitor.ip == context["ip"],
-                Visitor.linked_user.is_not(None),
+                or_(Visitor.linked_user.is_not(None), Visitor.external_user_id.is_not(None)),
             )
         ) or 0
         extra = max(ip_users - int(config.get("max_accounts_per_ip", 5)), 0)

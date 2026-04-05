@@ -1,6 +1,6 @@
 import { Activity, FilterX, Search } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
-import { Badge, Button, Card, CardHeader, Pagination, PageToolbar, Select, StatCard, Table } from '../components/ui/index'
+import { Badge, Button, Card, CardHeader, Pagination, Select, StatCard, Table } from '../components/ui/index'
 import { useAuditLogs } from '../hooks/useAuditLogs'
 
 const ACTION_OPTIONS = [
@@ -72,37 +72,24 @@ export default function AuditPage() {
 
   return (
     <DashboardLayout title="Audit Log" onRefresh={refresh}>
-      <PageToolbar>
-        <div className="space-y-2">
-          <p className="text-[10px] font-mono uppercase tracking-[0.28em] text-cyan-400/80">Operational History</p>
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white">Audit trail</h1>
-            <Badge variant={hasFilters ? 'warning' : 'default'}>{hasFilters ? 'Filtered view' : 'Live view'}</Badge>
-          </div>
-          <p className="max-w-3xl text-sm text-gray-400">
-            Write-only history across admin actions. Use filters to isolate settings changes, incident handling, and security-sensitive events.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {hasFilters && <Button variant="secondary" size="sm" icon={FilterX} onClick={clearFilters}>Clear filters</Button>}
-        </div>
-      </PageToolbar>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Matching records" value={total.toLocaleString()} rawValue={total} icon={Activity} color="cyan" loading={loading} />
-        <StatCard label="Loaded rows" value={items.length.toLocaleString()} rawValue={items.length} icon={Activity} color="blue" loading={loading} />
-        <StatCard label="Unique actions" value={uniqueActions.toLocaleString()} rawValue={uniqueActions} icon={Activity} color="green" loading={loading} />
-        <StatCard label="Config changes" value={configChanges.toLocaleString()} rawValue={configChanges} icon={Activity} color="yellow" loading={loading} />
+      {/* Stat strip */}
+      <div className="grid grid-cols-2 gap-1 xl:grid-cols-4">
+        <StatCard label="Matching records" rawValue={total} value={total.toLocaleString()} icon={Activity} color="cyan" loading={loading} nano />
+        <StatCard label="Loaded rows" rawValue={items.length} value={items.length.toLocaleString()} icon={Activity} color="blue" loading={loading} nano />
+        <StatCard label="Unique actions" rawValue={uniqueActions} value={uniqueActions.toLocaleString()} icon={Activity} color="green" loading={loading} nano />
+        <StatCard label="Config changes" rawValue={configChanges} value={configChanges.toLocaleString()} icon={Activity} color="yellow" loading={loading} nano />
       </div>
 
       <Card>
         <CardHeader
-          action={hasFilters ? <Button variant="secondary" size="sm" onClick={clearFilters}>Reset filters</Button> : null}
+          action={
+            <div className="flex items-center gap-2">
+              <Badge variant={hasFilters ? 'warning' : 'default'}>{hasFilters ? 'Filtered' : 'Live'}</Badge>
+              {hasFilters && <Button variant="secondary" size="sm" icon={FilterX} onClick={clearFilters}>Clear</Button>}
+            </div>
+          }
         >
-          <p className="text-sm font-medium text-white">Filter events</p>
-          <p className="text-xs text-gray-500">
-            {uniqueTargets > 0 ? `${uniqueTargets} target type${uniqueTargets === 1 ? '' : 's'} in view` : 'No target types in view yet'}
-          </p>
+          <p className="text-xs font-mono font-medium text-cyan-400 uppercase tracking-widest">Filter Events</p>
         </CardHeader>
 
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.2fr_0.9fr_0.9fr_auto]">

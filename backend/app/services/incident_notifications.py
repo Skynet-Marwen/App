@@ -13,7 +13,7 @@ from sqlalchemy import select
 from ..core.database import AsyncSessionLocal
 from ..models.incident import Incident
 from ..models.user import User
-from .email import send_incident_alert_email, send_operational_alert_email
+from .email import decrypt_password, send_incident_alert_email, send_operational_alert_email
 from .integration_delivery import dispatch_connector_event
 from .notification_delivery import create_delivery, mark_delivery_failed, mark_delivery_sent
 from .runtime_config import runtime_settings
@@ -212,7 +212,7 @@ async def _send_email_notifications(incidents: list[dict], settings: dict, *, es
 
 async def _send_webhook_notifications(incidents: list[dict], settings: dict, *, escalation_level: int) -> None:
     url = settings.get("webhook_url", "")
-    secret = settings.get("webhook_secret", "")
+    secret = decrypt_password(settings.get("webhook_secret_enc", ""))
     async with AsyncSessionLocal() as db:
         for incident in incidents:
             payload = _incident_webhook_payload(incident, escalation_level=escalation_level)
@@ -300,7 +300,7 @@ async def _send_generic_webhook_notification(
     incident_id: str | None,
 ) -> None:
     url = settings.get("webhook_url", "")
-    secret = settings.get("webhook_secret", "")
+    secret = decrypt_password(settings.get("webhook_secret_enc", ""))
     final_payload = {
         "event": event_key,
         "sent_at": datetime.now(timezone.utc).isoformat(),

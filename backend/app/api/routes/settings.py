@@ -4,7 +4,7 @@ from urllib.parse import urlsplit
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from ...core.database import get_db
-from ...core.security import get_current_user
+from ...core.security import get_current_user, require_superadmin_user
 from ...models.user import User
 from ...models.block_page_config import BlockPageConfig
 from ...services.audit import log_action, request_ip
@@ -167,6 +167,7 @@ async def get_settings(
         "keycloak_sync_password_enc",
         "integration_siem_secret_enc",
         "integration_monitoring_secret_enc",
+        "webhook_secret_enc",
     }
     result = {k: v for k, v in _settings.items() if k not in _enc}
     result["smtp_password"] = _MASKED if _settings.get("smtp_password_enc") else ""
@@ -175,11 +176,12 @@ async def get_settings(
     result["keycloak_sync_password"] = _MASKED if _settings.get("keycloak_sync_password_enc") else ""
     result["integration_siem_secret"] = _MASKED if _settings.get("integration_siem_secret_enc") else ""
     result["integration_monitoring_secret"] = _MASKED if _settings.get("integration_monitoring_secret_enc") else ""
+    result["webhook_secret"] = _MASKED if _settings.get("webhook_secret_enc") else ""
     return result
 
 
 @router.put("")
-async def update_settings(data: dict, request: Request, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
+async def update_settings(data: dict, request: Request, db: AsyncSession = Depends(get_db), current: User = Depends(require_superadmin_user)):
     from ...services.email import encrypt_password
     cleaned = {}
     try:
@@ -198,6 +200,11 @@ async def update_settings(data: dict, request: Request, db: AsyncSession = Depen
                 if value == _MASKED:
                     continue
                 cleaned[f"{key}_enc"] = encrypt_password(value) if value else ""
+                continue
+            if key == "webhook_secret":
+                if value == _MASKED:
+                    continue
+                cleaned["webhook_secret_enc"] = encrypt_password(value) if value else ""
                 continue
             if key == "idp_providers" and isinstance(value, list):
                 cleaned[key] = [provider for provider in (_clean_idp_provider(item) for item in value) if provider]
@@ -286,7 +293,7 @@ async def get_block_page(db: AsyncSession = Depends(get_db), _: User = Depends(g
 
 
 @router.put("/block-page")
-async def update_block_page(data: dict, request: Request, db: AsyncSession = Depends(get_db), current: User = Depends(get_current_user)):
+async def update_block_page(data: dict, request: Request, db: AsyncSession = Depends(get_db), current: User = Depends(require_superadmin_user)):
     allowed = {"title", "subtitle", "message", "bg_color", "accent_color", "logo_url", "contact_email", "show_request_id", "show_contact"}
     data = {k: v for k, v in data.items() if k in allowed}
     cleaned = {}
