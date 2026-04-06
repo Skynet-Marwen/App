@@ -108,12 +108,20 @@ async def sync_keycloak_users(db: AsyncSession) -> dict:
 
     created = 0
     updated = 0
+    suspended = 0
+    deleted = 0
     now = datetime.now(timezone.utc)
+
+    # Track every ID returned by Keycloak for this realm
+    keycloak_ids: set[str] = set()
 
     for item in users:
         external_user_id = str(item.get("id") or "").strip()
         if not external_user_id:
             continue
+        keycloak_ids.add(external_user_id)
+
+        kc_enabled = bool(item.get("enabled", True))
         profile = await db.scalar(
             select(UserProfile).where(UserProfile.external_user_id == external_user_id)
         )
@@ -121,7 +129,7 @@ async def sync_keycloak_users(db: AsyncSession) -> dict:
             "id_provider": "keycloak",
             "realm": cfg["realm"],
             "username": item.get("username"),
-            "enabled": item.get("enabled", True),
+            "enabled": kc_enabled,
             "email_verified": item.get("emailVerified", False),
             "synced_at": now.isoformat(),
         }
@@ -129,15 +137,27 @@ async def sync_keycloak_users(db: AsyncSession) -> dict:
             profile.email = item.get("email") or profile.email
             profile.display_name = _display_name(item) or profile.display_name
             profile.profile_data = json.dumps(profile_data, separators=(",", ":"), sort_keys=True)
+            # Keycloak account disabled → suspend in SkyNet (keep risk data, block access)
+            if not kc_enabled and profile.status == "active":
+                profile.status = "suspended"
+                profile.trust_level = "blocked"
+                suspended += 1
+            elif kc_enabled and profile.status == "suspended":
+                # Re-enabled in Keycloak → restore to normal
+                profile.status = "active"
+                if profile.trust_level == "blocked":
+                    profile.trust_level = "normal"
             updated += 1
         else:
+            new_status = "active" if kc_enabled else "suspended"
             db.add(
                 UserProfile(
                     external_user_id=external_user_id,
                     email=item.get("email"),
                     display_name=_display_name(item),
-                    trust_level="normal",
+                    trust_level="normal" if kc_enabled else "blocked",
                     current_risk_score=0.0,
+                    status=new_status,
                     first_seen=now,
                     last_seen=now,
                     profile_data=json.dumps(profile_data, separators=(",", ":"), sort_keys=True),
@@ -145,12 +165,31 @@ async def sync_keycloak_users(db: AsyncSession) -> dict:
             )
             created += 1
 
+    # Detect profiles from this realm that are no longer in Keycloak → soft-delete
+    # Only considers profiles whose profile_data marks them as belonging to this realm.
+    if keycloak_ids:
+        realm_profiles = (
+            await db.execute(
+                select(UserProfile).where(
+                    UserProfile.status.in_(["active", "suspended"]),
+                    UserProfile.profile_data.contains(f'"realm": "{cfg["realm"]}"'),
+                )
+            )
+        ).scalars().all()
+        for profile in realm_profiles:
+            if profile.external_user_id not in keycloak_ids:
+                profile.status = "deleted"
+                profile.trust_level = "blocked"
+                deleted += 1
+
     summary = {
         "realm": cfg["realm"],
         "auth_realm": cfg["auth_realm"],
         "fetched": len(users),
         "created": created,
         "updated": updated,
+        "suspended": suspended,
+        "deleted": deleted,
         "synced_at": now.isoformat(),
     }
     settings = runtime_settings()

@@ -42,6 +42,8 @@ async def upsert_profile(
             last_country=country,
         )
         db.add(profile)
+        if email:
+            await _detect_email_reregistration(db, external_user_id, email, profile, now)
     else:
         profile.last_seen = now
         if email:
@@ -54,6 +56,51 @@ async def upsert_profile(
             profile.last_country = country
     await db.flush()
     return profile
+
+
+async def _detect_email_reregistration(
+    db: AsyncSession,
+    external_user_id: str,
+    email: str,
+    new_profile: UserProfile,
+    now: datetime,
+) -> None:
+    """Detect when a deleted account re-registers with the same email.
+
+    Inherits the prior risk score, sets trust to suspicious, and raises a
+    high-severity anomaly flag so analysts are alerted immediately.
+    """
+    deleted = await db.scalar(
+        select(UserProfile).where(
+            UserProfile.email == email,
+            UserProfile.status == "deleted",
+            UserProfile.external_user_id != external_user_id,
+        )
+    )
+    if not deleted:
+        return
+
+    inherited_score = deleted.current_risk_score or 0.0
+    if inherited_score > 0:
+        new_profile.current_risk_score = inherited_score
+    new_profile.trust_level = "suspicious"
+
+    db.add(
+        AnomalyFlag(
+            id=str(uuid.uuid4()),
+            external_user_id=external_user_id,
+            flag_type="email_reregistration",
+            severity="high",
+            status="open",
+            related_device_id=None,
+            evidence=json.dumps({
+                "deleted_user_id": deleted.external_user_id,
+                "email": email,
+                "inherited_risk_score": inherited_score,
+            }),
+            detected_at=now,
+        )
+    )
 
 
 async def link_device(
@@ -88,11 +135,27 @@ async def link_device(
             )
         )
         if not link:
+            # Guard against FK violation: only set fingerprint_id if device exists.
+            device_exists = bool(await db.get(Device, fingerprint_id))
+            resolved_fp = fingerprint_id if device_exists else None
+
+            # If we can now attach a real device, clean up any orphan null-fingerprint
+            # link that was created during a prior fallback (device didn't exist yet).
+            if device_exists:
+                orphan = await db.scalar(
+                    select(IdentityLink).where(
+                        IdentityLink.external_user_id == external_user_id,
+                        IdentityLink.fingerprint_id.is_(None),
+                    )
+                )
+                if orphan:
+                    await db.delete(orphan)
+
             link = IdentityLink(
                 id=str(uuid.uuid4()),
                 external_user_id=external_user_id,
                 id_provider=id_provider,
-                fingerprint_id=fingerprint_id,
+                fingerprint_id=resolved_fp,
                 visitor_id=visitor.id if visitor else visitor_id,
                 platform=platform,
                 ip=ip,
@@ -101,7 +164,8 @@ async def link_device(
             )
             db.add(link)
             is_new = True
-            await _update_device_ownership(db, external_user_id, fingerprint_id, platform)
+            if device_exists:
+                await _update_device_ownership(db, external_user_id, fingerprint_id, platform)
         else:
             link.last_seen_at = now
             link.id_provider = id_provider
@@ -140,19 +204,34 @@ async def link_device(
             exclude_fingerprint_id=fingerprint_id,
         )
     else:
-        link = IdentityLink(
-            id=str(uuid.uuid4()),
-            external_user_id=external_user_id,
-            id_provider=id_provider,
-            fingerprint_id=None,
-            visitor_id=visitor_id,
-            platform=platform,
-            ip=ip,
-            linked_at=now,
-            last_seen_at=now,
+        # No fingerprint: upsert the sentinel null-fingerprint link for this user.
+        # This records that the identity was asserted without device context.
+        link = await db.scalar(
+            select(IdentityLink).where(
+                IdentityLink.external_user_id == external_user_id,
+                IdentityLink.fingerprint_id.is_(None),
+            )
         )
-        db.add(link)
-        is_new = True
+        if link:
+            link.last_seen_at = now
+            link.id_provider = id_provider
+            link.platform = platform
+            if ip:
+                link.ip = ip
+        else:
+            link = IdentityLink(
+                id=str(uuid.uuid4()),
+                external_user_id=external_user_id,
+                id_provider=id_provider,
+                fingerprint_id=None,
+                visitor_id=visitor_id,
+                platform=platform,
+                ip=ip,
+                linked_at=now,
+                last_seen_at=now,
+            )
+            db.add(link)
+            is_new = True
 
     await db.flush()
     return link, is_new

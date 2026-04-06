@@ -22,7 +22,8 @@ from ...models.anomaly_flag import AnomalyFlag
 from ...models.visitor import Visitor
 from ...schemas.identity import (
     LinkIdentityRequest, LinkIdentityResponse,
-    UserProfileOut, AnomalyFlagOut, EnhancedAuditRequest, UpdateFlagRequest,
+    UserProfileOut, AnomalyFlagOut, EnhancedAuditRequest, UpdateFlagRequest, SetTrustLevelRequest,
+    DeactivateProfileRequest,
 )
 from ...services.jwks_validator import validate_external_token, extract_bearer
 from ...services import identity_service, risk_engine
@@ -52,6 +53,7 @@ def _profile_out(p: UserProfile) -> dict:
         "external_user_id": p.external_user_id,
         "email": p.email,
         "display_name": p.display_name,
+        "status": getattr(p, "status", "active"),
         "current_risk_score": p.current_risk_score,
         "trust_level": p.trust_level,
         "total_devices": p.total_devices,
@@ -79,6 +81,17 @@ async def link_identity(
     id_provider = claims.get("__skynet_id_provider", "keycloak")
     if not external_user_id:
         raise HTTPException(status_code=401, detail={"code": "TOKEN_INVALID", "message": "Missing sub claim"})
+
+    # Reject linking for profiles already marked deleted in SkyNet.
+    # The Keycloak token may still be valid (not yet expired) even after account deletion.
+    existing_profile = await db.scalar(
+        select(UserProfile).where(UserProfile.external_user_id == external_user_id)
+    )
+    if existing_profile and existing_profile.status == "deleted":
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "ACCOUNT_DELETED", "message": "This account has been deleted."},
+        )
 
     ip = get_client_ip(request)
     geo = await geoip_lookup(ip)
@@ -442,6 +455,33 @@ async def update_flag(
     return {"ok": True}
 
 
+# ── PATCH /identity/{external_user_id}/trust-level ───────────────────────────
+
+@router.patch("/{external_user_id}/trust-level")
+async def set_trust_level(
+    external_user_id: str,
+    body: SetTrustLevelRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    if not is_admin_user(current):
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Admin role required"})
+    valid = {"normal", "trusted", "suspicious", "blocked"}
+    if body.trust_level not in valid:
+        raise HTTPException(status_code=422, detail={"code": "INVALID_TRUST_LEVEL", "message": f"Must be one of {valid}"})
+    profile = await db.scalar(select(UserProfile).where(UserProfile.external_user_id == external_user_id))
+    if not profile:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Profile not found"})
+    previous = profile.trust_level
+    profile.trust_level = body.trust_level
+    log_action(db, action="TRUST_LEVEL_UPDATE", actor_id=current.id, target_type="user_profile",
+               target_id=external_user_id, ip=request_ip(request),
+               extra={"previous": previous, "new": body.trust_level, "reason": body.reason})
+    await db.commit()
+    return {"ok": True, "trust_level": body.trust_level}
+
+
 # ── POST /identity/{external_user_id}/enhanced-audit ─────────────────────────
 
 @router.post("/{external_user_id}/enhanced-audit")
@@ -467,6 +507,40 @@ async def set_enhanced_audit(
                extra={"enabled": body.enabled, "reason": body.reason})
     await db.commit()
     return {"ok": True, "enhanced_audit": body.enabled}
+
+
+@router.post("/{external_user_id}/deactivate")
+async def deactivate_profile(
+    external_user_id: str,
+    body: DeactivateProfileRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    if not is_admin_user(current):
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Admin role required"})
+
+    profile = await db.scalar(
+        select(UserProfile).where(UserProfile.external_user_id == external_user_id)
+    )
+    if not profile:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Profile not found"})
+    if profile.status == "deleted":
+        raise HTTPException(status_code=409, detail={"code": "ALREADY_DELETED", "message": "Profile is already deleted"})
+
+    profile.status = "deleted"
+    profile.trust_level = "blocked"
+    log_action(
+        db,
+        action="PROFILE_DEACTIVATED",
+        actor_id=current.id,
+        target_type="user_profile",
+        target_id=external_user_id,
+        ip=request_ip(request),
+        extra={"reason": body.reason},
+    )
+    await db.commit()
+    return {"ok": True, "status": "deleted"}
 
 
 @router.get("/sync/keycloak/status")

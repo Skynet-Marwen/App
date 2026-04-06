@@ -1,7 +1,7 @@
 # SkyNet — API Reference
 
 > Version: v1 | Base URL: `/api/v1`
-> Last updated: 2026-04-05 — shipped app version `1.7.1`
+> Last updated: 2026-04-06 — shipped app version `1.7.4`
 
 ---
 
@@ -262,6 +262,25 @@ SKYNET auth required. Update flag status.
 ```
 
 Valid statuses: `acknowledged` · `resolved` · `false_positive`
+
+---
+
+### `PATCH /identity/{external_user_id}/trust-level`
+SKYNET auth required (**admin role only**). Directly set the trust level for a portal user. Writes an audit log entry.
+
+**Body**
+```json
+{ "trust_level": "blocked", "reason": "Confirmed fraud account" }
+```
+
+Valid trust levels: `normal` · `trusted` · `suspicious` · `blocked`
+
+**Response `200`**
+```json
+{ "ok": true, "trust_level": "blocked" }
+```
+
+**Errors:** `400` Invalid trust level · `403` Insufficient privilege · `404` User not found
 
 ---
 
@@ -913,9 +932,9 @@ Review note (2026-04-03): this is the intended operator-facing contract, but the
     }
   ],
   "keycloak_enabled": true,
-  "keycloak_jwks_url": "http://keycloak:8080/realms/myrealm/protocol/openid-connect/certs",
-  "keycloak_issuer": "http://keycloak:8080/realms/myrealm",
-  "keycloak_audience": "",
+  "keycloak_jwks_url": "http://10.0.0.39:8080/realms/Mouwaten/protocol/openid-connect/certs",
+  "keycloak_issuer": "https://auth.mouwaten.org/realms/Mouwaten",
+  "keycloak_audience": "mouwaten-web",
   "keycloak_cache_ttl_sec": 300
 }
 ```

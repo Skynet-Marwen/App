@@ -66,36 +66,10 @@ services:
     depends_on:
       - backend
 
-  # ── Keycloak — external IdP for end-users of protected applications ────────
+  # ── External IdP note ──────────────────────────────────────────────────────
   # SKYNET operators authenticate locally — Keycloak is never used for admin login.
-  # Enable with:  docker compose --profile keycloak up -d
-  # Or point KEYCLOAK_JWKS_URL to any existing OIDC provider (no local Keycloak needed).
-  keycloak:
-    image: keycloak/keycloak:24.0
-    restart: unless-stopped
-    environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://db:5432/keycloak
-      KC_DB_USERNAME: skynet
-      KC_DB_PASSWORD: skynet_secret
-      KC_HOSTNAME_STRICT: "false"
-      KC_HTTP_ENABLED: "true"
-    command: start-dev
-    ports:
-      - "8080:8080"
-    depends_on:
-      db:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health/ready || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 10
-      start_period: 60s
-    profiles:
-      - keycloak
+  # The shared Keycloak service for Mouwaten/SKYNET now runs from /home/marwen/mouwaten
+  # and is exposed locally on 10.0.0.39:8080 plus publicly at https://auth.mouwaten.org.
 
 volumes:
   postgres_data:

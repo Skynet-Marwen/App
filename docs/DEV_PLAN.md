@@ -31,6 +31,18 @@
 
 ## Done (Unreleased Branch)
 
+- [x] 2026-04-06 — feat(ui): Overview → Security Command Center + Portal User Intelligence decision engine
+  - **Added:** `frontend/src/utils/securityIntelligence.js` — 5 intelligence engine functions: `computeGlobalTrend`, `generateAIInsights`, `rankEntitiesForInvestigation`, `generateRecommendedActions`, `generateGlobalSecurityState`
+  - **Added:** `frontend/src/components/overview/CommandHeader.jsx` — dominant global risk header with trend, spike badge, threat counts, recommended actions
+  - **Added:** `frontend/src/components/overview/AIInsightsPanel.jsx` — AI pattern insight cards (max 5)
+  - **Added:** `frontend/src/components/overview/SignalIntelligenceCard.jsx` — aggregated signal intelligence from all overview data sources
+  - **Added:** `frontend/src/components/ui/PortalUserIntelAudit.jsx` — AuditTab + RawDataTab (split from Sections to respect 300-line rule)
+  - **Added:** `PATCH /api/v1/identity/{external_user_id}/trust-level` — admin-only trust level mutation with audit log
+  - **Changed:** `riskNarrative.js` — full decision engine rewrite (`computeTrendInfo`, `aggregateSignalsForDecision`, `rankLinkedDevices`, `computeConfidenceLevel`, `generateRecommendedAction`, `generateDecisionSummary`); `generateRiskNarrative` backward-compatible
+  - **Changed:** `PortalUserIntelModal.jsx` → 5-tab layout with persistent Decision Header and Trust/Flag/Block buttons
+  - **Changed:** `PriorityInvestigationsCard`, `RiskLeaderboardCard`, `ThreatHotspotsCard` — enhanced with action labels, trend badges, delta indicators
+  - **Changed:** `OverviewPage` — title "Security Command Center", new layout order, `useMemo` intelligence synthesis
+
 - [x] 2026-04-05 — fix(identity): retroactive visitor attribution + tor_vpn heuristic + dual-model link + anti-evasion blind spot — v1.7.4
   - **Fixed:** `identity_service._sync_external_user_visitors` — `should_claim_all` now restricted to visitors created at or after `linked_at`; historical anonymous sessions no longer retroactively attributed
   - **Fixed:** `risk_engine.recompute` — `tor_vpn` modifier replaced: queries `Incident` table for `VPN_DETECTED`/`PROXY_DETECTED`/`WEBRTC_VPN_BYPASS` instead of `risk_score >= 100` heuristic

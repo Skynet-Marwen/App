@@ -36,7 +36,30 @@
       "Read(//home/marwen/SkyNet/**)",
       "Bash(grep -h \"@router\\\\.\" /home/marwen/SkyNet/backend/app/api/routes/*.py)",
       "Bash(wc -l /home/marwen/SkyNet/frontend/src/pages/*.jsx /home/marwen/SkyNet/frontend/src/pages/**/*.jsx)",
-      "Bash(wc -l /home/marwen/SkyNet/backend/app/api/routes/users.py /home/marwen/SkyNet/backend/app/core/*.py /home/marwen/SkyNet/backend/app/services/runtime_config.py)"
+      "Bash(wc -l /home/marwen/SkyNet/backend/app/api/routes/users.py /home/marwen/SkyNet/backend/app/core/*.py /home/marwen/SkyNet/backend/app/services/runtime_config.py)",
+      "Bash(docker exec skynet-backend-1 python3 -c ':*)",
+      "Bash(docker exec:*)",
+      "Bash(python3 -c \"import sys,json; nets=json.load\\(sys.stdin\\); [print\\(k, v.get\\('IPAddress'\\)\\) for k,v in nets.items\\(\\)]\")",
+      "Bash(wait)",
+      "Bash(wc -l /home/marwen/SkyNet/frontend/src/pages/OverviewPage.jsx /home/marwen/SkyNet/frontend/src/hooks/useOverview.js /home/marwen/SkyNet/frontend/src/components/overview/*.jsx)",
+      "Bash(curl -s -X POST http://localhost:8000/api/v1/identity/link -H 'Content-Type: application/json' -H 'Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.test' -d '{\"fingerprint_id\":\"test\",\"platform\":\"web\"}')",
+      "Bash(curl -s --connect-timeout 3 http://10.0.0.39:8080/realms/Mouwaten/protocol/openid-connect/certs)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f'Keys count: {len\\(d.get\\(\\\\\"keys\\\\\",[]\\)\\)}'\\); [print\\(f' kid={k.get\\(\\\\\"kid\\\\\"\\)}, alg={k.get\\(\\\\\"alg\\\\\"\\)}'\\) for k in d.get\\('keys',[]\\)]\")",
+      "Bash(curl -s --connect-timeout 3 http://10.0.0.39:8080/realms/Mouwaten/.well-known/openid-configuration)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('issuer:', d.get\\('issuer'\\)\\)\")",
+      "Bash(find /home/marwen/mouwaten -name \"nginx.conf\" -exec cat {} \\\\;)",
+      "Bash(python3 -c \"import sys,json; cfg=json.load\\(sys.stdin\\)[0]; [print\\(m['Source'],'->', m['Destination']\\) for m in cfg['Mounts']]\")",
+      "Bash(find /home/marwen/mouwaten/backend -name \"auth_config.py\" -exec cat {} \\\\;)",
+      "Bash(find /home/marwen/mouwaten/backend -name \"app_settings.py\" -exec cat {} \\\\;)",
+      "Bash(python3 -c \"import sys; txt=sys.stdin.read\\(\\); import re; m=re.search\\(r'\\\\{.*\\\\}', txt, re.DOTALL\\); d=__import__\\('json'\\).loads\\(m.group\\(\\)\\) if m else {}; s=d.get\\('skynet',{}\\); print\\('site_key:', bool\\(s.get\\('site_key'\\)\\), '| base_url:', s.get\\('base_url',''\\)[:40], '| enabled:', s.get\\('enabled'\\)\\)\")",
+      "Bash(curl -s -X POST http://10.0.0.39:8081/api/auth/skynet/link -H 'Content-Type: application/json' -H 'Authorization: Bearer fake.test.token' -d '{\"fingerprint_id\":\"test\",\"platform\":\"web\"}' -w '\\\\nHTTP_STATUS: %{http_code}\\\\nTIME: %{time_total}s')",
+      "Bash(python3 -c \"import sys,re,json; txt=sys.stdin.read\\(\\); m=re.search\\(r'\\\\{.*\\\\}', txt, re.DOTALL\\); d=json.loads\\(m.group\\(\\)\\) if m else {}; print\\('client_id:', d.get\\('client_id'\\)\\); print\\('issuer:', d.get\\('issuer'\\)\\); print\\('audience:', d.get\\('audience'\\)\\)\")",
+      "Bash(curl -s --connect-timeout 5 -X POST http://10.0.0.39:8080/realms/Mouwaten/protocol/openid-connect/token -H 'Content-Type: application/x-www-form-urlencoded' -d 'grant_type=client_credentials&client_id=mouwaten-web')",
+      "Bash(curl -s -X POST http://10.0.0.39:8080/realms/master/protocol/openid-connect/token -H 'Content-Type: application/x-www-form-urlencoded' -d 'grant_type=password&client_id=admin-cli&username=admin&password=admin')",
+      "Bash(curl -v -X POST http://localhost:8000/api/v1/identity/link -H 'Content-Type: application/json' -H 'Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJ2YUZIUlZvU1Z0YWRCdE1rLXR4aV9QYzU3aXBGR1RIQ0duc1M3aUE4dXlRIn0.eyJleHAiOjE3NzU0OTAyMDgsImlhdCI6MTc3NTQ4OTkwOCwianRpIjoiZWYyYTA3OWUtMTFlNy00YmIwLThhNGEtNDFjMTExMzY3NWVjIiwiaXNzIjoiaHR0cHM6Ly9hdXRoLm1vdXdhdGVuLm9yZy9yZWFsbXMvTW91d2F0ZW4iLCJhdWQiOlsibW91d2F0ZW4td2ViIiwiYWNjb3VudCJdLCJzdWIiOiIzMjBhY2U4Yi0xNzJjLTRiMmUtYTIxOS0xM2VjYWM2MzEwZTMiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJtb3V3YXRlbi13ZWIiLCJzZXNzaW9uX3N0YXRlIjoiMzlkMGRhODItYTc3MC00MTVmLWE4MjQtOTkwZGE4MjliM2VlIiwiYWNyIjoiMSIsImFsbG93ZWQtb3JpZ2lucyI6WyJodHRwOi8vMTAuMC4wLjM5OjgwODEiXSwicmVhbG1fYWNjZXNzIjp7InJvbGVzIjpbImRlZmF1bHQtcm9sZXMtc2t5bmV0Iiwib2ZmbGluZV9hY2Nlc3MiLCJ1bWFfYXV0aG9yaXphdGlvbiJdfSwicmVzb3VyY2VfYWNjZXNzIjp7ImFjY291bnQiOnsicm9sZXMiOlsibWFuYWdlLWFjY291bnQiLCJtYW5hZ2UtYWNjb3VudC1saW5rcyIsInZpZXctcHJvZmlsZSJdfX0sInNjb3BlIjoiZW1haWwgcHJvZmlsZSIsInNpZCI6IjM5ZDBkYTgyLWE3NzAtNDE1Zi1hODI0LTk5MGRhODI5YjNlZSIsImVtYWlsX3ZlcmlmaWVkIjpmYWxzZSwibmFtZSI6Ik1QIFNTIiwicHJlZmVycmVkX3VzZXJuYW1lIjoibW91d2F0ZW4tdGVzdCIsImdpdmVuX25hbWUiOiJNUCIsImZhbWlseV9uYW1lIjoiU1MiLCJlbWFpbCI6Im1hcndlbi5zYWRrYW91aUBnbWFpbC5jb20ifQ.DqVguJ2H0klJLUENh3qJ9bn730nwzAPI75vfffa3RorLFELsW62VJkiwiRlwuwETVCDa3PixtTKN4s6XgMJYfLsFqDpadgW3uvI7_Ad28MuT8noHMIDI2BXYvnYeB8nJIYGmhwdOyZJNguVHMVaMZpMLZtYD8sge5ug_Iiw4_C1j95diiPL3DC0E9ZkBDet732K2jCSyuEjZr3VvQJJMESC2y1ae--IIFwA9_Fl30MXJ3IbXPh_lLmFnht6QeRhAm1At5jrEwv0ROhMIWr7TSo4BEvPX4aJDVkXrbeOn_s_RZ3Xu88G88avzVinrcMSTWqdzvo1n-7Ak6QfuAk2G7A' -d '{\"fingerprint_id\":\"test-device-123\",\"platform\":\"web\"}')",
+      "Bash(curl -s -X POST http://localhost:8000/api/v1/identity/link -H 'Content-Type: application/json' -H 'Authorization: Bearer __TRACKED_VAR__' -d '{\"fingerprint_id\":\"nonexistent-device\",\"platform\":\"web\"}' -w '\\\\nHTTP: %{http_code}')",
+      "Bash(curl -s -X POST http://localhost:8000/api/v1/identity/link -H 'Content-Type: application/json' -H 'Authorization: Bearer __TRACKED_VAR__' -d '{\"platform\":\"web\"}' -w '\\\\nHTTP: %{http_code}')",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://10.0.0.39:8081/profil)"
     ]
   }
 }

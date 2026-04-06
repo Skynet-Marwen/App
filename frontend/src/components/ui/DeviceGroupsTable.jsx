@@ -29,9 +29,18 @@ const groupStatusBadge = (status) => {
 }
 
 const linkedUserLabel = (group) => {
-  if (group.linked_user_state === 'single') return group.linked_user
+  if (group.linked_user_state === 'single') {
+    const ext = group.linked_external_users?.[0]
+    return ext?.display_name || ext?.email || ext?.external_user_id || group.linked_user
+  }
   if (group.linked_user_state === 'mixed') return 'Mixed'
   return '—'
+}
+
+const deviceLinkedLabel = (device) => {
+  const ext = device.linked_external_users?.[0]
+  if (ext) return ext.display_name || ext.email || ext.external_user_id
+  return device.linked_user || null
 }
 
 const browserSummary = (devices) => {
@@ -178,6 +187,11 @@ export default function DeviceGroupsTable({
                               <Users size={12} className="text-gray-500" />
                               {device.visitor_count ?? 0} visitors
                             </div>
+                            {deviceLinkedLabel(device) && (
+                              <div className="mt-1 text-cyan-400 truncate" title={deviceLinkedLabel(device)}>
+                                {deviceLinkedLabel(device)}
+                              </div>
+                            )}
                             <div className="mt-1">{fmtDate(device.last_seen)}</div>
                           </div>
                           <div className="self-center">{riskBadge(device.risk_score ?? 0)}</div>
@@ -200,7 +214,7 @@ export default function DeviceGroupsTable({
                             >
                               {device.status === 'blocked' ? 'Unblock' : 'Block'}
                             </Button>
-                            {device.linked_user ? (
+                            {(device.linked_user || device.linked_external_users?.length > 0) ? (
                               <Button variant="secondary" size="sm" icon={Unlink} onClick={() => onOpenLink(device)}>
                                 Unlink
                               </Button>

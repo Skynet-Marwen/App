@@ -226,6 +226,17 @@ export function usePortalUsers() {
     return res.data
   }, [refresh, refreshDetail, selectedUser])
 
+  const updateTrustLevel = useCallback(async (
+    trustLevel,
+    reason = 'Updated from Portal Users intelligence view',
+    externalUserId = selectedUser?.external_user_id,
+  ) => {
+    if (!externalUserId) return null
+    const res = await identityApi.setTrustLevel(externalUserId, { trust_level: trustLevel, reason })
+    await Promise.all([refresh(), refreshDetail(externalUserId)])
+    return res.data
+  }, [refresh, refreshDetail, selectedUser])
+
   const deleteExternalUser = useCallback(async (
     externalUserId = selectedUser?.external_user_id,
   ) => {
@@ -275,6 +286,7 @@ export function usePortalUsers() {
     recomputeRisk,
     setEnhancedAudit,
     updateFlagStatus,
+    updateTrustLevel,
     deleteExternalUser,
   }
 }

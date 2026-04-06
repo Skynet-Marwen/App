@@ -1,7 +1,7 @@
 # SkyNet — Architecture
 
 > Living document. Update on every structural change.
-> Last updated: 2026-04-05 — runtime app version `1.7.1`
+> Last updated: 2026-04-06 — runtime app version `1.7.4`
 
 ---
 
@@ -76,9 +76,11 @@
 | Core | `backend/app/core/` | Config, DB engine, security utils | Domain logic |
 | Pages | `frontend/src/pages/` | Route-level composition | Direct API calls, business logic |
 | UI Components | `frontend/src/components/ui/` | Rendering, props, layout only | State, API calls |
+| Overview Components | `frontend/src/components/overview/` | Overview widget rendering | API calls, data synthesis |
 | Hooks | `frontend/src/hooks/` | Data fetching, derived state | DOM manipulation |
 | Services | `frontend/src/services/` | Axios call definitions | Business logic, UI state |
 | Store | `frontend/src/store/` | Global state shape + theme resolution state | API calls |
+| Utils | `frontend/src/utils/` | Pure decision/intelligence functions | Side effects, API calls |
 
 ---
 
@@ -265,7 +267,31 @@ Benefits
   - keeps the raw SkyNet site API key out of the public browser bootstrap config
 ```
 
-### 9b. Overview + Integration Data Lineage
+### 9b. Overview Security Command Center — Intelligence Synthesis Flow
+```
+FastAPI GET /stats/overview
+  └─ returns raw payload: threat_hotspots, enforcement_pressure, risk_leaderboard,
+                          priority_investigations, gateway_dashboard, traffic_heatmap, …
+
+React OverviewPage
+  ├─ useMemo(() => generateGlobalSecurityState(overview), [overview])
+  │   └─ securityIntelligence.js
+  │       ├─ computeGlobalTrend(overview)        → { trend, label, color, spikeDetected }
+  │       ├─ generateAIInsights(overview)        → string[] (max 5 pattern sentences)
+  │       ├─ rankEntitiesForInvestigation(overview) → Entity[] (max 10, priority-sorted)
+  │       ├─ generateRecommendedActions(level)   → string[] (max 3 operator actions)
+  │       └─ returns: { globalRiskLevel, activeThreats, criticalEntities, trend,
+  │                     keyInsights, priorityActions, confidence, rankedEntities }
+  │
+  ├─ CommandHeader           ← globalRiskLevel, trend, activeThreats, criticalEntities, priorityActions
+  ├─ AIInsightsPanel         ← keyInsights
+  ├─ PriorityInvestigationsCard ← priority_investigations + recommended action per item
+  ├─ RiskLeaderboardCard     ← risk_leaderboard + action labels + rank delta
+  ├─ SignalIntelligenceCard  ← evasion + spam + enforcement + hotspot + gateway signals
+  └─ ThreatHotspotsCard      ← threat_hotspots + trend from intelligence synthesis
+```
+
+### 9b-old. Overview + Integration Data Lineage
 ```
 PostgreSQL
   ├─ visitors       → total visitors, top countries, per-site visitor counts
@@ -280,12 +306,43 @@ FastAPI
   └─ GET /integration/sites
 
 React
-  ├─ Overview widgets render backend payloads as-is
+  ├─ Overview: raw payload → intelligence synthesis → command center widgets
   └─ Integration cards render per-site aggregate stats as-is
 ```
 
 Design rule:
-- If the backend does not have a trustworthy metric, the frontend must show an empty or unavailable state instead of synthesizing placeholder hotspot, investigation, or enforcement values.
+- If the backend does not have a trustworthy metric, the frontend must show an empty or unavailable state instead of synthesizing placeholder values.
+
+### 9b-c. Portal User Intelligence Decision Flow
+```
+Operator clicks a user row → PortalUsersPage
+  ├─ GET /identity/{external_user_id}/profile
+  ├─ GET /identity/{external_user_id}/devices
+  ├─ GET /identity/{external_user_id}/visitors
+  ├─ GET /identity/{external_user_id}/flags
+  ├─ GET /identity/{external_user_id}/risk-history
+  └─ GET /identity/{external_user_id}/activity
+
+PortalUserIntelModal (5-tab layout)
+  ├─ Decision Header (persistent, all tabs)
+  │   └─ riskNarrative.js: generateDecisionSummary(entity)
+  │       ├─ computeConfidenceLevel({ profile, devices, visitors, flags, riskHistory })
+  │       ├─ computeTrendInfo(riskHistory)
+  │       ├─ aggregateSignalsForDecision(profile, devices, visitors)
+  │       ├─ rankLinkedDevices(devices)
+  │       └─ generateRecommendedAction(score, confidence, trend, openFlagCount, signals)
+  │
+  ├─ Overview tab   → decision block (reasons) + top signals
+  ├─ Identity tab   → user card → device tree with roles + visitor counts
+  ├─ Timeline tab   → risk history AreaChart + labeled event timeline
+  ├─ Audit tab      → anomaly flags with Ack/Resolve/FP + paginated activity feed
+  └─ Raw Data tab   → collapsible: profile fields, device fingerprints, signals dump, flags raw
+  
+Trust level mutation:
+  Trust/Flag/Block buttons → PATCH /identity/{external_user_id}/trust-level
+    Body: { trust_level, reason }
+    Admin guard → validate → update UserProfile → audit log → return { ok, trust_level }
+```
 
 ### 10. Theme Resolution Flow
 ```
@@ -650,7 +707,7 @@ audit_logs
 | `frontend` | node:20 → nginx:alpine | 3000 | React dashboard |
 | `db` | postgres:16-alpine | 5432 | Primary data store |
 | `redis` | redis:7-alpine | 6379 | Sessions, rate limits, cache |
-| `keycloak` | keycloak:24.0 | 8080 | External IdP for end-users (`--profile keycloak` or point to any OIDC provider) |
+| external Keycloak | keycloak:24.0 | 8080 | Shared IdP hosted by the `mouwaten` stack, or any other OIDC provider |
 
 ### Development (`docker-compose.dev.yml`)
 

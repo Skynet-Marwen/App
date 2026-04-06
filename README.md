@@ -60,11 +60,10 @@ skynet.js      ──Key──►  SKYNET Backend             (end-user auth onl
 git clone https://github.com/Skynet-Marwen/App.git skynet && cd skynet
 cp backend/.env.example backend/.env   # set APP_SECRET_KEY and JWT_SECRET
 docker compose up -d
-docker compose --profile keycloak up -d keycloak   # optional local IdP for identity-link testing
 ```
 
 Dashboard: `http://localhost:3000` — Login: `admin@skynet.local` / `admin`
-Keycloak:  `http://localhost:8080`  — Admin: `admin` / `admin`  (only if you started the optional profile)
+Shared Keycloak: `https://auth.mouwaten.org` or `http://10.0.0.39:8080`  (hosted by the `mouwaten` stack)
 
 > Change both default passwords on first deployment.
 

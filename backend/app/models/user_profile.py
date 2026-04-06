@@ -28,6 +28,10 @@ class UserProfile(Base):
     )
     last_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
     last_country: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    # Lifecycle: active | suspended | deleted
+    # "deleted" = account removed from the IdP; profile kept for risk history.
+    # "suspended" = account disabled in the IdP (e.g. Keycloak enabled=false).
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active", index=True)
     # Audit
     enhanced_audit: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     profile_data: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON

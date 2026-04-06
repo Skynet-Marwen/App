@@ -19,6 +19,15 @@ class EnhancedAuditRequest(BaseModel):
     reason: str
 
 
+class SetTrustLevelRequest(BaseModel):
+    trust_level: str  # normal | trusted | suspicious | blocked
+    reason: str
+
+
+class DeactivateProfileRequest(BaseModel):
+    reason: Optional[str] = None
+
+
 # ── Responses ─────────────────────────────────────────────────────────────────
 
 class LinkIdentityResponse(BaseModel):

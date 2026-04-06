@@ -24,8 +24,8 @@ cd skynet
 
 # Start dependencies only (DB + Redis)
 docker compose -f docker-compose.dev.yml up -d
-# Optional local IdP for identity-link testing
-docker compose --profile keycloak up -d keycloak
+# Shared IdP for identity-link testing is hosted by /home/marwen/mouwaten
+# and exposed as https://auth.mouwaten.org (LAN fallback: http://10.0.0.39:8080)
 
 # Backend
 cd backend

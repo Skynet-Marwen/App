@@ -172,20 +172,64 @@ This avoids using raw browser fingerprints directly in app code.
 After Mouwaten authenticates the user with Keycloak, it calls its own same-origin relay:
 
 ```js
+// browser-side call (e.g. after Keycloak login)
 const linkRes = await fetch('/api/auth/skynet/link', {
   method: 'POST',
-  headers: {
-    Authorization: `Bearer ${keycloakAccessToken}`,
-    'Content-Type': 'application/json',
-  },
+  headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
     fingerprint_id: deviceId,
     platform: 'web',
   }),
 });
-
 const identity = await linkRes.json();
 ```
+
+The **server-side Next.js relay** at `pages/api/auth/skynet/link.js` must:
+
+1. Extract the Keycloak `access_token` stored in the NextAuth JWT — **not** the NextAuth JWT itself (the NextAuth JWT is signed with `NEXTAUTH_SECRET` / HS256 and will always fail SkyNet JWKS validation).
+2. Proxy SkyNet's actual HTTP status code back to the browser so the browser sees `401` / `503` instead of a masked `500`.
+
+```js
+// pages/api/auth/skynet/link.js
+import { getToken } from 'next-auth/jwt';
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).end();
+
+  // getToken() decodes the NextAuth session cookie — access_token is the
+  // raw Keycloak access token stored there by the NextAuth Keycloak provider.
+  const nextAuthToken = await getToken({ req });
+  if (!nextAuthToken?.access_token) {
+    return res.status(401).json({ code: 'NOT_AUTHENTICATED', message: 'No Keycloak session' });
+  }
+
+  let skynetRes;
+  try {
+    skynetRes = await fetch(`${process.env.SKYNET_API_URL}/api/v1/identity/link`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${nextAuthToken.access_token}`,
+        'Content-Type': 'application/json',
+        'X-Forwarded-For': req.headers['x-forwarded-for'] || req.socket.remoteAddress || '',
+      },
+      body: JSON.stringify(req.body),
+    });
+  } catch (err) {
+    console.error('[SkyNet relay] identity/link fetch failed', err);
+    return res.status(502).json({ code: 'SKYNET_UNREACHABLE', message: 'SkyNet backend unreachable' });
+  }
+
+  const data = await skynetRes.json().catch(() => ({}));
+  // Proxy SkyNet's real status — never swallow 401/403/503 as 500
+  return res.status(skynetRes.status).json(data);
+}
+```
+
+> **Why this pattern fails silently without the fix:**
+> When NextAuth stores the session as a JWT cookie, `req.headers.authorization` in the relay is usually absent — the browser sends a cookie, not a Bearer token. The relay must call `getToken({ req })` to decrypt the NextAuth cookie and extract `access_token`. Forwarding the raw NextAuth JWT (signed with HS256) to SkyNet will always produce `TOKEN_INVALID` because SkyNet's JWKS validator only accepts asymmetric algorithms (RS256/ES256).
+> The relay must also forward SkyNet's status code verbatim — returning `200` on a `401` or crashing on any non-2xx response hides the real error from the browser and makes debugging impossible.
+
+Also ensure `next.config.js` does **not** strip the `Authorization` header when proxying internally.
 
 Mouwaten should then enforce the returned verdict:
 

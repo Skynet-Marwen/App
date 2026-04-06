@@ -9,6 +9,25 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+- **Overview → Security Command Center**: reworked the main Overview page from a data-display dashboard into an AI-driven decision system
+  - `frontend/src/utils/securityIntelligence.js` — 5 intelligence engines: `computeGlobalTrend`, `generateAIInsights`, `rankEntitiesForInvestigation`, `generateRecommendedActions`, `generateGlobalSecurityState`
+  - `frontend/src/components/overview/CommandHeader.jsx` — dominant global security state header (risk level, trend, spike badge, active threats, critical entities, recommended actions)
+  - `frontend/src/components/overview/AIInsightsPanel.jsx` — AI-synthesized pattern insight cards (3–5, only shown when data available)
+  - `frontend/src/components/overview/SignalIntelligenceCard.jsx` — aggregated signal list derived from evasion, spam, enforcement, hotspot, and gateway data
+  - `PATCH /api/v1/identity/{external_user_id}/trust-level` — admin-only endpoint to directly set a user's trust level; validates against `{normal, trusted, suspicious, blocked}`, writes audit log
+
+### Changed
+- **Portal User Intelligence modal** refactored into a 5-tab decision interface (Overview, Identity, Timeline, Audit, Raw Data) with a persistent Decision Header showing risk score, confidence, trend, and Trust/Flag/Block action buttons
+- **`frontend/src/utils/riskNarrative.js`** rewritten as a full decision engine: `computeTrendInfo`, `aggregateSignalsForDecision`, `rankLinkedDevices`, `computeConfidenceLevel`, `generateRecommendedAction`, `generateDecisionSummary`; `generateRiskNarrative` preserved as backward-compatible wrapper
+- **`PortalUserIntelSections.jsx`** restructured into Overview, Identity, and Timeline tab content; Audit and Raw Data split into `PortalUserIntelAudit.jsx` to respect the 300-line file constraint
+- **`PriorityInvestigationsCard`** enhanced: priority dot, recommended action badge (`→ Block / Investigate / Monitor`), animated critical count indicator
+- **`RiskLeaderboardCard`** enhanced: rank color tiers, action label per entity (`Investigate / Monitor / Review / Watch`), `+Npts above next` delta indicator, top-flag row
+- **`ThreatHotspotsCard`** enhanced: per-country trend badge (Surge/Rising/Stable/Falling), global trend interpretation strip, CardHeader trend label from intelligence synthesis
+- **`OverviewPage`** layout reordered: Command Header → AI Insights → Stat Cards → Decision Grid (Investigations + Leaderboard + Signal Intel) → Context Grid → Gateway
+- **`usePortalUsers`** hook: `updateTrustLevel` callback added
+- **`api.js`**: `identityApi.setTrustLevel(externalUserId, data)` added
+
 ---
 
 ## [1.7.4] - 2026-04-05

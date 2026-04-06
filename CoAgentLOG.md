@@ -9,6 +9,13 @@
 
 ## Action Log
 
+[2026-04-06 17:30] refactor(ux): Overview → Security Command Center; securityIntelligence.js engine (computeGlobalTrend, generateAIInsights, rankEntitiesForInvestigation, generateRecommendedActions, generateGlobalSecurityState); CommandHeader.jsx (global risk, active threats, critical entities, trend, pulsing dot, priority actions strip); AIInsightsPanel.jsx (3-5 pattern insights); SignalIntelligenceCard.jsx (8 cross-cutting signals with impact/category); OverviewPage.jsx restructured (command header → insights → stat cards → decision grid → context grid); PriorityInvestigationsCard enhanced (recommended action per item, priority dot, critical badge); RiskLeaderboardCard enhanced (action label per identity, rank delta, top flag row); ThreatHotspotsCard enhanced (trend badge per country, global trend interpretation strip, global trend prop) — Agent: Claude Sonnet 4.6
+[2026-04-06 16:00] refactor(ux): Portal User Intelligence — 5-tab decision workspace; Persistent DecisionHeader (score+level+confidence+trend+Trust/Flag/Block+Recompute+Audit+Delete); TabBar with badge counts; OverviewTab (why+signals), IdentityTab (user→devices→visitors tree + multi-device alert), TimelineTab (risk chart+event timeline), AuditTab (flags+activity), RawDataTab (collapsible sections); files split: PortalUserIntelSections.jsx (Overview/Identity/Timeline) + PortalUserIntelAudit.jsx (Audit/Raw); PATCH /identity/{id}/trust-level backend endpoint + SetTrustLevelRequest schema + identityApi.setTrustLevel + updateTrustLevel hook + handleTrustLevel page wiring — Agent: Claude Sonnet 4.6
+[2026-04-06 15:00] refactor(ux): Portal User Intelligence — full decision engine + UX/UI refonte; riskNarrative.js rewritten as decision engine (computeTrendInfo, aggregateSignalsForDecision, rankLinkedDevices, computeConfidenceLevel, generateRecommendedAction, generateDecisionSummary); PortalUserIntelModal.jsx reworked (dominant decision header with confidence+trend+recommended action strip, DecisionPanel replacing RiskNarrativeBlock, RiskTimeline with trend/spike badges+narrative, DevicesPanel with ranked role badges); PortalUserIntelSections.jsx reworked (SecuritySignalsPanel with impact/category/count replacing AggregatedSignals, TechnicalDetails collapsible preserved) — Agent: Claude Sonnet 4.6
+
+[2026-04-06 01:00] refactor(ux): Portal User Intelligence — full decision-oriented UX refonte; new Risk Narrative Engine (riskNarrative.js); PortalUserIntelModal.jsx (decision header + narrative block + timeline + compact devices); PortalUserIntelSections.jsx (aggregated signals, visitors, flags with actions, activity, tech details collapsible); PortalUsersPage.jsx -446 lines (975→529); TrackingSignalsSummary×3 repetitions eliminated and replaced by AggregatedSignals — Agent: Claude Sonnet 4.6
+[2026-04-05 20:30] fix(risk): v1.7.x — 3 bugs: (1) _assessment_risk_score() recalibrated — decoupled confidence from risk, now uses drift+clock_skew as primary signals only (low confidence was wrongly triggering risk=90 for test/private-IP devices); (2) risk ratchet replaced by 30/70 weighted blend allowing score decay over clean visits; (3) DeviceDetailModal stability/confidence bars now show "No signals" instead of misleading 100% when fingerprint_confidence=0 — Agent: Claude Sonnet 4.6
+[2026-04-05 20:00] refactor(ux): device detail modal — full UX/UI refonte; extracted DeviceDetailModal.jsx (6-section decision-oriented layout: risk header + timeline + identity + security findings + visitors + collapsible tech details); actions (block/link/delete) now accessible directly from modal; risk score surfaced prominently; 20 flat cards replaced by semantic hierarchy; DevicesPage.jsx cleaned (-130 lines inline JSX) — Agent: Claude Sonnet 4.6
 [2026-04-05 16:00] fix(identity): v1.7.4 — 4 identity model fixes: (1) _sync_external_user_visitors retroactive attribution eliminated via linked_at timestamp guard; (2) risk_engine tor_vpn modifier now queries Incident table (VPN_DETECTED/PROXY_DETECTED/WEBRTC_VPN_BYPASS) instead of risk_score>=100 heuristic; (3) devices.py POST /{id}/link now dual-writes IdentityLink when external_user_id provided; (4) anti_evasion multi-account count uses COALESCE(external_user_id, linked_user) covering IdP-only deployments; APP_VERSION→1.7.4 — Agent: Claude Sonnet 4.6
 [2026-04-05 14:00] fix(functional): v1.7.3 — 5 confirmed runtime bugs fixed: (1) track.py NameError on identity_service module ref; (2) risk_engine.py UserProfile not created on first recompute; (3) anti_evasion._safe_run silently swallowed detection failures; (4) ML inference except:pass→log.warning; (5) stats.py unique_users double-count fixed with set union deduplication — Agent: Claude Sonnet 4.6
 [2026-04-05 12:00] fix(audit): v1.7.2 — 4 silent-exception fixes: track.py UA parse, stats.py heatmap+blocking_chart+gateway_dashboard, main.py asyncio shutdown; commented console.log debug leak in snippets.jsx; APP_VERSION→1.7.2; CHANGELOG+DEV_PLAN updated — Agent: Claude Sonnet 4.6
@@ -244,3 +251,39 @@ checkpoint_20260405_003651
 [0;32m[OK][0m    DB dump saved: backups/db_20260405_091048.sql
 [0;32m[OK][0m    Checkpoint checkpoint_20260405_091048 ready
 checkpoint_20260405_091048
+[2026-04-05 19:33] CHECKPOINT: checkpoint_20260405_193305 created (images tagged + DB dump)
+[2026-04-05 19:38] DEPLOY FAILED: health check failed — rollback available at [0;36m[INFO][0m  Creating checkpoint: checkpoint_20260405_193305
+[0;32m[OK][0m    Tagged skynet-backend:checkpoint_20260405_193305
+[0;32m[OK][0m    Tagged skynet-frontend:checkpoint_20260405_193305
+[0;36m[INFO][0m  Dumping database → backups/db_20260405_193305.sql
+[0;32m[OK][0m    DB dump saved: backups/db_20260405_193305.sql
+[0;32m[OK][0m    Checkpoint checkpoint_20260405_193305 ready
+checkpoint_20260405_193305
+[2026-04-06 10:16] CHECKPOINT: checkpoint_20260406_101626 created (images tagged + DB dump)
+[2026-04-06 10:18] CHECKPOINT: checkpoint_20260406_101826 created (images tagged + DB dump)
+[2026-04-06 10:37] CLEAN: pruned old checkpoints, kept last 5
+[2026-04-06 10:37] CHECKPOINT: checkpoint_20260406_103722 created (images tagged + DB dump)
+[2026-04-06 10:43] DEPLOY FAILED: health check failed — rollback available at [0;36m[INFO][0m  Creating checkpoint: checkpoint_20260406_103722
+[0;32m[OK][0m    Tagged skynet-backend:checkpoint_20260406_103722
+[0;32m[OK][0m    Tagged skynet-frontend:checkpoint_20260406_103722
+[0;36m[INFO][0m  Dumping database → backups/db_20260406_103722.sql
+[0;32m[OK][0m    DB dump saved: backups/db_20260406_103722.sql
+[0;32m[OK][0m    Checkpoint checkpoint_20260406_103722 ready
+checkpoint_20260406_103722
+[2026-04-06 15:34] CHECKPOINT: checkpoint_20260406_153452 created (images tagged + DB dump)
+[2026-04-06 15:40] DEPLOY FAILED: health check failed — rollback available at [0;36m[INFO][0m  Creating checkpoint: checkpoint_20260406_153452
+[0;32m[OK][0m    Tagged skynet-backend:checkpoint_20260406_153452
+[0;32m[OK][0m    Tagged skynet-frontend:checkpoint_20260406_153452
+[0;36m[INFO][0m  Dumping database → backups/db_20260406_153452.sql
+[0;32m[OK][0m    DB dump saved: backups/db_20260406_153452.sql
+[0;32m[OK][0m    Checkpoint checkpoint_20260406_153452 ready
+checkpoint_20260406_153452
+[2026-04-06 16:15] CLEAN: pruned old checkpoints, kept last 5
+[2026-04-06 16:15] CHECKPOINT: checkpoint_20260406_161554 created (images tagged + DB dump)
+[2026-04-06 16:22] DEPLOY FAILED: health check failed — rollback available at [0;36m[INFO][0m  Creating checkpoint: checkpoint_20260406_161554
+[0;32m[OK][0m    Tagged skynet-backend:checkpoint_20260406_161554
+[0;32m[OK][0m    Tagged skynet-frontend:checkpoint_20260406_161554
+[0;36m[INFO][0m  Dumping database → backups/db_20260406_161554.sql
+[0;32m[OK][0m    DB dump saved: backups/db_20260406_161554.sql
+[0;32m[OK][0m    Checkpoint checkpoint_20260406_161554 ready
+checkpoint_20260406_161554

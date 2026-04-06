@@ -223,6 +223,7 @@ export const identityApi = {
   flags: (externalUserId) => api.get(`/identity/${externalUserId}/flags`),
   updateFlag: (externalUserId, flagId, data) => api.put(`/identity/${externalUserId}/flags/${flagId}`, data),
   setEnhancedAudit: (externalUserId, data) => api.post(`/identity/${externalUserId}/enhanced-audit`, data),
+  setTrustLevel: (externalUserId, data) => api.patch(`/identity/${externalUserId}/trust-level`, data),
   keycloakSyncStatus: () => api.get('/identity/sync/keycloak/status'),
   syncKeycloakUsers: () => api.post('/identity/sync/keycloak'),
 }

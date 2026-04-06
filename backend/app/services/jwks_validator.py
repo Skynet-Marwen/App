@@ -9,6 +9,7 @@ Caching strategy:
   JWKS_GRACE_PERIOD_SEC is used before returning 503.
 - SKYNET admin routes are never affected by this validator.
 """
+import logging
 import time
 from typing import Optional
 from fastapi import HTTPException
@@ -16,14 +17,14 @@ import httpx
 from jose import jwt, JWTError, ExpiredSignatureError
 from .runtime_config import runtime_settings
 
+_log = logging.getLogger("skynet.jwks")
+
 
 _cache: dict = {
     "providers": {},
 }
 
 JWKS_GRACE_PERIOD_SEC = 600  # 10 min grace if IdP unreachable
-
-
 def _settings_keycloak() -> dict:
     _settings = runtime_settings()
     return {
@@ -124,6 +125,15 @@ async def validate_external_token(token: str, provider_hint: str | None = None) 
     providers = _provider_candidates(token, provider_hint=provider_hint)
     last_exc: Exception = Exception("No valid key found")
 
+    # Extract unverified claims once for diagnostic logging
+    try:
+        unverified = jwt.get_unverified_claims(token)
+        token_iss = unverified.get("iss", "<missing>")
+        token_aud = unverified.get("aud", "<missing>")
+        token_alg = jwt.get_unverified_header(token).get("alg", "<missing>")
+    except Exception:
+        token_iss = token_aud = token_alg = "<unparseable>"
+
     for cfg in providers:
         keys = await _get_keys(cfg)
         options = {"verify_aud": bool(cfg["audience"])}
@@ -150,7 +160,20 @@ async def validate_external_token(token: str, provider_hint: str | None = None) 
             except JWTError as exc:
                 last_exc = exc
                 continue
+            except Exception as exc:
+                # Non-JWTError from key material processing (e.g. unsupported key type)
+                _log.debug("Key processing error for provider %s kid=%s: %s", cfg["name"], key_data.get("kid"), exc)
+                last_exc = exc
+                continue
 
+    _log.warning(
+        "TOKEN_INVALID — provider(s) tried: %s | token iss=%r aud=%r alg=%r | last_error: %s",
+        [c["name"] for c in providers],
+        token_iss,
+        token_aud,
+        token_alg,
+        last_exc,
+    )
     raise HTTPException(
         status_code=401,
         detail={"code": "TOKEN_INVALID", "message": "Token signature is invalid"},

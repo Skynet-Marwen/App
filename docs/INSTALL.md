@@ -32,15 +32,13 @@ cp backend/.env.example backend/.env
 
 # 3. Start
 docker compose up -d
-docker compose --profile keycloak up -d keycloak   # optional local IdP for identity-link testing
 
 # 4. Access
 # SKYNET Dashboard: http://localhost:3000
 # API docs:         http://localhost:8000/docs
-# Keycloak Admin:   http://localhost:8080   (only if you started the optional profile)
+# Shared Keycloak:  https://auth.mouwaten.org   (LAN fallback: http://10.0.0.39:8080)
 #
 # Default SKYNET login: admin@skynet.local / admin
-# Default Keycloak:     admin / admin
 #
 # ⚠️  Change all default passwords immediately after first deployment.
 ```
@@ -84,10 +82,15 @@ CORS_ORIGINS=https://skynet.yourdomain.com
 # Used to validate JWTs from end-users of YOUR protected applications.
 # SKYNET operators always authenticate locally — this does NOT affect admin login.
 # Can also be configured at runtime via Settings → Auth in the dashboard.
-KEYCLOAK_JWKS_URL=http://keycloak:8080/realms/myrealm/protocol/openid-connect/certs
-KEYCLOAK_ISSUER=http://keycloak:8080/realms/myrealm
-KEYCLOAK_AUDIENCE=        # optional — leave blank to skip audience validation
+KEYCLOAK_JWKS_URL=http://10.0.0.39:8080/realms/Mouwaten/protocol/openid-connect/certs
+KEYCLOAK_ISSUER=https://auth.mouwaten.org/realms/Mouwaten
+KEYCLOAK_AUDIENCE=mouwaten-web
 KEYCLOAK_CACHE_TTL_SEC=300
+KEYCLOAK_SYNC_BASE_URL=http://10.0.0.39:8080
+KEYCLOAK_SYNC_REALM=Mouwaten
+KEYCLOAK_SYNC_CLIENT_ID=admin-cli
+KEYCLOAK_SYNC_USERNAME=admin
+KEYCLOAK_SYNC_PASSWORD=<keycloak-admin-password>
 ```
 
 Persistent operator assets live under `backend/data/`:
@@ -108,20 +111,18 @@ Redis is not optional in practical deployments. It backs:
 
 ## Keycloak Setup
 
-Keycloak is included in `docker-compose.yml` as an optional service (profile-gated).
-Start it with:
+The shared Keycloak service now lives in `/home/marwen/mouwaten`.
 
-```bash
-docker compose --profile keycloak up -d
-```
+Use:
 
-Or skip it entirely and point `KEYCLOAK_JWKS_URL` to any external OIDC provider
-(Auth0, Azure AD, Google, etc.) — no local Keycloak required.
+- Public issuer: `https://auth.mouwaten.org`
+- LAN/admin fallback: `http://10.0.0.39:8080`
 
-Port: **8080**
+Or point `KEYCLOAK_JWKS_URL` to any other external OIDC provider
+(Auth0, Azure AD, Google, etc.) if you do not want to use the shared Keycloak.
 
 ### Default credentials
-- Admin console: `http://localhost:8080` → `admin` / `admin`
+- Admin console: `https://auth.mouwaten.org` → `admin` / your configured password
 - **Change these immediately.**
 
 ### Create a realm for your protected app
@@ -130,7 +131,7 @@ Port: **8080**
 3. Create a client for your application (e.g. `myapp-frontend`).
 4. Note the realm name — your JWKS URL will be:
    ```
-   http://keycloak:8080/realms/myapp/protocol/openid-connect/certs
+   http://10.0.0.39:8080/realms/myapp/protocol/openid-connect/certs
    ```
 5. Set `KEYCLOAK_JWKS_URL` and `KEYCLOAK_ISSUER` in `backend/.env` (or via Settings → Auth).
 
@@ -165,7 +166,7 @@ docker compose -f docker-compose.dev.yml up -d
 - Backend: FastAPI + uvicorn `--reload` on port **8000**
 - Frontend: Vite dev server with HMR on port **5173**
 - DB + Redis: same as production
-- Keycloak is **not** included in `docker-compose.dev.yml`; start it separately with `docker compose --profile keycloak up -d keycloak` or point to an external OIDC provider
+- Keycloak is **not** included in `docker-compose.dev.yml`; use the shared `mouwaten` Keycloak instance or point to another external OIDC provider
 
 Optional tools:
 ```bash
@@ -574,7 +575,7 @@ Migrations are idempotent — safe to re-run.
 | Problem | Cause | Fix |
 |---------|-------|-----|
 | `IDP_NOT_CONFIGURED` on `/identity/link` | `keycloak_enabled` is false | Enable in Settings → Auth or set `KEYCLOAK_JWKS_URL` in `.env` |
-| `IDP_UNAVAILABLE` | Keycloak container not running | `docker compose --profile keycloak up -d keycloak` |
+| `IDP_UNAVAILABLE` | Shared Keycloak is down or unreachable | Start/restart the `mouwaten` Keycloak stack and verify `http://10.0.0.39:8080` responds |
 | `TOKEN_INVALID` | Wrong JWKS URL or issuer mismatch | Check `keycloak_jwks_url` and `keycloak_issuer` match your realm |
 | Same browser keeps getting new `device_id` values | `_skynet_did` blocked, missing, or signing secret changed | Allow first-party cookies for the site and keep `APP_SECRET_KEY` / `DEVICE_COOKIE_SECRET` stable across restarts |
 | Backend 500 on startup | Migration failed | `docker compose exec backend alembic upgrade head` |

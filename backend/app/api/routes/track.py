@@ -323,7 +323,8 @@ async def resolve_device_record(
         device.timezone_offset_minutes = assessment["snapshot"].get("timezone_offset_minutes")
         device.clock_skew_minutes = assessment["clock_skew_minutes"]
         device.fingerprint_snapshot = json.dumps(assessment["snapshot"], separators=(",", ":"), sort_keys=True)
-        device.risk_score = min(100, max(device.risk_score or 0, _assessment_risk_score(assessment)))
+        _raw_score = _assessment_risk_score(assessment)
+        device.risk_score = min(100, max(0, round((device.risk_score or 0) * 0.30 + _raw_score * 0.70)))
         if bool(runtime_settings().get("risk_auto_block_enforced", True)) and device.risk_score >= 95:
             device.status = "blocked"
         await db.flush()
@@ -332,23 +333,32 @@ async def resolve_device_record(
 
 
 def _assessment_risk_score(assessment: Optional[dict]) -> int:
+    """Compute a risk score (0-100) from a fingerprint assessment.
+
+    Design intent:
+    - drift_score: signals actively changing between visits → primary evasion indicator
+    - clock_skew_detected: timezone spoofing → strong signal
+    - confidence: signal coverage quality → very mild modifier only; low coverage is
+      common for privacy-focused users and should not inflate risk meaningfully
+    """
     if not assessment:
         return 0
     score = 0
-    composite = float(assessment.get("composite_score") or 0.0)
     drift = float(assessment.get("drift_score") or 0.0)
-    if composite < 0.35:
-        score = max(score, 90)
-    elif composite < 0.5:
-        score = max(score, 70)
-    elif composite < 0.65:
-        score = max(score, 55)
+    confidence = float(assessment.get("confidence") or 0.0)
+    # Fingerprint drift between visits (first visit drift == 0.0 by definition)
     if drift > 0.45:
-        score = max(score, 85)
+        score = max(score, 80)
     elif drift > 0.25:
-        score = max(score, 60)
+        score = max(score, 55)
+    elif drift > 0.12:
+        score = max(score, 30)
+    # Clock/timezone mismatch → active spoofing attempt
     if assessment.get("clock_skew_detected"):
-        score = max(score, 65)
+        score = max(score, 60)
+    # Near-zero signal coverage (headless / stripped UA) — weak secondary signal
+    if confidence < 0.15:
+        score = max(score, 20)
     return score
 
 async def resolve_api_key(header_key: Optional[str], query_key: Optional[str]) -> str:

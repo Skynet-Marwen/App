@@ -1,6 +1,6 @@
 # SkyNet — Security Model
 
-> Last reviewed: 2026-04-04 — shipped app version `1.7.1`
+> Last reviewed: 2026-04-06 — shipped app version `1.7.4`
 
 ---
 
@@ -44,6 +44,7 @@ No open hardening gaps as of v1.7.1. Previous gaps (resolved):
 | Insider threat | Admin account abuse | Write-only audit log for all state changes | ✅ v1.1 |
 | Operator lockout | Last owner account deleted/demoted/blocked | Superadmin guardrails prevent removing the final `superadmin` | ✅ |
 | Over-broad operator permissions | Non-admin operator can reach privileged settings/system actions | Route-level `require_admin_user` / `require_superadmin_user` enforcement across all critical routes | ✅ v1.7.1 |
+| Unauthorized trust level manipulation | Non-admin sets user trust_level to bypass enforcement | `PATCH /identity/{id}/trust-level` requires `require_admin_user`; all mutations write to audit log | ✅ |
 | Malicious branding asset upload | Admin uploads oversized or unsafe theme file | MIME allowlist + 2 MB cap + backend-served logo route only | ✅ |
 | False same-device merge | Cross-browser similarity | Strict tuple grouping; exact fingerprint is block authority | ✅ v1.1 |
 | Over-escalation from grouped behavior | One risky child blocks an unrelated parent immediately | Parent escalation is additive, threshold-based, exact-device first, disabled by default | ✅ v1.6.10 |

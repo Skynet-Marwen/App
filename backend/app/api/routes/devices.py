@@ -8,6 +8,8 @@ from ...core.security import get_current_user
 from ...models.user import User
 from ...models.device import Device
 from ...models.visitor import Visitor
+from ...models.identity_link import IdentityLink
+from ...models.user_profile import UserProfile
 from ...schemas.device import DeviceGroupListResponse, DeviceListResponse, DeviceOut, LinkRequest
 from ...services.audit import log_action, request_ip
 from ...services.incident_notifications import dispatch_notification_event
@@ -43,6 +45,25 @@ def _visitor_count_sq():
         .correlate(Device)
         .scalar_subquery()
     )
+
+
+async def _external_users_by_device(db: AsyncSession, device_ids: list[str]) -> dict[str, list[dict]]:
+    if not device_ids:
+        return {}
+    result = await db.execute(
+        select(IdentityLink.fingerprint_id, UserProfile.external_user_id, UserProfile.display_name, UserProfile.email)
+        .join(UserProfile, UserProfile.external_user_id == IdentityLink.external_user_id, isouter=True)
+        .where(IdentityLink.fingerprint_id.in_(device_ids), IdentityLink.fingerprint_id.isnot(None))
+    )
+    out: dict[str, list[dict]] = {}
+    seen: set[tuple] = set()
+    for fp_id, ext_id, display_name, email in result.all():
+        key = (fp_id, ext_id)
+        if key in seen or not ext_id:
+            continue
+        seen.add(key)
+        out.setdefault(fp_id, []).append({"external_user_id": ext_id, "display_name": display_name, "email": email})
+    return out
 
 
 async def _visitors_by_device(db: AsyncSession, device_ids: list[str]) -> dict[str, list[Visitor]]:
@@ -82,7 +103,9 @@ async def list_devices(
         q.order_by(Device.last_seen.desc()).offset((page - 1) * page_size).limit(page_size)
     )
     rows = result.all()
-    visitors_by_device = await _visitors_by_device(db, [device.id for device, _vc in rows])
+    device_ids = [device.id for device, _vc in rows]
+    visitors_by_device = await _visitors_by_device(db, device_ids)
+    ext_users_by_device = await _external_users_by_device(db, device_ids)
 
     return {
         "total": total,
@@ -110,6 +133,7 @@ async def list_devices(
                 "risk_score": d.risk_score,
                 "status": d.status,
                 "linked_user": d.linked_user,
+                "linked_external_users": ext_users_by_device.get(d.id, []),
                 "visitor_count": vc or 0,
                 "first_seen": isoformat(d.first_seen),
                 "last_seen": isoformat(d.last_seen),
@@ -150,6 +174,20 @@ async def list_device_groups(
         for device_id, visitors in visitors_by_device.items()
     }
     groups = group_devices(rows, group_visitors_by_device)
+    ext_users_by_device = await _external_users_by_device(db, device_ids)
+    for group in groups:
+        group_ext: dict[str, dict] = {}
+        for device in group.get("devices", []):
+            ext = ext_users_by_device.get(device["id"], [])
+            device["linked_external_users"] = ext
+            for u in ext:
+                group_ext[u["external_user_id"]] = u
+        group["linked_external_users"] = list(group_ext.values())
+        if group.get("linked_user_state") == "none" and group_ext:
+            group["linked_user_state"] = "single" if len(group_ext) == 1 else "mixed"
+            if len(group_ext) == 1:
+                u = next(iter(group_ext.values()))
+                group["linked_user"] = u.get("display_name") or u.get("email") or u["external_user_id"]
     start = (page - 1) * page_size
     end = start + page_size
     return {
@@ -173,6 +211,7 @@ async def get_device(
         raise HTTPException(404, "Device not found")
     device, visitor_count = row
     visitors_by_device = await _visitors_by_device(db, [device.id])
+    ext_users_by_device = await _external_users_by_device(db, [device.id])
     return {
         "id": device.id,
         "fingerprint": device.fingerprint,
@@ -196,6 +235,7 @@ async def get_device(
         "risk_score": device.risk_score,
         "status": device.status,
         "linked_user": device.linked_user,
+        "linked_external_users": ext_users_by_device.get(device.id, []),
         "visitor_count": visitor_count or 0,
         "first_seen": isoformat(device.first_seen),
         "last_seen": isoformat(device.last_seen),

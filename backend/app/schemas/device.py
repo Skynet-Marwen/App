@@ -32,6 +32,7 @@ class DeviceOut(BaseModel):
     risk_score: int = 0
     status: str
     linked_user: Optional[str] = None
+    linked_external_users: Optional[List[dict]] = None
     visitor_count: int = 0
     first_seen: str
     last_seen: str
@@ -54,6 +55,7 @@ class DeviceGroupChildOut(BaseModel):
     risk_score: int = 0
     status: str
     linked_user: Optional[str] = None
+    linked_external_users: Optional[List[dict]] = None
     visitor_count: int = 0
     first_seen: str
     last_seen: str
@@ -73,6 +75,7 @@ class DeviceGroupOut(BaseModel):
     status: str
     linked_user_state: str
     linked_user: Optional[str] = None
+    linked_external_users: Optional[List[dict]] = None
     first_seen: str
     last_seen: str
     devices: List[DeviceGroupChildOut]
